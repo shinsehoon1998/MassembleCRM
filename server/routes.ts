@@ -22,6 +22,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 회원가입 API
+  app.post('/api/register', async (req, res) => {
+    try {
+      const { username, password, name, email, role = 'counselor', department } = req.body;
+
+      // 입력 검증
+      if (!username || !password || !name || !email) {
+        return res.status(400).json({ message: '모든 필수 필드를 입력해주세요.' });
+      }
+
+      // 사용자명 중복 확인
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ message: '이미 사용 중인 사용자명입니다.' });
+      }
+
+      // 이메일 중복 확인 (기존 사용자들 중에서)
+      const users = await storage.getUsers();
+      const emailExists = users.some(user => user.email === email);
+      if (emailExists) {
+        return res.status(400).json({ message: '이미 사용 중인 이메일입니다.' });
+      }
+
+      // 비밀번호 암호화
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // 사용자 생성
+      const newUser = await storage.upsertUser({
+        id: `user-${Date.now()}`,
+        username,
+        password: hashedPassword,
+        name,
+        email,
+        role: role === 'admin' ? 'counselor' : role, // 보안상 admin은 직접 생성 불가
+        department: department || '상담부'
+      });
+
+      // 비밀번호 제거하고 응답
+      const { password: _, ...userResponse } = newUser;
+      
+      res.status(201).json({
+        message: '회원가입이 완료되었습니다.',
+        user: userResponse
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(500).json({ message: '회원가입 중 오류가 발생했습니다.' });
+    }
+  });
+
   // Dashboard routes
   app.get('/api/dashboard/stats', isAuthenticated, async (req, res) => {
     try {

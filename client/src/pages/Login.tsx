@@ -123,7 +123,10 @@ export default function Login() {
           </form>
           
           <div className="mt-6 text-center text-sm text-gray-600">
-            계정이 없으신가요? 관리자에게 문의하세요.
+            계정이 없으신가요?{' '}
+            <a href="/register" className="text-massemble-red hover:underline">
+              회원가입하기
+            </a>
           </div>
         </CardContent>
       </Card>
