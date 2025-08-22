@@ -91,7 +91,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         customerId: customer.id,
         action: "customer_created",
         description: `고객 "${customer.name}"을(를) 등록했습니다.`,
@@ -114,7 +114,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         customerId: customer.id,
         action: "customer_updated",
         description: `고객 "${customer.name}"의 정보를 수정했습니다.`,
@@ -144,7 +144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         action: "customer_deleted",
         description: `고객 "${customer.name}"을(를) 삭제했습니다.`,
       });
@@ -175,7 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             // Log activity
             await storage.createActivityLog({
-              userId: req.user.claims.sub,
+              userId: req.user.id,
               customerId: customer.id,
               action: "customer_batch_updated",
               description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
@@ -216,7 +216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               // Log activity
               await storage.createActivityLog({
-                userId: req.user.claims.sub,
+                userId: req.user.id,
                 action: "customer_batch_deleted",
                 description: `고객 "${customer.name}"을(를) 일괄 삭제했습니다.`,
               });
@@ -254,7 +254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         customerId: customer.id,
         action: "customer_status_updated",
         description: `고객 "${customer.name}"의 상태를 "${status}"로 변경했습니다.`,
@@ -275,7 +275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         customerId: customer.id,
         action: "customer_memo_updated",
         description: `고객 "${customer.name}"의 메모를 수정했습니다.`,
@@ -304,14 +304,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertConsultationSchema.parse({
         ...req.body,
         customerId: req.params.id,
-        userId: req.user.claims.sub,
+        userId: req.user.id,
       });
 
       const consultation = await storage.createConsultation(validatedData);
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         customerId: req.params.id,
         action: "consultation_created",
         description: `상담 "${consultation.title}"을(를) 등록했습니다.`,
@@ -378,7 +378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertAttachmentSchema.parse({
         ...req.body,
         customerId: req.params.id,
-        uploadedBy: req.user.claims.sub,
+        uploadedBy: req.user.id,
         filePath: filePath,
       });
 
@@ -386,7 +386,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         customerId: req.params.id,
         action: "file_uploaded",
         description: `파일 "${attachment.originalName}"을(를) 첨부했습니다.`,
@@ -411,7 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Log activity
       await storage.createActivityLog({
-        userId: req.user.claims.sub,
+        userId: req.user.id,
         action: "file_deleted",
         description: "파일을 삭제했습니다.",
       });
@@ -449,7 +449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User management routes (admin only)
   app.get('/api/users', isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
+      const currentUser = await storage.getUser(req.user.id);
       if (!currentUser || !['admin', 'manager'].includes(currentUser.role)) {
         return res.status(403).json({ message: "Insufficient permissions" });
       }
@@ -475,7 +475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create new user - Admin only
   app.post('/api/users', isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
+      const currentUser = await storage.getUser(req.user.id);
       if (!currentUser || currentUser.role !== 'admin') {
         return res.status(403).json({ message: "Admin access required" });
       }
@@ -506,7 +506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/users/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
+      const currentUser = await storage.getUser(req.user.id);
       if (!currentUser || currentUser.role !== 'admin') {
         return res.status(403).json({ message: "Admin access required" });
       }
