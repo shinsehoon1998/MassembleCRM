@@ -81,21 +81,22 @@ export default function Customers() {
   const batchUpdateMutation = useMutation({
     mutationFn: async ({ customerIds, updates }: { customerIds: string[], updates: any }) => {
       const response = await apiRequest("PUT", "/api/customers/batch", { customerIds, updates });
-      return response.json();
+      return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setSelectedCustomers([]);
       setShowBatchActions(false);
       toast({
         title: "성공",
-        description: "선택된 고객들이 수정되었습니다.",
+        description: `${data.updated || 0}명의 고객이 수정되었습니다.`,
       });
     },
-    onError: () => {
+    onError: (error) => {
+      console.error("Batch update error:", error);
       toast({
         title: "오류",
-        description: "일괄 수정에 실패했습니다.",
+        description: "일괄 수정에 실패했습니다. 다시 시도해 주세요.",
         variant: "destructive",
       });
     },
@@ -104,7 +105,7 @@ export default function Customers() {
   const batchDeleteMutation = useMutation({
     mutationFn: async (customerIds: string[]) => {
       const response = await apiRequest("DELETE", "/api/customers/batch", { customerIds });
-      return response.json();
+      return await response.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });

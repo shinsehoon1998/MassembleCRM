@@ -216,13 +216,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "customerIds array is required" });
       }
 
+      if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ message: "updates object is required" });
+      }
+
       const results = [];
+      let updateCount = 0;
       
       for (const customerId of customerIds) {
         try {
           const customer = await storage.updateCustomer(customerId, updates);
           if (customer) {
             results.push(customer);
+            updateCount++;
             
             // Log activity
             await storage.createActivityLog({
@@ -234,10 +240,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         } catch (error) {
           console.error(`Error updating customer ${customerId}:`, error);
+          // 개별 고객 업데이트 실패는 전체 작업을 중단하지 않음
         }
       }
 
-      res.json({ updated: results.length, customers: results });
+      console.log(`Batch update completed: ${updateCount}/${customerIds.length} customers updated`);
+      res.json({ 
+        updated: updateCount, 
+        total: customerIds.length,
+        customers: results 
+      });
     } catch (error) {
       console.error("Error batch updating customers:", error);
       res.status(500).json({ message: "Failed to batch update customers" });
