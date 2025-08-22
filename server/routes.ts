@@ -551,6 +551,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 기존 사용자 조회 (임시 디버깅용)
+  app.get('/api/emergency/list-users', async (req, res) => {
+    try {
+      const secretKey = req.query.secret || req.headers['x-admin-secret'];
+      if (secretKey !== 'massemble-emergency-2024') {
+        return res.status(403).json({ message: '접근이 거부되었습니다.' });
+      }
+
+      const users = await storage.getUsers();
+      res.json({
+        totalUsers: users.length,
+        users: users.map(u => ({
+          id: u.id,
+          username: u.username,
+          email: u.email,
+          name: u.name,
+          role: u.role
+        }))
+      });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  // 기존 사용자를 admin으로 승격
+  app.post('/api/emergency/promote-to-admin', async (req, res) => {
+    try {
+      const secretKey = req.query.secret || req.headers['x-admin-secret'];
+      if (secretKey !== 'massemble-emergency-2024') {
+        return res.status(403).json({ message: '접근이 거부되었습니다.' });
+      }
+
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: 'userId가 필요합니다.' });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+      }
+
+      // 사용자를 admin으로 승격하고 비밀번호 설정
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      const updatedUser = await storage.upsertUser({
+        ...user,
+        username: 'admin', // username을 admin으로 변경
+        password: hashedPassword,
+        role: 'admin'
+      });
+
+      res.json({
+        message: `사용자 ${user.name}를 admin으로 승격했습니다. (admin/admin123)`,
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          name: updatedUser.name,
+          role: updatedUser.role
+        }
+      });
+    } catch (error) {
+      console.error('User promotion error:', error);
+      res.status(500).json({ 
+        error: (error as Error).message,
+        message: '사용자 승격 중 오류가 발생했습니다.'
+      });
+    }
+  });
+
   // 임시 관리자 생성 엔드포인트 (배포 환경용)
   app.post('/api/emergency/create-admin', async (req, res) => {
     try {
@@ -578,14 +647,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           action: 'password_reset'
         });
       } else {
-        // 새로 생성
+        // 완전히 새로운 계정 생성 (고유한 정보 사용)
+        const timestamp = Date.now();
         const hashedPassword = await bcrypt.hash('admin123', 10);
         const newAdmin = await storage.upsertUser({
-          id: 'admin',
+          id: `admin-${timestamp}`,
           username: 'admin',
           password: hashedPassword,
           name: '시스템 관리자',
-          email: 'admin@massemble.com',
+          email: `system-admin-${timestamp}@massemble.internal`,
           role: 'admin',
           department: '관리부'
         });
