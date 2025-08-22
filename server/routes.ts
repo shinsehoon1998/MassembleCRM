@@ -153,6 +153,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Batch operations for customers
+  app.put('/api/customers/batch', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds, updates } = req.body;
+      
+      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: "customerIds array is required" });
+      }
+
+      const results = [];
+      
+      for (const customerId of customerIds) {
+        try {
+          const customer = await storage.updateCustomer(customerId, updates);
+          results.push(customer);
+          
+          // Log activity
+          await storage.createActivityLog({
+            userId: req.user.claims.sub,
+            customerId: customer.id,
+            action: "customer_batch_updated",
+            description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
+          });
+        } catch (error) {
+          console.error(`Error updating customer ${customerId}:`, error);
+        }
+      }
+
+      res.json({ updated: results.length, customers: results });
+    } catch (error) {
+      console.error("Error batch updating customers:", error);
+      res.status(500).json({ message: "Failed to batch update customers" });
+    }
+  });
+
+  app.delete('/api/customers/batch', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds } = req.body;
+      
+      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: "customerIds array is required" });
+      }
+
+      let deletedCount = 0;
+      
+      for (const customerId of customerIds) {
+        try {
+          const customer = await storage.getCustomer(customerId);
+          if (customer) {
+            const deleted = await storage.deleteCustomer(customerId);
+            if (deleted) {
+              deletedCount++;
+              
+              // Log activity
+              await storage.createActivityLog({
+                userId: req.user.claims.sub,
+                action: "customer_batch_deleted",
+                description: `고객 "${customer.name}"을(를) 일괄 삭제했습니다.`,
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Error deleting customer ${customerId}:`, error);
+        }
+      }
+
+      res.json({ deleted: deletedCount });
+    } catch (error) {
+      console.error("Error batch deleting customers:", error);
+      res.status(500).json({ message: "Failed to batch delete customers" });
+    }
+  });
+
+  // Quick update customer status
+  app.patch('/api/customers/:id/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const { status } = req.body;
+      const customer = await storage.updateCustomer(req.params.id, { status });
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        customerId: customer.id,
+        action: "customer_status_updated",
+        description: `고객 "${customer.name}"의 상태를 "${status}"로 변경했습니다.`,
+      });
+
+      res.json(customer);
+    } catch (error) {
+      console.error("Error updating customer status:", error);
+      res.status(500).json({ message: "Failed to update customer status" });
+    }
+  });
+
+  // Quick update customer memo
+  app.patch('/api/customers/:id/memo', isAuthenticated, async (req: any, res) => {
+    try {
+      const { memo } = req.body;
+      const customer = await storage.updateCustomer(req.params.id, { memo });
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        customerId: customer.id,
+        action: "customer_memo_updated",
+        description: `고객 "${customer.name}"의 메모를 수정했습니다.`,
+      });
+
+      res.json(customer);
+    } catch (error) {
+      console.error("Error updating customer memo:", error);
+      res.status(500).json({ message: "Failed to update customer memo" });
+    }
+  });
+
   // Consultation routes
   app.get('/api/customers/:id/consultations', isAuthenticated, async (req, res) => {
     try {

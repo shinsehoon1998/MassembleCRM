@@ -32,6 +32,8 @@ export default function Customers() {
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithUser | null>(null);
+  const [editingMemo, setEditingMemo] = useState<{ [key: string]: string }>({});
+  const [showBatchActions, setShowBatchActions] = useState(false);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -64,6 +66,95 @@ export default function Customers() {
     },
   });
 
+  const batchUpdateMutation = useMutation({
+    mutationFn: async ({ customerIds, updates }: { customerIds: string[], updates: any }) => {
+      const response = await apiRequest("PUT", "/api/customers/batch", { customerIds, updates });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setSelectedCustomers([]);
+      setShowBatchActions(false);
+      toast({
+        title: "성공",
+        description: "선택된 고객들이 수정되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "일괄 수정에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (customerIds: string[]) => {
+      const response = await apiRequest("DELETE", "/api/customers/batch", { customerIds });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setSelectedCustomers([]);
+      setShowBatchActions(false);
+      toast({
+        title: "성공",
+        description: "선택된 고객들이 삭제되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "일괄 삭제에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const statusUpdateMutation = useMutation({
+    mutationFn: async ({ customerId, status }: { customerId: string, status: string }) => {
+      const response = await apiRequest("PATCH", `/api/customers/${customerId}/status`, { status });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      toast({
+        title: "성공",
+        description: "고객 상태가 변경되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "상태 변경에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const memoUpdateMutation = useMutation({
+    mutationFn: async ({ customerId, memo }: { customerId: string, memo: string }) => {
+      const response = await apiRequest("PATCH", `/api/customers/${customerId}/memo`, { memo });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setEditingMemo({});
+      toast({
+        title: "성공",
+        description: "메모가 저장되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "메모 저장에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatusBadgeClass = (status: string) => {
     const statusClasses: Record<string, string> = {
       '인텍': 'bg-yellow-400 text-black hover:bg-yellow-500',
@@ -90,17 +181,28 @@ export default function Customers() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedCustomers(customersData?.customers.map(c => c.id) || []);
+      const allIds = customersData?.customers.map(c => c.id) || [];
+      setSelectedCustomers(allIds);
+      setShowBatchActions(allIds.length > 0);
     } else {
       setSelectedCustomers([]);
+      setShowBatchActions(false);
     }
   };
 
   const handleSelectCustomer = (customerId: string, checked: boolean) => {
     if (checked) {
-      setSelectedCustomers(prev => [...prev, customerId]);
+      setSelectedCustomers(prev => {
+        const newSelection = [...prev, customerId];
+        setShowBatchActions(newSelection.length > 0);
+        return newSelection;
+      });
     } else {
-      setSelectedCustomers(prev => prev.filter(id => id !== customerId));
+      setSelectedCustomers(prev => {
+        const newSelection = prev.filter(id => id !== customerId);
+        setShowBatchActions(newSelection.length > 0);
+        return newSelection;
+      });
     }
   };
 
@@ -118,6 +220,39 @@ export default function Customers() {
   const handleNewCustomer = () => {
     setEditingCustomer(null);
     setIsModalOpen(true);
+  };
+
+  const handleStatusChange = (customerId: string, status: string) => {
+    statusUpdateMutation.mutate({ customerId, status });
+  };
+
+  const handleMemoEdit = (customerId: string, currentMemo: string | null) => {
+    setEditingMemo({ ...editingMemo, [customerId]: currentMemo || '' });
+  };
+
+  const handleMemoSave = (customerId: string) => {
+    const memo = editingMemo[customerId] || '';
+    memoUpdateMutation.mutate({ customerId, memo });
+  };
+
+  const handleMemoCancel = (customerId: string) => {
+    setEditingMemo(prev => {
+      const newState = { ...prev };
+      delete newState[customerId];
+      return newState;
+    });
+  };
+
+  const handleBatchUpdate = (updates: any) => {
+    if (selectedCustomers.length === 0) return;
+    batchUpdateMutation.mutate({ customerIds: selectedCustomers, updates });
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedCustomers.length === 0) return;
+    if (confirm(`선택된 ${selectedCustomers.length}개의 고객을 삭제하시겠습니까?`)) {
+      batchDeleteMutation.mutate(selectedCustomers);
+    }
   };
 
   return (
@@ -188,6 +323,51 @@ export default function Customers() {
         </CardContent>
       </Card>
 
+      {/* Batch Actions */}
+      {showBatchActions && (
+        <Card className="border-gray-100 bg-blue-50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">
+                {selectedCustomers.length}개 고객 선택됨
+              </span>
+              <div className="flex space-x-3">
+                <Select onValueChange={(status) => handleBatchUpdate({ status })}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue placeholder="상태 변경" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="인텍">인텍</SelectItem>
+                    <SelectItem value="수수">수수</SelectItem>
+                    <SelectItem value="접수">접수</SelectItem>
+                    <SelectItem value="작업">작업</SelectItem>
+                    <SelectItem value="완료">완료</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  onClick={handleBatchDelete}
+                  data-testid="button-batch-delete"
+                >
+                  <i className="fas fa-trash mr-2"></i>일괄 삭제
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setSelectedCustomers([]);
+                    setShowBatchActions(false);
+                  }}
+                >
+                  선택 해제
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Customers Table */}
       <Card className="border-gray-100">
         <CardHeader className="border-b border-gray-100">
@@ -248,6 +428,7 @@ export default function Customers() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">채무금액</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">메모</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">등록일</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
                   </tr>
@@ -297,14 +478,69 @@ export default function Customers() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <Badge className={`${getStatusBadgeClass(customer.status)} text-xs font-semibold`}>
-                            {customer.status}
-                          </Badge>
+                          <Select
+                            value={customer.status}
+                            onValueChange={(status) => handleStatusChange(customer.id, status)}
+                          >
+                            <SelectTrigger className="w-24 h-7 text-xs">
+                              <Badge className={`${getStatusBadgeClass(customer.status)} text-xs font-semibold border-0`}>
+                                {customer.status}
+                              </Badge>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="인텍">인텍</SelectItem>
+                              <SelectItem value="수수">수수</SelectItem>
+                              <SelectItem value="접수">접수</SelectItem>
+                              <SelectItem value="작업">작업</SelectItem>
+                              <SelectItem value="완료">완료</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">{customer.assignedUser?.name || '-'}</div>
                           {customer.assignedUser?.department && (
                             <div className="text-sm text-gray-500">{customer.assignedUser.department}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {editingMemo[customer.id] !== undefined ? (
+                            <div className="flex items-center space-x-2">
+                              <Input
+                                value={editingMemo[customer.id]}
+                                onChange={(e) => setEditingMemo({ ...editingMemo, [customer.id]: e.target.value })}
+                                placeholder="메모 입력"
+                                className="text-xs h-7 w-32"
+                                data-testid={`input-memo-${customer.id}`}
+                              />
+                              <Button 
+                                size="sm" 
+                                className="h-6 w-6 p-0 text-xs bg-green-500 hover:bg-green-600"
+                                onClick={() => handleMemoSave(customer.id)}
+                                data-testid={`button-memo-save-${customer.id}`}
+                              >
+                                <i className="fas fa-check"></i>
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                className="h-6 w-6 p-0 text-xs"
+                                onClick={() => handleMemoCancel(customer.id)}
+                                data-testid={`button-memo-cancel-${customer.id}`}
+                              >
+                                <i className="fas fa-times"></i>
+                              </Button>
+                            </div>
+                          ) : (
+                            <div 
+                              className="text-sm text-gray-600 cursor-pointer hover:text-blue-600 max-w-32 truncate"
+                              onClick={() => handleMemoEdit(customer.id, customer.memo)}
+                              title={customer.memo || '클릭하여 메모 추가'}
+                              data-testid={`text-memo-${customer.id}`}
+                            >
+                              {customer.memo || (
+                                <span className="text-gray-400 italic">메모 추가</span>
+                              )}
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -342,7 +578,7 @@ export default function Customers() {
                   })}
                   {(!customersData?.customers || customersData.customers.length === 0) && (
                     <tr>
-                      <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
                         검색 결과가 없습니다.
                       </td>
                     </tr>
