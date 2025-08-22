@@ -28,8 +28,8 @@ export const sessions = pgTable(
 // User roles enum
 export const userRoleEnum = pgEnum("user_role", ["admin", "manager", "counselor"]);
 
-// Customer status enum  
-export const customerStatusEnum = pgEnum("customer_status", ["인텍", "수수", "접수", "작업", "완료"]);
+// Customer status enum - 동적 상태 관리를 위해 varchar 사용
+// export const customerStatusEnum = pgEnum("customer_status", ["인텍", "수수", "접수", "작업", "완료"]);
 
 // Gender enum
 export const genderEnum = pgEnum("gender", ["M", "F", "N"]);
@@ -68,7 +68,7 @@ export const customers = pgTable("customers", {
   companyName: varchar("company_name"),
   consultType: varchar("consult_type"),
   consultPath: varchar("consult_path"),
-  status: customerStatusEnum("status").notNull().default("인텍"),
+  status: varchar("status").notNull().default("인텍"),
   assignedUserId: varchar("assigned_user_id").references(() => users.id),
   secondaryUserId: varchar("secondary_user_id").references(() => users.id),
   department: varchar("department"),
