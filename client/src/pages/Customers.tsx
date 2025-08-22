@@ -822,7 +822,7 @@ export default function Customers() {
                           <div>
                             <span className="text-gray-500">상태:</span>
                             <div className="font-medium">
-                              <span className={`inline-flex px-2 py-1 text-xs rounded-full ${getStatusBadgeColor(customer.status || '')}`}>
+                              <span className={`inline-flex px-2 py-1 text-xs rounded-full ${getStatusBadgeClass(customer.status || '')}`}>
                                 {customer.status}
                               </span>
                             </div>
@@ -836,7 +836,7 @@ export default function Customers() {
                           </div>
                           <div>
                             <span className="text-gray-500">공유담당자:</span>
-                            <div className="font-medium">{customer.sharedUser?.name || '미지정'}</div>
+                            <div className="font-medium">{customer.assignedUser?.name || '미지정'}</div>
                           </div>
                         </div>
                         
@@ -861,6 +861,7 @@ export default function Customers() {
                   </div>
                 )}
               </div>
+            </div>
             </div>
           )}
         </CardContent>
