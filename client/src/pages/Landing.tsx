@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
+import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
 
 export default function Landing() {
   const [isLoading, setIsLoading] = useState(false);
@@ -14,12 +15,12 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-500 to-primary-700">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <Card className="w-full max-w-md mx-4 shadow-2xl">
         <CardContent className="p-8">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-500 rounded-full mb-4">
-              <i className="fas fa-user-tie text-white text-2xl"></i>
+            <div className="w-20 h-20 mx-auto mb-4 bg-white rounded-lg flex items-center justify-center p-2 shadow-sm">
+              <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-3xl font-bold text-gray-900">마셈블 CRM</h1>
             <p className="text-gray-600 mt-2">개인회생 상담 관리 시스템</p>
@@ -56,7 +57,7 @@ export default function Landing() {
             <Button 
               onClick={handleLogin}
               disabled={isLoading}
-              className="w-full bg-primary-500 hover:bg-primary-600"
+              className="w-full bg-massemble-red hover:bg-massemble-red-hover text-white"
               data-testid="button-login"
             >
               {isLoading ? (
