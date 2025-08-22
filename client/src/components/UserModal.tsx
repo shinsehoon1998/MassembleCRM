@@ -21,30 +21,24 @@ interface UserModalProps {
 }
 
 interface CreateUserData {
-  username: string;
   name: string;
   email?: string;
   firstName?: string;
   lastName?: string;
   department?: string;
-  team?: string;
   role: 'admin' | 'manager' | 'counselor';
-  isActive: boolean;
 }
 
 export function UserModal({ isOpen, onClose }: UserModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<CreateUserData>({
-    username: '',
     name: '',
     email: '',
     firstName: '',
     lastName: '',
     department: '',
-    team: '',
     role: 'counselor',
-    isActive: true,
   });
 
   const createUserMutation = useMutation({
@@ -81,10 +75,10 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.username.trim() || !formData.name.trim()) {
+    if (!formData.name.trim()) {
       toast({
         title: "입력 오류",
-        description: "아이디와 성명은 필수 입력 사항입니다.",
+        description: "성명은 필수 입력 사항입니다.",
         variant: "destructive",
       });
       return;
@@ -94,15 +88,12 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
 
   const handleClose = () => {
     setFormData({
-      username: '',
       name: '',
       email: '',
       firstName: '',
       lastName: '',
       department: '',
-      team: '',
       role: 'counselor',
-      isActive: true,
     });
     onClose();
   };
@@ -124,19 +115,6 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="username" className="text-sm font-medium">
-              아이디 <span className="text-red-500">*</span>
-            </Label>
-            <Input
-              id="username"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              placeholder="사용자 아이디를 입력하세요"
-              required
-              data-testid="input-username"
-            />
-          </div>
 
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm font-medium">
@@ -154,12 +132,12 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
 
           <div className="space-y-2">
             <Label htmlFor="email" className="text-sm font-medium">
-              휴대전화번호
+              이메일
             </Label>
             <Input
               id="email"
               type="email"
-              value={formData.email}
+              value={formData.email || ''}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               placeholder="이메일을 입력하세요"
               data-testid="input-email"
@@ -171,7 +149,7 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
               <Label htmlFor="firstName" className="text-sm font-medium">성</Label>
               <Input
                 id="firstName"
-                value={formData.firstName}
+                value={formData.firstName || ''}
                 onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
                 placeholder="성"
                 data-testid="input-firstName"
@@ -181,7 +159,7 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
               <Label htmlFor="lastName" className="text-sm font-medium">이름</Label>
               <Input
                 id="lastName"
-                value={formData.lastName}
+                value={formData.lastName || ''}
                 onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                 placeholder="이름"
                 data-testid="input-lastName"
@@ -208,23 +186,6 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="team" className="text-sm font-medium">팀</Label>
-            <Select 
-              value={formData.team} 
-              onValueChange={(value) => setFormData({ ...formData, team: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="팀을 선택하세요" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1팀">1팀</SelectItem>
-                <SelectItem value="2팀">2팀</SelectItem>
-                <SelectItem value="3팀">3팀</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor="role" className="text-sm font-medium">업무구분</Label>
             <Select 
               value={formData.role} 
@@ -243,46 +204,6 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
             </Select>
           </div>
 
-          <div className="space-y-4">
-            <Label className="text-sm font-medium">권한</Label>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox id="read" defaultChecked />
-                <Label htmlFor="read" className="text-sm">조회</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="write" />
-                <Label htmlFor="write" className="text-sm">작성</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="modify" />
-                <Label htmlFor="modify" className="text-sm">수정</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="delete" />
-                <Label htmlFor="delete" className="text-sm">삭제</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="manage" />
-                <Label htmlFor="manage" className="text-sm">관리</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="admin" />
-                <Label htmlFor="admin" className="text-sm">사용</Label>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="isActive" 
-              checked={formData.isActive}
-              onCheckedChange={(checked) => 
-                setFormData({ ...formData, isActive: checked as boolean })
-              }
-            />
-            <Label htmlFor="isActive" className="text-sm">로그인</Label>
-          </div>
         </form>
 
         <DialogFooter className="gap-2">

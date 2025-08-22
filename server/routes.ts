@@ -346,9 +346,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Validate required fields
-      const { username, name, role = 'counselor', department, team, isActive = true } = req.body;
-      if (!username || !name) {
-        return res.status(400).json({ message: "Username and name are required" });
+      const { name, role = 'counselor', department } = req.body;
+      if (!name) {
+        return res.status(400).json({ message: "Name is required" });
       }
 
       const newUser = await storage.upsertUser({
