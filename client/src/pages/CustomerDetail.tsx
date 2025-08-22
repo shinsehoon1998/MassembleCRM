@@ -339,12 +339,6 @@ export default function CustomerDetail() {
               </CardHeader>
               <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label className="text-sm font-medium text-gray-500">채무 금액</Label>
-                  <p className="text-lg font-semibold text-red-600" data-testid="customer-detail-debt-amount">
-                    {formatNumber(customer.debtAmount)}
-                  </p>
-                </div>
-                <div>
                   <Label className="text-sm font-medium text-gray-500">월 소득</Label>
                   <p className="text-lg font-semibold text-green-600" data-testid="customer-detail-monthly-income">
                     {formatNumber(customer.monthlyIncome)}

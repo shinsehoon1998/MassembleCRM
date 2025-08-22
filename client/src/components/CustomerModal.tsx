@@ -253,16 +253,6 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
             </div>
             
             <div>
-              <Label htmlFor="debtAmount">채무금액</Label>
-              <Input
-                id="debtAmount"
-                type="number"
-                {...register("debtAmount")}
-                data-testid="input-customer-debt-amount"
-              />
-            </div>
-            
-            <div>
               <Label htmlFor="monthlyIncome">월소득</Label>
               <Input
                 id="monthlyIncome"

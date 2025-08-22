@@ -50,13 +50,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const search = req.query.search as string;
       const status = req.query.status as string;
       const assignedUserId = req.query.assignedUserId as string;
+      const unassigned = req.query.unassigned === 'true';
+      const unshared = req.query.unshared === 'true';
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
       const result = await storage.getCustomers({
         search,
-        status,
-        assignedUserId,
+        status: status && status !== 'all' ? status : undefined,
+        assignedUserId: assignedUserId && assignedUserId !== 'all' ? assignedUserId : undefined,
+        unassigned,
+        unshared,
         page,
         limit,
       });

@@ -34,6 +34,21 @@ export interface IStorage {
     search?: string;
     status?: string;
     assignedUserId?: string;
+    unassigned?: boolean;
+    unshared?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    customers: CustomerWithUser[];
+    total: number;
+    totalPages: number;
+  }>;
+  searchCustomers(params: {
+    search?: string;
+    status?: string;
+    assignedUserId?: string;
+    unassigned?: boolean;
+    unshared?: boolean;
     page?: number;
     limit?: number;
   }): Promise<{
@@ -110,6 +125,8 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     status?: string;
     assignedUserId?: string;
+    unassigned?: boolean;
+    unshared?: boolean;
     page?: number;
     limit?: number;
   } = {}): Promise<{
@@ -117,7 +134,7 @@ export class DatabaseStorage implements IStorage {
     total: number;
     totalPages: number;
   }> {
-    const { search, status, assignedUserId, page = 1, limit = 20 } = params;
+    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20 } = params;
     const conditions = [];
     
     if (search) {
@@ -132,6 +149,16 @@ export class DatabaseStorage implements IStorage {
     
     if (assignedUserId) {
       conditions.push(eq(customers.assignedUserId, assignedUserId));
+    }
+
+    // Filter for unassigned customers (담당자 미정)
+    if (unassigned) {
+      conditions.push(sql`${customers.assignedUserId} IS NULL`);
+    }
+
+    // Filter for unshared customers (공유담당자 미정) 
+    if (unshared) {
+      conditions.push(sql`${customers.secondaryUserId} IS NULL`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -151,7 +178,7 @@ export class DatabaseStorage implements IStorage {
         secondaryPhone: customers.secondaryPhone,
         birthDate: customers.birthDate,
         gender: customers.gender,
-        debtAmount: customers.debtAmount,
+
         monthlyIncome: customers.monthlyIncome,
         status: customers.status,
         assignedUserId: customers.assignedUserId,
@@ -177,6 +204,23 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // searchCustomers is an alias for getCustomers
+  async searchCustomers(params: {
+    search?: string;
+    status?: string;
+    assignedUserId?: string;
+    unassigned?: boolean;
+    unshared?: boolean;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{
+    customers: CustomerWithUser[];
+    total: number;
+    totalPages: number;
+  }> {
+    return this.getCustomers(params);
+  }
+
   async getCustomer(id: string): Promise<CustomerWithUser | undefined> {
     const [customer] = await db
       .select({
@@ -186,7 +230,7 @@ export class DatabaseStorage implements IStorage {
         secondaryPhone: customers.secondaryPhone,
         birthDate: customers.birthDate,
         gender: customers.gender,
-        debtAmount: customers.debtAmount,
+
         monthlyIncome: customers.monthlyIncome,
         status: customers.status,
         assignedUserId: customers.assignedUserId,
@@ -289,7 +333,7 @@ export class DatabaseStorage implements IStorage {
         secondaryPhone: customers.secondaryPhone,
         birthDate: customers.birthDate,
         gender: customers.gender,
-        debtAmount: customers.debtAmount,
+
         monthlyIncome: customers.monthlyIncome,
         status: customers.status,
         assignedUserId: customers.assignedUserId,

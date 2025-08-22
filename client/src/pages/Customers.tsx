@@ -26,6 +26,8 @@ export default function Customers() {
     search: "",
     status: "",
     assignedUserId: "",
+    unassigned: false,  // 담당자 미정
+    unshared: false,    // 공유담당자 미정
     page: 1,
     limit: 20,
   });
@@ -298,6 +300,7 @@ export default function Customers() {
       <Card className="border-gray-100">
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            {/* 기존 필터들 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">검색</label>
               <Input
@@ -353,6 +356,31 @@ export default function Customers() {
               <Button variant="outline" className="bg-gray-500 text-white hover:bg-gray-600">
                 <i className="fas fa-download mr-2"></i>엑셀
               </Button>
+            </div>
+          </div>
+          {/* 체크박스 필터 */}
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex flex-wrap gap-6 items-center">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  checked={searchParams.unassigned}
+                  onCheckedChange={(checked) => 
+                    setSearchParams(prev => ({ ...prev, unassigned: checked === true }))
+                  }
+                  data-testid="checkbox-unassigned"
+                />
+                <label className="text-sm text-gray-700 cursor-pointer">팀분배대기: 담당자 미정</label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  checked={searchParams.unshared}
+                  onCheckedChange={(checked) => 
+                    setSearchParams(prev => ({ ...prev, unshared: checked === true }))
+                  }
+                  data-testid="checkbox-unshared"
+                />
+                <label className="text-sm text-gray-700 cursor-pointer">공유대기: 공유담당자 미정</label>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -479,7 +507,6 @@ export default function Customers() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">번호</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">고객정보</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">연락처</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">채무금액</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">공유담당자</th>
@@ -520,16 +547,6 @@ export default function Customers() {
                           <div className="text-sm text-gray-900">{customer.phone}</div>
                           {customer.secondaryPhone && (
                             <div className="text-sm text-gray-500">{customer.secondaryPhone}</div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">
-                            {formatNumber(customer.debtAmount)}
-                          </div>
-                          {customer.monthlyIncome && (
-                            <div className="text-sm text-gray-500">
-                              월소득: {formatNumber(customer.monthlyIncome)}
-                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -637,7 +654,7 @@ export default function Customers() {
                   })}
                   {(!customersData?.customers || customersData.customers.length === 0) && (
                     <tr>
-                      <td colSpan={11} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
                         검색 결과가 없습니다.
                       </td>
                     </tr>

@@ -62,7 +62,6 @@ export const customers = pgTable("customers", {
   zipcode: varchar("zipcode"),
   address: text("address"),
   addressDetail: varchar("address_detail"),
-  debtAmount: decimal("debt_amount", { precision: 15, scale: 2 }),
   monthlyIncome: decimal("monthly_income", { precision: 12, scale: 2 }),
   jobType: varchar("job_type"),
   companyName: varchar("company_name"),
