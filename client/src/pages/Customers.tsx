@@ -256,6 +256,60 @@ export default function Customers() {
     setIsModalOpen(true);
   };
 
+  const handleExportCSV = async () => {
+    try {
+      // 현재 검색 조건을 쿼리 파라미터로 변환
+      const queryParams = new URLSearchParams();
+      if (searchParams.search) queryParams.append('search', searchParams.search);
+      if (searchParams.status && searchParams.status !== 'all') queryParams.append('status', searchParams.status);
+      if (searchParams.assignedUserId && searchParams.assignedUserId !== 'all') queryParams.append('assignedUserId', searchParams.assignedUserId);
+      if (searchParams.unassigned) queryParams.append('unassigned', 'true');
+      if (searchParams.unshared) queryParams.append('unshared', 'true');
+
+      const response = await fetch(`/api/customers/export?${queryParams.toString()}`, {
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'CSV 내보내기에 실패했습니다.');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // 파일명 설정 (응답 헤더에서 가져오거나 기본값 사용)
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = 'customers.csv';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast({
+        title: "내보내기 완료",
+        description: "고객 데이터가 CSV 파일로 다운로드되었습니다.",
+      });
+    } catch (error) {
+      console.error('CSV export error:', error);
+      toast({
+        title: "내보내기 실패",
+        description: error instanceof Error ? error.message : "CSV 내보내기 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleStatusChange = (customerId: string, status: string) => {
     statusUpdateMutation.mutate({ customerId, status });
   };
@@ -367,8 +421,13 @@ export default function Customers() {
               <Button onClick={handleNewCustomer} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-add-customer">
                 <i className="fas fa-plus mr-2"></i>신규 등록
               </Button>
-              <Button variant="outline" className="bg-gray-500 text-white hover:bg-gray-600">
-                <i className="fas fa-download mr-2"></i>엑셀
+              <Button 
+                onClick={handleExportCSV} 
+                variant="outline" 
+                className="bg-green-600 text-white hover:bg-green-700"
+                data-testid="button-export-excel"
+              >
+                <i className="fas fa-file-excel mr-2"></i>엑셀
               </Button>
             </div>
           </div>

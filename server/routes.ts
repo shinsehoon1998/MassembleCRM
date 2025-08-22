@@ -917,6 +917,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 고객 데이터 CSV 내보내기 API
+  app.get('/api/customers/export', isAuthenticated, async (req: any, res) => {
+    try {
+      // 현재 검색 조건에 맞는 모든 고객 조회
+      const searchParams = {
+        search: req.query.search || '',
+        status: req.query.status || '',
+        assignedUserId: req.query.assignedUserId || '',
+        unassigned: req.query.unassigned === 'true',
+        unshared: req.query.unshared === 'true',
+        page: 1,
+        limit: 10000 // 모든 데이터 가져오기
+      };
+
+      const customersData = await storage.getCustomers(searchParams);
+      
+      if (!customersData.customers || customersData.customers.length === 0) {
+        return res.status(404).json({ message: "내보낼 고객 데이터가 없습니다." });
+      }
+
+      // CSV 헤더 정의
+      const csvHeaders = [
+        '등록번호',
+        '이름',
+        '연락처',
+        '보조연락처',
+        '생년월일',
+        '성별',
+        '월소득',
+        '상태',
+        '담당자',
+        '공유담당자',
+        '등록일',
+        '메모'
+      ];
+
+      // 고객 데이터를 CSV 형식으로 변환
+      const csvRows = customersData.customers.map((customer, index) => [
+        (index + 1).toString(), // 등록번호
+        customer.name || '',
+        customer.phone || '',
+        customer.secondaryPhone || '',
+        customer.birthDate || '',
+        customer.gender === 'male' ? '남성' : customer.gender === 'female' ? '여성' : '',
+        customer.monthlyIncome ? customer.monthlyIncome.toString() : '',
+        customer.status || '',
+        customer.assignedUser?.name || '',
+        customer.sharedUser?.name || '',
+        customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ko-KR') : '',
+        customer.memo || ''
+      ]);
+
+      // 헤더와 데이터 결합
+      const csvData = [csvHeaders, ...csvRows];
+      
+      // CSV 형식으로 변환
+      const csv = Papa.unparse(csvData, {
+        encoding: 'utf8'
+      });
+
+      // UTF-8 BOM 추가 (Excel에서 한글 깨짐 방지)
+      const csvWithBOM = '\uFEFF' + csv;
+
+      // 현재 날짜를 파일명에 포함
+      const today = new Date().toISOString().split('T')[0];
+      const filename = `customers_${today}.csv`;
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(csvWithBOM);
+
+    } catch (error) {
+      console.error("Error exporting customers to CSV:", error);
+      res.status(500).json({ message: "고객 데이터 내보내기에 실패했습니다." });
+    }
+  });
+
   // CSV 대량 업로드 API
   app.post('/api/data-import/upload', isAuthenticated, upload.single('csvFile'), async (req: any, res) => {
     try {
