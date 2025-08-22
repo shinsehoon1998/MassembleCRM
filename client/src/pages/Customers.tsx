@@ -46,6 +46,16 @@ export default function Customers() {
     queryKey: ["/api/users/counselors"],
   });
 
+  const { data: systemSettings = [] } = useQuery<any[]>({
+    queryKey: ['/api/system-settings'],
+  });
+
+  // 환경설정에서 상태 항목들 추출
+  const statusOptions = systemSettings
+    .filter((setting: any) => setting.category === '상태항목')
+    .map((setting: any) => setting.value)
+    .filter((value: string) => value && value.trim());
+
   const deleteCustomerMutation = useMutation({
     mutationFn: async (customerId: string) => {
       await apiRequest("DELETE", `/api/customers/${customerId}`);
@@ -281,11 +291,9 @@ export default function Customers() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">전체 상태</SelectItem>
-                  <SelectItem value="인텍">인텍</SelectItem>
-                  <SelectItem value="수수">수수</SelectItem>
-                  <SelectItem value="접수">접수</SelectItem>
-                  <SelectItem value="작업">작업</SelectItem>
-                  <SelectItem value="완료">완료</SelectItem>
+                  {statusOptions.map((status: string) => (
+                    <SelectItem key={status} value={status}>{status}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -337,11 +345,9 @@ export default function Customers() {
                     <SelectValue placeholder="상태 변경" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="인텍">인텍</SelectItem>
-                    <SelectItem value="수수">수수</SelectItem>
-                    <SelectItem value="접수">접수</SelectItem>
-                    <SelectItem value="작업">작업</SelectItem>
-                    <SelectItem value="완료">완료</SelectItem>
+                    {statusOptions.map((status: string) => (
+                      <SelectItem key={status} value={status}>{status}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button 
@@ -488,11 +494,9 @@ export default function Customers() {
                               </Badge>
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="인텍">인텍</SelectItem>
-                              <SelectItem value="수수">수수</SelectItem>
-                              <SelectItem value="접수">접수</SelectItem>
-                              <SelectItem value="작업">작업</SelectItem>
-                              <SelectItem value="완료">완료</SelectItem>
+                              {statusOptions.map((status: string) => (
+                                <SelectItem key={status} value={status}>{status}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </td>
