@@ -550,6 +550,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 디버깅용: admin 계정 상태 확인 (임시)
+  app.get('/api/debug/admin-status', async (req, res) => {
+    try {
+      console.log('Debug API called...');
+      
+      // 먼저 간단한 정보만 확인
+      const adminUser = await storage.getUserByUsername('admin');
+      console.log('Admin user found:', !!adminUser);
+      
+      res.json({
+        adminExists: !!adminUser,
+        adminUser: adminUser ? { 
+          id: adminUser.id, 
+          username: adminUser.username, 
+          name: adminUser.name,
+          passwordLength: adminUser.password?.length || 0,
+          hasPassword: !!adminUser.password
+        } : null,
+        environment: process.env.NODE_ENV || 'development',
+        databaseUrl: process.env.DATABASE_URL ? 'exists' : 'missing',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Debug API error:', error);
+      res.status(500).json({ 
+        error: (error as Error).message, 
+        name: (error as Error).name,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // System settings routes
   app.get('/api/system-settings', isAuthenticated, async (req, res) => {
     try {

@@ -1,9 +1,47 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { initializeAdminUser } from "./initAdmin";
+import bcrypt from 'bcryptjs';
+import { storage } from "./storage";
 
 const app = express();
+
+// Admin 사용자 초기화 함수
+async function initializeAdminUser() {
+  try {
+    console.log('Checking admin user...');
+    const existingAdmin = await storage.getUserByUsername('admin');
+    
+    if (!existingAdmin) {
+      console.log('Creating admin user...');
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      
+      await storage.upsertUser({
+        id: 'admin',
+        username: 'admin',
+        password: hashedPassword,
+        name: '시스템 관리자',
+        email: 'admin@massemble.com',
+        role: 'admin',
+        department: '관리부'
+      });
+      
+      console.log('Admin user created successfully');
+    } else {
+      console.log('Admin user already exists');
+      
+      // 배포 환경에서 비밀번호가 맞지 않을 수 있으므로 강제로 업데이트
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      await storage.upsertUser({
+        ...existingAdmin,
+        password: hashedPassword
+      });
+      console.log('Admin password updated');
+    }
+  } catch (error) {
+    console.error('Error initializing admin user:', error);
+  }
+}
 
 // CORS 설정 - 배포 환경을 위한 설정
 app.use((req, res, next) => {
