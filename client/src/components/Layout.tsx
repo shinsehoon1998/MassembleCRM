@@ -1,6 +1,7 @@
 import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import type { User } from "@shared/schema";
 import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
@@ -48,8 +49,17 @@ export default function Layout({ children }: LayoutProps) {
     return false;
   };
 
-  const handleLogout = () => {
-    window.location.href = "/api/logout";
+  const handleLogout = async () => {
+    try {
+      await apiRequest('POST', '/api/logout');
+      queryClient.clear(); // Clear all cached data
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still redirect even if logout fails
+      queryClient.clear();
+      window.location.href = '/login';
+    }
   };
 
   return (
