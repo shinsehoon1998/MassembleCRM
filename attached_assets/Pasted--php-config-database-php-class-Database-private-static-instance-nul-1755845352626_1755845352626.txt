@@ -1,0 +1,217 @@
+<?php
+// config/database.php - 데이터베이스 연결 설정
+
+class Database {
+    private static $instance = null;
+    private $conn;
+    
+    // 데이터베이스 설정 (Replit 환경변수 또는 직접 설정)
+    private $host;
+    private $db_name;
+    private $username;
+    private $password;
+    
+    private function __construct() {
+        // Replit 환경변수에서 읽기 (또는 직접 설정)
+        $this->host = $_ENV['DB_HOST'] ?? 'localhost';
+        $this->db_name = $_ENV['DB_NAME'] ?? 'massemble_crm';
+        $this->username = $_ENV['DB_USER'] ?? 'root';
+        $this->password = $_ENV['DB_PASS'] ?? '';
+        
+        try {
+            $this->conn = new PDO(
+                "mysql:host={$this->host};dbname={$this->db_name};charset=utf8mb4",
+                $this->username,
+                $this->password,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+                ]
+            );
+        } catch(PDOException $e) {
+            die("Connection Error: " . $e->getMessage());
+        }
+    }
+    
+    public static function getInstance() {
+        if (self::$instance == null) {
+            self::$instance = new Database();
+        }
+        return self::$instance;
+    }
+    
+    public function getConnection() {
+        return $this->conn;
+    }
+    
+    // 트랜잭션 시작
+    public function beginTransaction() {
+        return $this->conn->beginTransaction();
+    }
+    
+    // 트랜잭션 커밋
+    public function commit() {
+        return $this->conn->commit();
+    }
+    
+    // 트랜잭션 롤백
+    public function rollback() {
+        return $this->conn->rollback();
+    }
+    
+    // 마지막 삽입 ID
+    public function lastInsertId() {
+        return $this->conn->lastInsertId();
+    }
+}
+
+// 공통 데이터베이스 함수들
+class DBHelper {
+    private $db;
+    
+    public function __construct() {
+        $this->db = Database::getInstance()->getConnection();
+    }
+    
+    // SELECT 쿼리 실행
+    public function select($sql, $params = []) {
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetchAll();
+        } catch(PDOException $e) {
+            error_log("Select Error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    // SELECT ONE 쿼리 실행
+    public function selectOne($sql, $params = []) {
+        try {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetch();
+        } catch(PDOException $e) {
+            error_log("SelectOne Error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    // INSERT 쿼리 실행
+    public function insert($table, $data) {
+        try {
+            $fields = array_keys($data);
+            $values = array_map(function($field) { return ':' . $field; }, $fields);
+            
+            $sql = "INSERT INTO {$table} (" . implode(', ', $fields) . ") 
+                    VALUES (" . implode(', ', $values) . ")";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($data);
+            
+            return Database::getInstance()->lastInsertId();
+        } catch(PDOException $e) {
+            error_log("Insert Error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    // UPDATE 쿼리 실행
+    public function update($table, $data, $where, $whereParams = []) {
+        try {
+            $fields = array_map(function($field) { 
+                return "{$field} = :{$field}"; 
+            }, array_keys($data));
+            
+            $sql = "UPDATE {$table} SET " . implode(', ', $fields) . " WHERE {$where}";
+            
+            $stmt = $this->db->prepare($sql);
+            $params = array_merge($data, $whereParams);
+            $stmt->execute($params);
+            
+            return $stmt->rowCount();
+        } catch(PDOException $e) {
+            error_log("Update Error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    // DELETE 쿼리 실행
+    public function delete($table, $where, $params = []) {
+        try {
+            $sql = "DELETE FROM {$table} WHERE {$where}";
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->rowCount();
+        } catch(PDOException $e) {
+            error_log("Delete Error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    // 페이징 처리
+    public function paginate($sql, $params = [], $page = 1, $perPage = 20) {
+        try {
+            // 전체 개수 구하기
+            $countSql = "SELECT COUNT(*) as total FROM ({$sql}) as t";
+            $stmt = $this->db->prepare($countSql);
+            $stmt->execute($params);
+            $total = $stmt->fetch()['total'];
+            
+            // 페이징 처리
+            $offset = ($page - 1) * $perPage;
+            $sql .= " LIMIT {$perPage} OFFSET {$offset}";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute($params);
+            $data = $stmt->fetchAll();
+            
+            return [
+                'data' => $data,
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalPages' => ceil($total / $perPage)
+            ];
+        } catch(PDOException $e) {
+            error_log("Paginate Error: " . $e->getMessage());
+            return false;
+        }
+    }
+}
+
+// 활동 로그 기록 함수
+function logActivity($userId, $action, $targetType, $targetId, $details = '') {
+    $db = new DBHelper();
+    $db->insert('activity_logs', [
+        'user_id' => $userId,
+        'action' => $action,
+        'target_type' => $targetType,
+        'target_id' => $targetId,
+        'details' => $details,
+        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? ''
+    ]);
+}
+
+// 시스템 설정 가져오기
+function getSettings() {
+    $db = new DBHelper();
+    $settings = $db->select("SELECT setting_key, setting_value FROM settings");
+    $result = [];
+    foreach ($settings as $setting) {
+        $result[$setting['setting_key']] = $setting['setting_value'];
+    }
+    return $result;
+}
+
+// 시스템 설정 업데이트
+function updateSetting($key, $value) {
+    $db = new DBHelper();
+    return $db->update('settings', 
+        ['setting_value' => $value], 
+        'setting_key = :key', 
+        ['key' => $key]
+    );
+}

@@ -1,0 +1,157 @@
+-- 마셈블 CRM 데이터베이스 스키마
+CREATE DATABASE IF NOT EXISTS massemble_crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE massemble_crm;
+
+-- 사용자 테이블
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100),
+    phone VARCHAR(20),
+    department VARCHAR(50),
+    team VARCHAR(50),
+    role ENUM('admin', 'manager', 'counselor') DEFAULT 'counselor',
+    is_active BOOLEAN DEFAULT TRUE,
+    last_login DATETIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 고객 테이블
+CREATE TABLE IF NOT EXISTS customers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    -- 기본 정보
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    phone2 VARCHAR(20),
+    birth_date DATE,
+    gender ENUM('M', 'F', 'N') DEFAULT 'N',
+    
+    -- 주소 정보
+    zipcode VARCHAR(10),
+    address VARCHAR(255),
+    address_detail VARCHAR(255),
+    
+    -- 채무 정보
+    debt_amount DECIMAL(15, 0),  -- 채무금액
+    monthly_income DECIMAL(15, 0),  -- 월소득
+    job_type VARCHAR(50),  -- 직업구분
+    company_name VARCHAR(100),  -- 회사명
+    
+    -- 상담 정보
+    consult_type VARCHAR(50),  -- 상담유형
+    consult_path VARCHAR(50),  -- 유입경로
+    status VARCHAR(20) DEFAULT '인텍',  -- 상태 (인텍, 수수, 접수, 작업, 완료)
+    
+    -- 담당자 정보
+    assigned_user_id INT,
+    secondary_user_id INT,  -- 2차 상담사
+    department VARCHAR(50),
+    team VARCHAR(50),
+    
+    -- 메모
+    memo TEXT,
+    admin_memo TEXT,  -- 관리자 메모
+    
+    -- 메타 정보
+    source VARCHAR(50),  -- DB출처
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (secondary_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_phone (phone),
+    INDEX idx_status (status),
+    INDEX idx_assigned (assigned_user_id),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 상담 이력 테이블
+CREATE TABLE IF NOT EXISTS consult_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    user_id INT NOT NULL,
+    consult_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    consult_type VARCHAR(50),  -- 전화, 방문, 카톡 등
+    content TEXT,
+    next_action VARCHAR(255),
+    next_date DATE,
+    status_before VARCHAR(20),
+    status_after VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_customer (customer_id),
+    INDEX idx_date (consult_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 파일 첨부 테이블
+CREATE TABLE IF NOT EXISTS attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    file_name VARCHAR(255),
+    file_path VARCHAR(500),
+    file_type VARCHAR(50),
+    file_size INT,
+    uploaded_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_customer (customer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 시스템 설정 테이블
+CREATE TABLE IF NOT EXISTS settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT,
+    setting_type VARCHAR(50),
+    description VARCHAR(255),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 활동 로그 테이블
+CREATE TABLE IF NOT EXISTS activity_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    action VARCHAR(50),
+    target_type VARCHAR(50),  -- customer, user, etc
+    target_id INT,
+    details TEXT,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_user (user_id),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 샘플 데이터 삽입
+
+-- 관리자 계정 (비밀번호: admin123)
+INSERT INTO users (username, password, name, role, department, team) VALUES 
+('admin', '$2y$10$YourHashedPasswordHere', '관리자', 'admin', '경영지원', '관리팀'),
+('manager1', '$2y$10$YourHashedPasswordHere', '김팀장', 'manager', '상담1팀', '1팀'),
+('counsel1', '$2y$10$YourHashedPasswordHere', '이상담', 'counselor', '상담1팀', '1팀'),
+('counsel2', '$2y$10$YourHashedPasswordHere', '박상담', 'counselor', '상담1팀', '1팀');
+
+-- 샘플 고객 데이터
+INSERT INTO customers (name, phone, birth_date, gender, debt_amount, monthly_income, status, assigned_user_id, memo) VALUES
+('김철수', '010-1234-5678', '1980-05-15', 'M', 50000000, 3000000, '인텍', 3, '초기 상담 예정'),
+('이영희', '010-2345-6789', '1985-08-20', 'F', 30000000, 2500000, '수수', 3, '서류 제출 대기중'),
+('박민수', '010-3456-7890', '1990-03-10', 'M', 70000000, 4000000, '접수', 4, '접수 완료, 진행 중'),
+('최지은', '010-4567-8901', '1988-11-25', 'F', 45000000, 2800000, '작업', 4, '법원 서류 작성 중'),
+('정대현', '010-5678-9012', '1975-07-08', 'M', 80000000, 3500000, '완료', 3, '개인회생 인가 완료');
+
+-- 시스템 설정
+INSERT INTO settings (setting_key, setting_value, setting_type, description) VALUES
+('company_name', '마셈블', 'text', '회사명'),
+('items_per_page', '20', 'number', '페이지당 표시 항목 수'),
+('auto_logout_minutes', '30', 'number', '자동 로그아웃 시간(분)'),
+('enable_sms', 'true', 'boolean', 'SMS 발송 기능 사용'),
+('business_hours_start', '09:00', 'time', '업무 시작 시간'),
+('business_hours_end', '18:00', 'time', '업무 종료 시간');

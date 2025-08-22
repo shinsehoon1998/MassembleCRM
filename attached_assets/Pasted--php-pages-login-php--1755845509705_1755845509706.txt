@@ -1,0 +1,511 @@
+<?php
+// ============================================
+// pages/login.php - 로그인 페이지
+// ============================================
+?>
+<div class="container">
+    <div class="row justify-content-center mt-5">
+        <div class="col-md-4">
+            <div class="card shadow">
+                <div class="card-body p-5">
+                    <div class="text-center mb-4">
+                        <h2><i class="fas fa-user-tie"></i> 마셈블 CRM</h2>
+                        <p class="text-muted">개인회생 상담 관리 시스템</p>
+                    </div>
+                    
+                    <form id="loginForm" method="POST">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">아이디</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="password" class="form-label">비밀번호</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="remember">
+                            <label class="form-check-label" for="remember">로그인 상태 유지</label>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">로그인</button>
+                    </form>
+                    
+                    <div class="mt-3 text-center">
+                        <small class="text-muted">
+                            테스트 계정: admin / admin123
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('api/auth.php?action=login', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            window.location.href = 'index.php?page=dashboard';
+        } else {
+            alert(result.message || '로그인에 실패했습니다.');
+        }
+    } catch (error) {
+        alert('서버 오류가 발생했습니다.');
+    }
+});
+</script>
+
+<?php
+// ============================================
+// pages/dashboard.php - 대시보드
+// ============================================
+require_once 'config/database.php';
+$db = new DBHelper();
+
+// 통계 데이터 조회
+$stats = [
+    'today_new' => $db->selectOne("SELECT COUNT(*) as cnt FROM customers WHERE DATE(created_at) = CURDATE()")['cnt'] ?? 0,
+    'total_customers' => $db->selectOne("SELECT COUNT(*) as cnt FROM customers")['cnt'] ?? 0,
+    'in_progress' => $db->selectOne("SELECT COUNT(*) as cnt FROM customers WHERE status IN ('수수', '접수', '작업')")['cnt'] ?? 0,
+    'completed' => $db->selectOne("SELECT COUNT(*) as cnt FROM customers WHERE status = '완료'")['cnt'] ?? 0,
+];
+
+// 최근 고객 목록
+$recentCustomers = $db->select("
+    SELECT c.*, u.name as counselor_name 
+    FROM customers c
+    LEFT JOIN users u ON c.assigned_user_id = u.id
+    ORDER BY c.created_at DESC
+    LIMIT 10
+");
+
+// 상태별 통계
+$statusStats = $db->select("
+    SELECT status, COUNT(*) as cnt 
+    FROM customers 
+    GROUP BY status
+");
+?>
+
+<div class="row mb-4">
+    <!-- 통계 카드들 -->
+    <div class="col-md-3">
+        <div class="stat-card">
+            <h5>오늘 신규</h5>
+            <h2><?php echo number_format($stats['today_new']); ?></h2>
+            <div class="change positive">
+                <i class="fas fa-arrow-up"></i> 전일 대비 +15%
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <h5>전체 고객</h5>
+            <h2><?php echo number_format($stats['total_customers']); ?></h2>
+            <div class="change positive">
+                <i class="fas fa-arrow-up"></i> 전월 대비 +8%
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <h5>진행 중</h5>
+            <h2><?php echo number_format($stats['in_progress']); ?></h2>
+            <div class="change negative">
+                <i class="fas fa-arrow-down"></i> 전주 대비 -3%
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <h5>완료</h5>
+            <h2><?php echo number_format($stats['completed']); ?></h2>
+            <div class="change positive">
+                <i class="fas fa-arrow-up"></i> 전월 대비 +12%
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- 최근 고객 목록 -->
+    <div class="col-md-8">
+        <div class="table-container">
+            <h5 class="mb-3">최근 등록 고객</h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>이름</th>
+                        <th>연락처</th>
+                        <th>상태</th>
+                        <th>담당자</th>
+                        <th>등록일</th>
+                        <th>액션</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($recentCustomers as $customer): ?>
+                    <tr>
+                        <td><?php echo htmlspecialchars($customer['name']); ?></td>
+                        <td><?php echo htmlspecialchars($customer['phone']); ?></td>
+                        <td>
+                            <span class="status-badge status-<?php echo $customer['status']; ?>">
+                                <?php echo $customer['status']; ?>
+                            </span>
+                        </td>
+                        <td><?php echo htmlspecialchars($customer['counselor_name'] ?? '-'); ?></td>
+                        <td><?php echo date('m/d H:i', strtotime($customer['created_at'])); ?></td>
+                        <td>
+                            <a href="index.php?page=customer_detail&id=<?php echo $customer['id']; ?>" 
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- 상태별 통계 차트 -->
+    <div class="col-md-4">
+        <div class="table-container">
+            <h5 class="mb-3">상태별 현황</h5>
+            <canvas id="statusChart" height="300"></canvas>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// 상태별 차트
+const statusData = <?php echo json_encode($statusStats); ?>;
+const ctx = document.getElementById('statusChart').getContext('2d');
+new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+        labels: statusData.map(item => item.status),
+        datasets: [{
+            data: statusData.map(item => item.cnt),
+            backgroundColor: [
+                '#ffd93d',
+                '#6bcf7f', 
+                '#4a90e2',
+                '#f5a623',
+                '#7ed321'
+            ]
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+</script>
+
+<?php
+// ============================================
+// pages/customers.php - 고객 관리 페이지
+// ============================================
+require_once 'config/database.php';
+$db = new DBHelper();
+
+$page = $_GET['p'] ?? 1;
+$search = $_GET['search'] ?? '';
+$status = $_GET['status'] ?? '';
+
+// 검색 조건 구성
+$where = "1=1";
+$params = [];
+
+if ($search) {
+    $where .= " AND (c.name LIKE :search OR c.phone LIKE :search)";
+    $params['search'] = "%{$search}%";
+}
+
+if ($status) {
+    $where .= " AND c.status = :status";
+    $params['status'] = $status;
+}
+
+// 고객 목록 조회
+$sql = "
+    SELECT c.*, u.name as counselor_name 
+    FROM customers c
+    LEFT JOIN users u ON c.assigned_user_id = u.id
+    WHERE {$where}
+    ORDER BY c.created_at DESC
+";
+
+$result = $db->paginate($sql, $params, $page, 20);
+$customers = $result['data'];
+?>
+
+<div class="search-bar">
+    <form method="GET" class="row g-3">
+        <input type="hidden" name="page" value="customers">
+        <div class="col-md-3">
+            <input type="text" class="form-control" name="search" placeholder="이름, 전화번호 검색" 
+                   value="<?php echo htmlspecialchars($search); ?>">
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" name="status">
+                <option value="">전체 상태</option>
+                <option value="인텍" <?php echo $status === '인텍' ? 'selected' : ''; ?>>인텍</option>
+                <option value="수수" <?php echo $status === '수수' ? 'selected' : ''; ?>>수수</option>
+                <option value="접수" <?php echo $status === '접수' ? 'selected' : ''; ?>>접수</option>
+                <option value="작업" <?php echo $status === '작업' ? 'selected' : ''; ?>>작업</option>
+                <option value="완료" <?php echo $status === '완료' ? 'selected' : ''; ?>>완료</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i> 검색
+            </button>
+        </div>
+        <div class="col-md-5 text-end">
+            <button type="button" class="btn btn-success" onclick="openCustomerModal()">
+                <i class="fas fa-plus"></i> 신규 고객 등록
+            </button>
+            <button type="button" class="btn btn-info">
+                <i class="fas fa-download"></i> 엑셀 다운로드
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="table-container">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="selectAll"></th>
+                <th>번호</th>
+                <th>이름</th>
+                <th>연락처</th>
+                <th>채무금액</th>
+                <th>상태</th>
+                <th>담당자</th>
+                <th>등록일</th>
+                <th>액션</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php 
+            $no = $result['total'] - (($page - 1) * $result['perPage']);
+            foreach ($customers as $customer): 
+            ?>
+            <tr>
+                <td><input type="checkbox" class="customer-check" value="<?php echo $customer['id']; ?>"></td>
+                <td><?php echo $no--; ?></td>
+                <td><?php echo htmlspecialchars($customer['name']); ?></td>
+                <td><?php echo htmlspecialchars($customer['phone']); ?></td>
+                <td><?php echo number_format($customer['debt_amount']); ?>원</td>
+                <td>
+                    <span class="status-badge status-<?php echo $customer['status']; ?>">
+                        <?php echo $customer['status']; ?>
+                    </span>
+                </td>
+                <td><?php echo htmlspecialchars($customer['counselor_name'] ?? '-'); ?></td>
+                <td><?php echo date('Y-m-d', strtotime($customer['created_at'])); ?></td>
+                <td>
+                    <a href="index.php?page=customer_detail&id=<?php echo $customer['id']; ?>" 
+                       class="btn btn-sm btn-outline-primary" title="상세보기">
+                        <i class="fas fa-eye"></i>
+                    </a>
+                    <button class="btn btn-sm btn-outline-warning" 
+                            onclick="editCustomer(<?php echo $customer['id']; ?>)" title="수정">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" 
+                            onclick="deleteCustomer(<?php echo $customer['id']; ?>)" title="삭제">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    
+    <!-- 페이징 -->
+    <?php if ($result['totalPages'] > 1): ?>
+    <nav>
+        <ul class="pagination justify-content-center">
+            <?php for ($i = 1; $i <= $result['totalPages']; $i++): ?>
+            <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>">
+                <a class="page-link" href="?page=customers&p=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status); ?>">
+                    <?php echo $i; ?>
+                </a>
+            </li>
+            <?php endfor; ?>
+        </ul>
+    </nav>
+    <?php endif; ?>
+</div>
+
+<!-- 고객 등록/수정 모달 -->
+<div class="modal fade" id="customerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">고객 정보</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="customerForm">
+                    <input type="hidden" id="customerId" name="id">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">이름 *</label>
+                            <input type="text" class="form-control" name="name" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">연락처 *</label>
+                            <input type="text" class="form-control" name="phone" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">생년월일</label>
+                            <input type="date" class="form-control" name="birth_date">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">성별</label>
+                            <select class="form-select" name="gender">
+                                <option value="N">선택안함</option>
+                                <option value="M">남성</option>
+                                <option value="F">여성</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">채무금액</label>
+                            <input type="number" class="form-control" name="debt_amount">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">월소득</label>
+                            <input type="number" class="form-control" name="monthly_income">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">상태</label>
+                            <select class="form-select" name="status">
+                                <option value="인텍">인텍</option>
+                                <option value="수수">수수</option>
+                                <option value="접수">접수</option>
+                                <option value="작업">작업</option>
+                                <option value="완료">완료</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">담당자</label>
+                            <select class="form-select" name="assigned_user_id">
+                                <option value="">미지정</option>
+                                <?php
+                                $counselors = $db->select("SELECT id, name FROM users WHERE is_active = 1");
+                                foreach ($counselors as $counselor):
+                                ?>
+                                <option value="<?php echo $counselor['id']; ?>">
+                                    <?php echo htmlspecialchars($counselor['name']); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">메모</label>
+                        <textarea class="form-control" name="memo" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" onclick="saveCustomer()">저장</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 고객 모달 열기
+function openCustomerModal(id = null) {
+    if (id) {
+        // 수정 모드 - API에서 데이터 로드
+        fetch(`api/customers.php?action=get&id=${id}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const form = document.getElementById('customerForm');
+                    Object.keys(data.customer).forEach(key => {
+                        if (form[key]) form[key].value = data.customer[key];
+                    });
+                }
+            });
+    } else {
+        document.getElementById('customerForm').reset();
+        document.getElementById('customerId').value = '';
+    }
+    
+    new bootstrap.Modal(document.getElementById('customerModal')).show();
+}
+
+// 고객 저장
+async function saveCustomer() {
+    const formData = new FormData(document.getElementById('customerForm'));
+    const id = formData.get('id');
+    
+    const response = await fetch('api/customers.php?action=' + (id ? 'update' : 'create'), {
+        method: 'POST',
+        body: formData
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+        alert('저장되었습니다.');
+        location.reload();
+    } else {
+        alert(result.message || '저장에 실패했습니다.');
+    }
+}
+
+// 고객 삭제
+async function deleteCustomer(id) {
+    if (!confirm('정말 삭제하시겠습니까?')) return;
+    
+    const response = await fetch(`api/customers.php?action=delete&id=${id}`, {
+        method: 'POST'
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+        alert('삭제되었습니다.');
+        location.reload();
+    } else {
+        alert(result.message || '삭제에 실패했습니다.');
+    }
+}
+
+// 전체 선택
+document.getElementById('selectAll').addEventListener('change', function() {
+    document.querySelectorAll('.customer-check').forEach(checkbox => {
+        checkbox.checked = this.checked;
+    });
+});
+</script>

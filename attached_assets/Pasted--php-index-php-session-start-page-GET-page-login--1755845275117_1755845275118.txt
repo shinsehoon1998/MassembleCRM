@@ -1,0 +1,273 @@
+<?php
+// index.php - 메인 진입점
+session_start();
+
+// 라우팅 설정
+$page = $_GET['page'] ?? 'login';
+
+// 로그인 체크 (로그인 페이지 제외)
+if ($page !== 'login' && !isset($_SESSION['user_id'])) {
+    header('Location: index.php?page=login');
+    exit;
+}
+
+// 페이지 타이틀 설정
+$pageTitle = [
+    'login' => '로그인',
+    'dashboard' => '대시보드',
+    'customers' => '고객관리',
+    'customer_detail' => '고객상세',
+    'users' => '사용자관리',
+    'settings' => '환경설정'
+][$page] ?? '마셈블 CRM';
+
+?>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo $pageTitle; ?> - 마셈블 CRM</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <style>
+        :root {
+            --primary-color: #2c7da0;
+            --secondary-color: #61a5c2;
+            --danger-color: #d32f2f;
+            --success-color: #2e7d32;
+            --warning-color: #ed6c02;
+        }
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .sidebar {
+            background-color: #2c3e50;
+            min-height: 100vh;
+            padding: 0;
+        }
+        
+        .sidebar .nav-link {
+            color: #ecf0f1;
+            padding: 15px 20px;
+            border-left: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .sidebar .nav-link:hover {
+            background-color: #34495e;
+            border-left-color: var(--primary-color);
+        }
+        
+        .sidebar .nav-link.active {
+            background-color: #34495e;
+            border-left-color: var(--primary-color);
+        }
+        
+        .sidebar .nav-link i {
+            margin-right: 10px;
+            width: 20px;
+        }
+        
+        .main-content {
+            padding: 20px;
+        }
+        
+        .logo {
+            padding: 20px;
+            text-align: center;
+            background-color: #1a252f;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        
+        .top-navbar {
+            background-color: white;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .stat-card h5 {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card h2 {
+            color: #333;
+            font-size: 32px;
+            margin: 0;
+        }
+        
+        .stat-card .change {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .stat-card .change.positive {
+            color: var(--success-color);
+        }
+        
+        .stat-card .change.negative {
+            color: var(--danger-color);
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-인텍 { background-color: #ffd93d; color: #333; }
+        .status-수수 { background-color: #6bcf7f; color: white; }
+        .status-접수 { background-color: #4a90e2; color: white; }
+        .status-작업 { background-color: #f5a623; color: white; }
+        .status-완료 { background-color: #7ed321; color: white; }
+        
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .search-bar {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+    </style>
+</head>
+<body>
+    <?php if ($page === 'login'): ?>
+        <!-- 로그인 페이지는 레이아웃 없이 표시 -->
+        <?php include 'pages/login.php'; ?>
+    <?php else: ?>
+        <!-- 메인 레이아웃 -->
+        <div class="container-fluid">
+            <div class="row">
+                <!-- 사이드바 -->
+                <div class="col-md-2 sidebar">
+                    <div class="logo">
+                        <i class="fas fa-user-tie"></i> 마셈블 CRM
+                    </div>
+                    <nav class="nav flex-column">
+                        <a class="nav-link <?php echo $page === 'dashboard' ? 'active' : ''; ?>" 
+                           href="index.php?page=dashboard">
+                            <i class="fas fa-tachometer-alt"></i> 대시보드
+                        </a>
+                        <a class="nav-link <?php echo $page === 'customers' ? 'active' : ''; ?>" 
+                           href="index.php?page=customers">
+                            <i class="fas fa-users"></i> 고객관리
+                        </a>
+                        <?php if ($_SESSION['role'] === 'admin'): ?>
+                        <a class="nav-link <?php echo $page === 'users' ? 'active' : ''; ?>" 
+                           href="index.php?page=users">
+                            <i class="fas fa-user-cog"></i> 사용자관리
+                        </a>
+                        <a class="nav-link <?php echo $page === 'settings' ? 'active' : ''; ?>" 
+                           href="index.php?page=settings">
+                            <i class="fas fa-cog"></i> 환경설정
+                        </a>
+                        <?php endif; ?>
+                        <a class="nav-link" href="api/auth.php?action=logout">
+                            <i class="fas fa-sign-out-alt"></i> 로그아웃
+                        </a>
+                    </nav>
+                </div>
+                
+                <!-- 메인 컨텐츠 -->
+                <div class="col-md-10">
+                    <!-- 상단 네비바 -->
+                    <div class="top-navbar d-flex justify-content-between align-items-center">
+                        <h3><?php echo $pageTitle; ?></h3>
+                        <div>
+                            <span class="me-3">
+                                <i class="fas fa-user"></i> 
+                                <?php echo $_SESSION['name'] ?? '사용자'; ?>
+                                (<?php echo $_SESSION['department'] ?? ''; ?>)
+                            </span>
+                            <span>
+                                <i class="fas fa-clock"></i> 
+                                <span id="currentTime"></span>
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- 페이지 컨텐츠 -->
+                    <div class="main-content">
+                        <?php
+                        $pagePath = "pages/{$page}.php";
+                        if (file_exists($pagePath)) {
+                            include $pagePath;
+                        } else {
+                            echo '<div class="alert alert-danger">페이지를 찾을 수 없습니다.</div>';
+                        }
+                        ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+    
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // 현재 시간 표시
+        function updateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleString('ko-KR');
+            document.getElementById('currentTime').textContent = timeString;
+        }
+        
+        setInterval(updateTime, 1000);
+        updateTime();
+        
+        // 자동 로그아웃 (30분)
+        let logoutTimer;
+        function resetLogoutTimer() {
+            clearTimeout(logoutTimer);
+            logoutTimer = setTimeout(function() {
+                alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+                window.location.href = 'api/auth.php?action=logout';
+            }, 30 * 60 * 1000); // 30분
+        }
+        
+        document.addEventListener('click', resetLogoutTimer);
+        document.addEventListener('keypress', resetLogoutTimer);
+        resetLogoutTimer();
+    </script>
+</body>
+</html>
