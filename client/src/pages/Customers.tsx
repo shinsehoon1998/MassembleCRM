@@ -255,12 +255,30 @@ export default function Customers() {
 
   const handleBatchUpdate = (updates: any) => {
     if (selectedCustomers.length === 0) return;
-    batchUpdateMutation.mutate({ customerIds: selectedCustomers, updates });
+    
+    let confirmMessage = '';
+    if (updates.status) {
+      confirmMessage = `선택된 ${selectedCustomers.length}명의 고객 상태를 "${updates.status}"(으)로 변경하시겠습니까?`;
+    } else if (updates.assignedUserId) {
+      const counselor = counselors?.find(c => c.id === updates.assignedUserId);
+      confirmMessage = `선택된 ${selectedCustomers.length}명의 고객 담당자를 "${counselor?.name || '미지정'}"(으)로 변경하시겠습니까?`;
+    } else if (updates.secondaryUserId !== undefined) {
+      if (updates.secondaryUserId === '') {
+        confirmMessage = `선택된 ${selectedCustomers.length}명의 고객 공유를 해제하시겠습니까?`;
+      } else {
+        const counselor = counselors?.find(c => c.id === updates.secondaryUserId);
+        confirmMessage = `선택된 ${selectedCustomers.length}명의 고객을 "${counselor?.name || '미지정'}"와(과) 공유하시겠습니까?`;
+      }
+    }
+    
+    if (confirmMessage && confirm(confirmMessage)) {
+      batchUpdateMutation.mutate({ customerIds: selectedCustomers, updates });
+    }
   };
 
   const handleBatchDelete = () => {
     if (selectedCustomers.length === 0) return;
-    if (confirm(`선택된 ${selectedCustomers.length}개의 고객을 삭제하시겠습니까?`)) {
+    if (confirm(`선택된 ${selectedCustomers.length}개의 고객을 영구적으로 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) {
       batchDeleteMutation.mutate(selectedCustomers);
     }
   };
@@ -350,6 +368,27 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select onValueChange={(assignedUserId) => handleBatchUpdate({ assignedUserId })}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="담당자 변경" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {counselors?.map((counselor) => (
+                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select onValueChange={(secondaryUserId) => handleBatchUpdate({ secondaryUserId })}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue placeholder="공유 담당자" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">공유 해제</SelectItem>
+                    {counselors?.map((counselor) => (
+                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button 
                   variant="destructive" 
                   size="sm" 
@@ -434,6 +473,7 @@ export default function Customers() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">채무금액</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">공유담당자</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">메모</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">등록일</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
@@ -504,6 +544,12 @@ export default function Customers() {
                           <div className="text-sm text-gray-900">{customer.assignedUser?.name || '-'}</div>
                           {customer.assignedUser?.department && (
                             <div className="text-sm text-gray-500">{customer.assignedUser.department}</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{customer.secondaryUser?.name || '-'}</div>
+                          {customer.secondaryUser?.department && (
+                            <div className="text-sm text-gray-500">{customer.secondaryUser.department}</div>
                           )}
                         </td>
                         <td className="px-6 py-4">
@@ -582,7 +628,7 @@ export default function Customers() {
                   })}
                   {(!customersData?.customers || customersData.customers.length === 0) && (
                     <tr>
-                      <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan={11} className="px-6 py-8 text-center text-gray-500">
                         검색 결과가 없습니다.
                       </td>
                     </tr>

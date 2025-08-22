@@ -167,15 +167,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const customerId of customerIds) {
         try {
           const customer = await storage.updateCustomer(customerId, updates);
-          results.push(customer);
-          
-          // Log activity
-          await storage.createActivityLog({
-            userId: req.user.claims.sub,
-            customerId: customer.id,
-            action: "customer_batch_updated",
-            description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
-          });
+          if (customer) {
+            results.push(customer);
+            
+            // Log activity
+            await storage.createActivityLog({
+              userId: req.user.claims.sub,
+              customerId: customer.id,
+              action: "customer_batch_updated",
+              description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
+            });
+          }
         } catch (error) {
           console.error(`Error updating customer ${customerId}:`, error);
         }
