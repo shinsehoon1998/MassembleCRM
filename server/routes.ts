@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
 import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema } from "@shared/schema";
@@ -550,14 +551,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // 디버깅용: admin 계정 상태 확인 (임시)
+  // 임시 관리자 생성 엔드포인트 (배포 환경용)
+  app.post('/api/emergency/create-admin', async (req, res) => {
+    try {
+      // 간단한 보안 키 체크 (URL 파라미터나 헤더로)
+      const secretKey = req.query.secret || req.headers['x-admin-secret'];
+      if (secretKey !== 'massemble-emergency-2024') {
+        return res.status(403).json({ message: '접근이 거부되었습니다.' });
+      }
+
+      console.log('Emergency admin creation requested...');
+      
+      // 기존 admin 사용자 체크
+      const existingAdmin = await storage.getUserByUsername('admin');
+      if (existingAdmin) {
+        // 기존 admin이 있으면 비밀번호만 업데이트
+        const hashedPassword = await bcrypt.hash('admin123', 10);
+        await storage.upsertUser({
+          ...existingAdmin,
+          password: hashedPassword
+        });
+        
+        console.log('Admin password reset successfully');
+        return res.json({ 
+          message: 'Admin 계정 비밀번호가 admin123으로 재설정되었습니다.',
+          action: 'password_reset'
+        });
+      } else {
+        // 새로 생성
+        const hashedPassword = await bcrypt.hash('admin123', 10);
+        const newAdmin = await storage.upsertUser({
+          id: 'admin',
+          username: 'admin',
+          password: hashedPassword,
+          name: '시스템 관리자',
+          email: 'admin@massemble.com',
+          role: 'admin',
+          department: '관리부'
+        });
+        
+        console.log('New admin created successfully');
+        return res.json({ 
+          message: 'Admin 계정이 생성되었습니다. (admin/admin123)',
+          action: 'created',
+          adminId: newAdmin.id
+        });
+      }
+    } catch (error) {
+      console.error('Emergency admin creation error:', error);
+      res.status(500).json({ 
+        error: (error as Error).message,
+        message: '관리자 계정 생성 중 오류가 발생했습니다.'
+      });
+    }
+  });
+
+  // 디버깅용: admin 계정 상태 확인
   app.get('/api/debug/admin-status', async (req, res) => {
     try {
-      console.log('Debug API called...');
-      
-      // 먼저 간단한 정보만 확인
       const adminUser = await storage.getUserByUsername('admin');
-      console.log('Admin user found:', !!adminUser);
       
       res.json({
         adminExists: !!adminUser,
@@ -565,18 +617,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: adminUser.id, 
           username: adminUser.username, 
           name: adminUser.name,
-          passwordLength: adminUser.password?.length || 0,
-          hasPassword: !!adminUser.password
+          passwordLength: adminUser.password?.length || 0
         } : null,
         environment: process.env.NODE_ENV || 'development',
-        databaseUrl: process.env.DATABASE_URL ? 'exists' : 'missing',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        emergencyEndpoint: '/api/emergency/create-admin?secret=massemble-emergency-2024'
       });
     } catch (error) {
       console.error('Debug API error:', error);
       res.status(500).json({ 
-        error: (error as Error).message, 
-        name: (error as Error).name,
+        error: (error as Error).message,
         timestamp: new Date().toISOString()
       });
     }
