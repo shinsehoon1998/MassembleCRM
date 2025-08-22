@@ -260,7 +260,7 @@ export default function Customers() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <Checkbox
                             checked={selectedCustomers.includes(customer.id)}
-                            onCheckedChange={(checked) => handleSelectCustomer(customer.id, checked)}
+                            onCheckedChange={(checked) => handleSelectCustomer(customer.id, checked === true)}
                             data-testid={`checkbox-customer-${customer.id}`}
                           />
                         </td>
@@ -308,7 +308,7 @@ export default function Customers() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko })}
+                          {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <Link href={`/customers/${customer.id}`}>
