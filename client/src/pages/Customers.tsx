@@ -263,8 +263,9 @@ export default function Customers() {
       const counselor = counselors?.find(c => c.id === updates.assignedUserId);
       confirmMessage = `선택된 ${selectedCustomers.length}명의 고객 담당자를 "${counselor?.name || '미지정'}"(으)로 변경하시겠습니까?`;
     } else if (updates.secondaryUserId !== undefined) {
-      if (updates.secondaryUserId === '') {
+      if (updates.secondaryUserId === 'CLEAR') {
         confirmMessage = `선택된 ${selectedCustomers.length}명의 고객 공유를 해제하시겠습니까?`;
+        updates.secondaryUserId = null;
       } else {
         const counselor = counselors?.find(c => c.id === updates.secondaryUserId);
         confirmMessage = `선택된 ${selectedCustomers.length}명의 고객을 "${counselor?.name || '미지정'}"와(과) 공유하시겠습니까?`;
@@ -383,7 +384,7 @@ export default function Customers() {
                     <SelectValue placeholder="공유 담당자" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">공유 해제</SelectItem>
+                    <SelectItem value="CLEAR">공유 해제</SelectItem>
                     {counselors?.map((counselor) => (
                       <SelectItem key={counselor.id} value={counselor.id}>{counselor.name}</SelectItem>
                     ))}
