@@ -2,6 +2,7 @@ import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import type { User } from "@shared/schema";
 import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
 
 interface LayoutProps {
