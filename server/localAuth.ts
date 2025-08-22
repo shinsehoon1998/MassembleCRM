@@ -14,21 +14,27 @@ export function getSession() {
     tableName: "sessions",
   });
   return session({
+    name: 'massemble.session',
     secret: process.env.SESSION_SECRET || 'massemble-crm-secret-key-dev',
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Reset expiration on each request
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production' || process.env.REPLIT_DOMAINS ? true : false,
+      secure: 'auto', // Let express decide based on X-Forwarded-Proto header
       sameSite: 'lax',
       maxAge: sessionTtl,
+      domain: undefined, // Let browser decide
     },
   });
 }
 
 export async function setupAuth(app: Express) {
+  // Trust proxy for proper header handling in deployment
   app.set("trust proxy", 1);
+  
+  // Add session middleware
   app.use(getSession());
 
   // Login endpoint
@@ -41,16 +47,23 @@ export async function setupAuth(app: Express) {
       }
 
       const user = await storage.getUserByUsername(username);
+      console.log(`Login attempt for username: ${username}, user found: ${!!user}`);
+      
       if (!user) {
+        console.log(`User not found: ${username}`);
         return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.password || '');
+      console.log(`Password validation for ${username}: ${isValidPassword}`);
+      
       if (!isValidPassword) {
+        console.log(`Invalid password for user: ${username}`);
         return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
       }
 
       // Store user in session
+      console.log(`Setting session for user: ${user.id}`);
       (req.session as any).userId = user.id;
       (req.session as any).user = {
         id: user.id,
@@ -60,6 +73,15 @@ export async function setupAuth(app: Express) {
         role: user.role,
         department: user.department
       };
+      
+      // Save session explicitly
+      req.session.save((err) => {
+        if (err) {
+          console.error('Session save error:', err);
+        } else {
+          console.log('Session saved successfully');
+        }
+      });
 
       res.json({ 
         message: "로그인 성공",
