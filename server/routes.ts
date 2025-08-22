@@ -211,6 +211,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               action: "customer_batch_updated",
               description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
             });
+          } else {
+            console.log(`Customer ${customerId} not found or update failed`);
           }
         } catch (error) {
           console.error(`Error updating customer ${customerId}:`, error);

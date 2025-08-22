@@ -275,8 +275,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCustomer(id: string): Promise<boolean> {
-    const result = await db.delete(customers).where(eq(customers.id, id));
-    return (result.rowCount ?? 0) > 0;
+    // 트랜잭션을 사용하여 관련 데이터를 먼저 삭제
+    try {
+      // 1. 관련된 활동 로그 삭제
+      await db.delete(activityLogs).where(eq(activityLogs.customerId, id));
+      
+      // 2. 관련된 상담 기록 삭제 (있다면)
+      await db.delete(consultations).where(eq(consultations.customerId, id));
+      
+      // 3. 관련된 첨부파일 삭제 (있다면)
+      await db.delete(attachments).where(eq(attachments.customerId, id));
+      
+      // 4. 마지막으로 고객 삭제
+      const result = await db.delete(customers).where(eq(customers.id, id));
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      console.error(`Error deleting customer ${id}:`, error);
+      throw error;
+    }
   }
 
   async getDashboardStats(): Promise<{
