@@ -207,6 +207,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 디버깅용: 고객 ID 확인 API
+  app.post('/api/customers/check-ids', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds } = req.body;
+      console.log('Checking customer IDs:', customerIds);
+      
+      if (!customerIds || !Array.isArray(customerIds)) {
+        return res.status(400).json({ message: "customerIds array is required" });
+      }
+
+      const results = [];
+      for (const customerId of customerIds) {
+        try {
+          const customer = await storage.getCustomer(customerId);
+          results.push({
+            id: customerId,
+            exists: !!customer,
+            name: customer?.name || null
+          });
+        } catch (error) {
+          results.push({
+            id: customerId,
+            exists: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      res.json({ results });
+    } catch (error) {
+      console.error("Error checking customer IDs:", error);
+      res.status(500).json({ message: "Failed to check customer IDs" });
+    }
+  });
+
   // Batch operations for customers
   app.put('/api/customers/batch', isAuthenticated, async (req: any, res) => {
     try {
@@ -260,7 +295,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { customerIds } = req.body;
       
+      console.log('Batch delete request received:', { customerIds, count: customerIds?.length });
+      
       if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        console.log('Invalid customerIds provided');
         return res.status(400).json({ message: "customerIds array is required" });
       }
 
@@ -269,10 +307,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const results = [];
       
       for (const customerId of customerIds) {
+        console.log(`Processing customer delete: ${customerId}`);
         try {
           const customer = await storage.getCustomer(customerId);
+          console.log(`Customer lookup result for ${customerId}:`, customer ? 'found' : 'not found');
+          
           if (customer) {
             const deleted = await storage.deleteCustomer(customerId);
+            console.log(`Delete result for ${customerId}:`, deleted ? 'success' : 'failed');
+            
             if (deleted) {
               deletedCount++;
               results.push({ id: customerId, status: 'deleted', name: customer.name });
@@ -297,6 +340,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      console.log(`Batch delete completed: ${deletedCount} deleted, ${notFoundCount} not found, ${customerIds.length} total`);
+      
       res.json({ 
         deleted: deletedCount, 
         notFound: notFoundCount,

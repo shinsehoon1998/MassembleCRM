@@ -125,9 +125,22 @@ export default function Customers() {
     },
     onError: (error) => {
       console.error("Batch delete error:", error);
+      
+      // 더 구체적인 오류 메시지 표시
+      let errorMessage = "일괄 삭제에 실패했습니다.";
+      if (error?.message) {
+        if (error.message.includes("404")) {
+          errorMessage = "선택된 고객 중 일부를 찾을 수 없습니다. 페이지를 새로고침 후 다시 시도해주세요.";
+        } else if (error.message.includes("401")) {
+          errorMessage = "인증이 만료되었습니다. 다시 로그인해주세요.";
+        } else {
+          errorMessage = `오류: ${error.message}`;
+        }
+      }
+      
       toast({
-        title: "오류",
-        description: "일괄 삭제에 실패했습니다. 다시 시도해 주세요.",
+        title: "삭제 실패",
+        description: errorMessage,
         variant: "destructive",
       });
     },
