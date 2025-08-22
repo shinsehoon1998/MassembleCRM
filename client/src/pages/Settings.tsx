@@ -12,14 +12,9 @@ import { apiRequest } from "@/lib/queryClient";
 import type { SystemSetting } from "@shared/schema";
 
 const CATEGORIES = [
-  { id: '시스템정보', name: '시스템정보' },
-  { id: '업체명', name: '업체명' },
-  { id: '주소', name: '주소' },
-  { id: '고객', name: '고객' },
-  { id: '보상', name: '보상' },
-  { id: 'DB관련정보', name: 'DB관련정보' },
-  { id: '음성메신저', name: '음성메신저' },
-  { id: '담당조직/조직원', name: '담당조직/조직원' },
+  { id: '계층구조', name: '계층구조' },
+  { id: '부서구조', name: '부서구조' },
+  { id: '상태항목', name: '상태항목' },
 ];
 
 interface GroupedSettings {
@@ -30,7 +25,7 @@ export default function Settings() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedCategory, setSelectedCategory] = useState('시스템정보');
+  const [selectedCategory, setSelectedCategory] = useState('계층구조');
   const [editingValues, setEditingValues] = useState<{ [key: string]: string }>({});
 
   // Redirect to home if not authenticated
@@ -55,10 +50,8 @@ export default function Settings() {
 
   const updateSettingMutation = useMutation({
     mutationFn: async (data: { key: string; value: string }) => {
-      await apiRequest(`/api/system-settings/${data.key}`, {
-        method: 'PUT',
-        body: { value: data.value }
-      });
+      const response = await apiRequest("PUT", `/api/system-settings/${data.key}`, { value: data.value });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/system-settings'] });

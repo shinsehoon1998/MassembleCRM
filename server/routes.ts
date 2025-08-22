@@ -530,7 +530,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  const httpServer = createServer(app);
   // System settings routes
   app.get('/api/system-settings', isAuthenticated, async (req, res) => {
     try {
@@ -544,19 +543,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/system-settings/:key', isAuthenticated, async (req: any, res) => {
     try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== 'admin') {
-        return res.status(403).json({ message: "Admin access required" });
-      }
-
       const { value } = req.body;
-      const updatedSetting = await storage.updateSystemSetting(req.params.key, value);
-      res.json(updatedSetting);
+      const setting = await storage.updateSystemSetting(req.params.key, value);
+      res.json(setting);
     } catch (error) {
       console.error("Error updating system setting:", error);
       res.status(500).json({ message: "Failed to update system setting" });
     }
   });
 
+  const httpServer = createServer(app);
   return httpServer;
 }
