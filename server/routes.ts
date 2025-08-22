@@ -1,0 +1,251 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema } from "@shared/schema";
+import { z } from "zod";
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Auth middleware
+  await setupAuth(app);
+
+  // Auth routes
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Dashboard routes
+  app.get('/api/dashboard/stats', isAuthenticated, async (req, res) => {
+    try {
+      const stats = await storage.getDashboardStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard statistics" });
+    }
+  });
+
+  app.get('/api/dashboard/recent-customers', isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 10;
+      const customers = await storage.getRecentCustomers(limit);
+      res.json(customers);
+    } catch (error) {
+      console.error("Error fetching recent customers:", error);
+      res.status(500).json({ message: "Failed to fetch recent customers" });
+    }
+  });
+
+  // Customer routes
+  app.get('/api/customers', isAuthenticated, async (req, res) => {
+    try {
+      const search = req.query.search as string;
+      const status = req.query.status as string;
+      const assignedUserId = req.query.assignedUserId as string;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getCustomers({
+        search,
+        status,
+        assignedUserId,
+        page,
+        limit,
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching customers:", error);
+      res.status(500).json({ message: "Failed to fetch customers" });
+    }
+  });
+
+  app.get('/api/customers/:id', isAuthenticated, async (req, res) => {
+    try {
+      const customer = await storage.getCustomer(req.params.id);
+      if (!customer) {
+        return res.status(404).json({ message: "Customer not found" });
+      }
+      res.json(customer);
+    } catch (error) {
+      console.error("Error fetching customer:", error);
+      res.status(500).json({ message: "Failed to fetch customer" });
+    }
+  });
+
+  app.post('/api/customers', isAuthenticated, async (req: any, res) => {
+    try {
+      const validatedData = insertCustomerSchema.parse(req.body);
+      const customer = await storage.createCustomer(validatedData);
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        customerId: customer.id,
+        action: "customer_created",
+        description: `고객 "${customer.name}"을(를) 등록했습니다.`,
+      });
+
+      res.status(201).json(customer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating customer:", error);
+      res.status(500).json({ message: "Failed to create customer" });
+    }
+  });
+
+  app.put('/api/customers/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const validatedData = updateCustomerSchema.parse(req.body);
+      const customer = await storage.updateCustomer(req.params.id, validatedData);
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        customerId: customer.id,
+        action: "customer_updated",
+        description: `고객 "${customer.name}"의 정보를 수정했습니다.`,
+      });
+
+      res.json(customer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating customer:", error);
+      res.status(500).json({ message: "Failed to update customer" });
+    }
+  });
+
+  app.delete('/api/customers/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const customer = await storage.getCustomer(req.params.id);
+      if (!customer) {
+        return res.status(404).json({ message: "Customer not found" });
+      }
+
+      const deleted = await storage.deleteCustomer(req.params.id);
+      if (!deleted) {
+        return res.status(500).json({ message: "Failed to delete customer" });
+      }
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        action: "customer_deleted",
+        description: `고객 "${customer.name}"을(를) 삭제했습니다.`,
+      });
+
+      res.json({ message: "Customer deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting customer:", error);
+      res.status(500).json({ message: "Failed to delete customer" });
+    }
+  });
+
+  // Consultation routes
+  app.get('/api/customers/:id/consultations', isAuthenticated, async (req, res) => {
+    try {
+      const consultations = await storage.getConsultations(req.params.id);
+      res.json(consultations);
+    } catch (error) {
+      console.error("Error fetching consultations:", error);
+      res.status(500).json({ message: "Failed to fetch consultations" });
+    }
+  });
+
+  app.post('/api/customers/:id/consultations', isAuthenticated, async (req: any, res) => {
+    try {
+      const validatedData = insertConsultationSchema.parse({
+        ...req.body,
+        customerId: req.params.id,
+        userId: req.user.claims.sub,
+      });
+
+      const consultation = await storage.createConsultation(validatedData);
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        customerId: req.params.id,
+        action: "consultation_created",
+        description: `상담 "${consultation.title}"을(를) 등록했습니다.`,
+      });
+
+      res.status(201).json(consultation);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating consultation:", error);
+      res.status(500).json({ message: "Failed to create consultation" });
+    }
+  });
+
+  // User management routes (admin only)
+  app.get('/api/users', isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || !['admin', 'manager'].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const users = await storage.getUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.get('/api/users/counselors', isAuthenticated, async (req, res) => {
+    try {
+      const counselors = await storage.getCounselors();
+      res.json(counselors);
+    } catch (error) {
+      console.error("Error fetching counselors:", error);
+      res.status(500).json({ message: "Failed to fetch counselors" });
+    }
+  });
+
+  app.put('/api/users/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const updatedUser = await storage.updateUser(req.params.id, req.body);
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  // Activity log routes
+  app.get('/api/activity-logs', isAuthenticated, async (req, res) => {
+    try {
+      const customerId = req.query.customerId as string;
+      const limit = parseInt(req.query.limit as string) || 50;
+      
+      const logs = await storage.getActivityLogs(customerId, limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching activity logs:", error);
+      res.status(500).json({ message: "Failed to fetch activity logs" });
+    }
+  });
+
+  const httpServer = createServer(app);
+  return httpServer;
+}
