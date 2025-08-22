@@ -158,29 +158,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/customers/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const validatedData = updateCustomerSchema.parse(req.body);
-      const customer = await storage.updateCustomer(req.params.id, validatedData);
-
-      // Log activity
-      await storage.createActivityLog({
-        userId: req.user.id,
-        customerId: customer.id,
-        action: "customer_updated",
-        description: `고객 "${customer.name}"의 정보를 수정했습니다.`,
-      });
-
-      res.json(customer);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid data", errors: error.errors });
-      }
-      console.error("Error updating customer:", error);
-      res.status(500).json({ message: "Failed to update customer" });
-    }
-  });
-
   // Batch operations for customers (배치 엔드포인트를 개별 엔드포인트보다 먼저 정의)
   app.put('/api/customers/batch', isAuthenticated, async (req: any, res) => {
     try {
@@ -228,6 +205,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to batch update customers" });
     }
   });
+
+  app.put('/api/customers/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const validatedData = updateCustomerSchema.parse(req.body);
+      const customer = await storage.updateCustomer(req.params.id, validatedData);
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: customer.id,
+        action: "customer_updated",
+        description: `고객 "${customer.name}"의 정보를 수정했습니다.`,
+      });
+
+      res.json(customer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error updating customer:", error);
+      res.status(500).json({ message: "Failed to update customer" });
+    }
+  });
+
 
   app.delete('/api/customers/batch', isAuthenticated, async (req: any, res) => {
     try {
