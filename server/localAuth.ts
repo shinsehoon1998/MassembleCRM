@@ -14,18 +14,17 @@ export function getSession() {
     tableName: "sessions",
   });
   return session({
-    name: 'massemble.session',
+    name: 'connect.sid',
     secret: process.env.SESSION_SECRET || 'massemble-crm-secret-key-dev',
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
-    rolling: true, // Reset expiration on each request
+    rolling: true,
     cookie: {
       httpOnly: true,
-      secure: 'auto', // Let express decide based on X-Forwarded-Proto header
-      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none', // 필요한 경우 크로스 사이트 요청 허용
       maxAge: sessionTtl,
-      domain: undefined, // Let browser decide
     },
   });
 }
@@ -74,25 +73,25 @@ export async function setupAuth(app: Express) {
         department: user.department
       };
       
-      // Save session explicitly
+      // Save session explicitly and wait for completion
       req.session.save((err) => {
         if (err) {
           console.error('Session save error:', err);
-        } else {
-          console.log('Session saved successfully');
+          return res.status(500).json({ message: "세션 저장 중 오류가 발생했습니다." });
         }
-      });
-
-      res.json({ 
-        message: "로그인 성공",
-        user: {
-          id: user.id,
-          username: user.username,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          department: user.department
-        }
+        
+        console.log('Session saved successfully');
+        res.json({ 
+          message: "로그인 성공",
+          user: {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            department: user.department
+          }
+        });
       });
     } catch (error) {
       console.error("Login error:", error);

@@ -4,15 +4,37 @@ import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
-// CORS 설정 - 실제 도메인에서 접근 허용
+// CORS 설정 - 배포 환경을 위한 설정
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && origin.includes('.replit.app')) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
+  // 배포 환경에서 NODE_ENV를 production으로 설정
+  if (req.headers.host && req.headers.host.includes('.replit.app')) {
+    process.env.NODE_ENV = 'production';
   }
+  
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://massemble-crm-shinsehoona.replit.app',
+    /https:\/\/.*\.replit\.dev/
+  ];
+  
+  // Origin 체크
+  if (origin) {
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return origin === allowed;
+      } else {
+        return allowed.test(origin);
+      }
+    });
+    
+    if (isAllowed) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Access-Control-Allow-Credentials', 'true');
+    }
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,PATCH,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With, Cookie');
   
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
