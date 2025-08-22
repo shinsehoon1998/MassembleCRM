@@ -199,6 +199,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       let deletedCount = 0;
+      let notFoundCount = 0;
+      const results = [];
       
       for (const customerId of customerIds) {
         try {
@@ -207,6 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const deleted = await storage.deleteCustomer(customerId);
             if (deleted) {
               deletedCount++;
+              results.push({ id: customerId, status: 'deleted', name: customer.name });
               
               // Log activity
               await storage.createActivityLog({
@@ -214,14 +217,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 action: "customer_batch_deleted",
                 description: `고객 "${customer.name}"을(를) 일괄 삭제했습니다.`,
               });
+            } else {
+              results.push({ id: customerId, status: 'failed', error: 'Delete failed' });
             }
+          } else {
+            notFoundCount++;
+            results.push({ id: customerId, status: 'not_found' });
+            console.log(`Customer ${customerId} not found during batch delete`);
           }
         } catch (error) {
           console.error(`Error deleting customer ${customerId}:`, error);
+          results.push({ id: customerId, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
         }
       }
 
-      res.json({ deleted: deletedCount });
+      res.json({ 
+        deleted: deletedCount, 
+        notFound: notFoundCount,
+        total: customerIds.length,
+        results: results 
+      });
     } catch (error) {
       console.error("Error batch deleting customers:", error);
       res.status(500).json({ message: "Failed to batch delete customers" });

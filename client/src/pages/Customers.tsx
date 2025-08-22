@@ -104,19 +104,27 @@ export default function Customers() {
       const response = await apiRequest("DELETE", "/api/customers/batch", { customerIds });
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setSelectedCustomers([]);
       setShowBatchActions(false);
+      
+      let message = `${data.deleted}명의 고객이 삭제되었습니다.`;
+      if (data.notFound > 0) {
+        message += ` (${data.notFound}명은 이미 삭제되었거나 존재하지 않습니다.)`;
+      }
+      
       toast({
-        title: "성공",
-        description: "선택된 고객들이 삭제되었습니다.",
+        title: "완료",
+        description: message,
+        variant: data.deleted > 0 ? "default" : "destructive"
       });
     },
-    onError: () => {
+    onError: (error) => {
+      console.error("Batch delete error:", error);
       toast({
         title: "오류",
-        description: "일괄 삭제에 실패했습니다.",
+        description: "일괄 삭제에 실패했습니다. 다시 시도해 주세요.",
         variant: "destructive",
       });
     },
