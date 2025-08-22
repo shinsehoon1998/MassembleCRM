@@ -4,6 +4,7 @@ import {
   consultations,
   activityLogs,
   attachments,
+  systemSettings,
   type User,
   type UpsertUser,
   type Customer,
@@ -18,6 +19,7 @@ import {
   type Attachment,
   type AttachmentWithUser,
   type InsertAttachment,
+  type SystemSetting,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, like, and, count, sql } from "drizzle-orm";
@@ -73,6 +75,10 @@ export interface IStorage {
   getAttachments(customerId: string): Promise<AttachmentWithUser[]>;
   createAttachment(attachment: InsertAttachment): Promise<Attachment>;
   deleteAttachment(id: string): Promise<boolean>;
+
+  // System settings operations
+  getSystemSettings(): Promise<SystemSetting[]>;
+  updateSystemSetting(key: string, value: string): Promise<SystemSetting>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -415,6 +421,22 @@ export class DatabaseStorage implements IStorage {
   async deleteAttachment(id: string): Promise<boolean> {
     const result = await db.delete(attachments).where(eq(attachments.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getSystemSettings(): Promise<SystemSetting[]> {
+    return await db
+      .select()
+      .from(systemSettings)
+      .orderBy(systemSettings.category, systemSettings.key);
+  }
+
+  async updateSystemSetting(key: string, value: string): Promise<SystemSetting> {
+    const [updatedSetting] = await db
+      .update(systemSettings)
+      .set({ value, updatedAt: new Date() })
+      .where(eq(systemSettings.key, key))
+      .returning();
+    return updatedSetting;
   }
 }
 

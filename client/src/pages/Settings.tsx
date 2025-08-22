@@ -3,133 +3,35 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import type { SystemSetting } from "@shared/schema";
 
-function SystemInfoCard() {
-  return (
-    <Card className="border-gray-100">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-          <i className="fas fa-info-circle mr-2 text-blue-500"></i>
-          시스템 정보
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">애플리케이션 버전</span>
-            <Badge variant="outline">v1.0.0</Badge>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">시스템 상태</span>
-            <Badge className="bg-green-100 text-green-800">정상 작동중</Badge>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">최근 백업</span>
-            <span className="text-sm text-gray-500">2025-01-22 07:00</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+const CATEGORIES = [
+  { id: '시스템정보', name: '시스템정보' },
+  { id: '업체명', name: '업체명' },
+  { id: '주소', name: '주소' },
+  { id: '고객', name: '고객' },
+  { id: '보상', name: '보상' },
+  { id: 'DB관련정보', name: 'DB관련정보' },
+  { id: '음성메신저', name: '음성메신저' },
+  { id: '담당조직/조직원', name: '담당조직/조직원' },
+];
 
-function DatabaseStatusCard() {
-  return (
-    <Card className="border-gray-100">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-          <i className="fas fa-database mr-2 text-purple-500"></i>
-          데이터베이스 상태
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">연결 상태</span>
-            <Badge className="bg-green-100 text-green-800">연결됨</Badge>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">데이터베이스 유형</span>
-            <span className="text-sm text-gray-500">PostgreSQL</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-600">총 테이블 수</span>
-            <span className="text-sm text-gray-500">6개</span>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function GeneralSettingsCard() {
-  return (
-    <Card className="border-gray-100">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-          <i className="fas fa-sliders-h mr-2 text-gray-500"></i>
-          일반 설정
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-6">
-          <div className="space-y-4">
-            <h4 className="font-medium text-gray-900">시스템 설정</h4>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-900">자동 백업</div>
-                  <div className="text-sm text-gray-500">매일 새벽 3시에 자동으로 데이터를 백업합니다</div>
-                </div>
-                <Badge className="bg-green-100 text-green-800">활성화</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-900">활동 로그</div>
-                  <div className="text-sm text-gray-500">사용자 활동과 시스템 변경사항을 기록합니다</div>
-                </div>
-                <Badge className="bg-green-100 text-green-800">활성화</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-medium text-gray-900">이메일 알림</div>
-                  <div className="text-sm text-gray-500">중요한 시스템 이벤트 발생 시 관리자에게 알림을 보냅니다</div>
-                </div>
-                <Badge variant="secondary">비활성화</Badge>
-              </div>
-            </div>
-          </div>
-          
-          <Separator />
-          
-          <div className="space-y-4">
-            <h4 className="font-medium text-gray-900">관리 작업</h4>
-            <div className="flex space-x-3">
-              <Button variant="outline" className="text-gray-600 hover:text-gray-800">
-                <i className="fas fa-download mr-2"></i>
-                데이터 내보내기
-              </Button>
-              <Button variant="outline" className="text-blue-600 hover:text-blue-800">
-                <i className="fas fa-sync-alt mr-2"></i>
-                캐시 새로고침
-              </Button>
-              <Button variant="outline" className="text-yellow-600 hover:text-yellow-800">
-                <i className="fas fa-broom mr-2"></i>
-                임시 파일 정리
-              </Button>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+interface GroupedSettings {
+  [category: string]: SystemSetting[];
 }
 
 export default function Settings() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
+  const queryClient = useQueryClient();
+  const [selectedCategory, setSelectedCategory] = useState('시스템정보');
+  const [editingValues, setEditingValues] = useState<{ [key: string]: string }>({});
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -146,6 +48,72 @@ export default function Settings() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
+  const { data: settings = [], isLoading: isSettingsLoading } = useQuery<SystemSetting[]>({
+    queryKey: ['/api/system-settings'],
+    enabled: !!isAuthenticated,
+  });
+
+  const updateSettingMutation = useMutation({
+    mutationFn: async (data: { key: string; value: string }) => {
+      await apiRequest(`/api/system-settings/${data.key}`, {
+        method: 'PUT',
+        body: { value: data.value }
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/system-settings'] });
+      toast({
+        title: "성공",
+        description: "설정이 저장되었습니다.",
+        variant: "default",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "설정 저장에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Group settings by category
+  const groupedSettings: GroupedSettings = settings.reduce((acc, setting) => {
+    if (!acc[setting.category]) {
+      acc[setting.category] = [];
+    }
+    acc[setting.category].push(setting);
+    return acc;
+  }, {} as GroupedSettings);
+
+  const currentCategorySettings = groupedSettings[selectedCategory] || [];
+
+  const handleInputChange = (key: string, value: string) => {
+    setEditingValues(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const handleSave = (key: string) => {
+    const value = editingValues[key];
+    if (value !== undefined) {
+      updateSettingMutation.mutate({ key, value });
+      // Remove from editing values after save
+      setEditingValues(prev => {
+        const newState = { ...prev };
+        delete newState[key];
+        return newState;
+      });
+    }
+  };
+
+  const getDisplayValue = (setting: SystemSetting) => {
+    return editingValues[setting.key] !== undefined 
+      ? editingValues[setting.key] 
+      : (setting.value || '');
+  };
+
   if (isLoading || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -155,22 +123,123 @@ export default function Settings() {
   }
 
   return (
-    <div className="p-6 space-y-6" data-testid="settings-content">
+    <div className="p-6" data-testid="settings-content">
       <Card className="border-gray-100">
         <CardHeader>
           <CardTitle className="text-lg font-semibold text-gray-900">
             환경설정
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <SystemInfoCard />
-              <DatabaseStatusCard />
+        <CardContent className="p-0">
+          <div className="flex min-h-[600px]">
+            {/* Left sidebar */}
+            <div className="w-64 bg-gray-100 border-r">
+              <div className="bg-blue-500 text-white p-3">
+                <h3 className="font-medium">환경설정</h3>
+              </div>
+              <nav className="p-0">
+                {CATEGORIES.map((category) => (
+                  <button
+                    key={category.id}
+                    onClick={() => setSelectedCategory(category.id)}
+                    className={`w-full px-4 py-3 text-left text-sm border-b border-gray-200 hover:bg-blue-50 transition-colors ${
+                      selectedCategory === category.id 
+                        ? 'bg-blue-500 text-white' 
+                        : 'text-gray-700 hover:text-blue-600'
+                    }`}
+                    data-testid={`category-${category.id}`}
+                  >
+                    {category.name}
+                  </button>
+                ))}
+              </nav>
             </div>
-            
-            <div className="grid grid-cols-1 gap-6">
-              <GeneralSettingsCard />
+
+            {/* Right content area */}
+            <div className="flex-1 p-6">
+              {isSettingsLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {currentCategorySettings.length > 0 ? (
+                    currentCategorySettings.map((setting) => (
+                      <div key={setting.key} className="space-y-2">
+                        <Label htmlFor={setting.key} className="text-sm font-medium text-gray-900">
+                          {setting.label}
+                        </Label>
+                        {setting.description && setting.description.length > 50 ? (
+                          <Textarea
+                            id={setting.key}
+                            value={getDisplayValue(setting)}
+                            onChange={(e) => handleInputChange(setting.key, e.target.value)}
+                            className="min-h-[120px]"
+                            placeholder={setting.description}
+                            data-testid={`input-${setting.key}`}
+                          />
+                        ) : (
+                          <Input
+                            id={setting.key}
+                            value={getDisplayValue(setting)}
+                            onChange={(e) => handleInputChange(setting.key, e.target.value)}
+                            placeholder={setting.description}
+                            data-testid={`input-${setting.key}`}
+                          />
+                        )}
+                        {editingValues[setting.key] !== undefined && (
+                          <div className="flex space-x-2">
+                            <Button
+                              onClick={() => handleSave(setting.key)}
+                              size="sm"
+                              className="bg-blue-600 hover:bg-blue-700"
+                              disabled={updateSettingMutation.isPending}
+                              data-testid={`save-${setting.key}`}
+                            >
+                              저장
+                            </Button>
+                            <Button
+                              onClick={() => setEditingValues(prev => {
+                                const newState = { ...prev };
+                                delete newState[setting.key];
+                                return newState;
+                              })}
+                              size="sm"
+                              variant="outline"
+                              data-testid={`cancel-${setting.key}`}
+                            >
+                              취소
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-12 text-gray-500">
+                      선택된 카테고리에 설정 항목이 없습니다.
+                    </div>
+                  )}
+
+                  <Separator className="my-6" />
+                  
+                  <div className="text-center">
+                    <Button
+                      onClick={() => {
+                        // Save all edited values
+                        Object.entries(editingValues).forEach(([key, value]) => {
+                          updateSettingMutation.mutate({ key, value });
+                        });
+                        setEditingValues({});
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700"
+                      disabled={Object.keys(editingValues).length === 0 || updateSettingMutation.isPending}
+                      data-testid="save-all-button"
+                    >
+                      저장
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
