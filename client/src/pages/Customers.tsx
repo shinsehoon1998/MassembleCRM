@@ -367,8 +367,9 @@ export default function Customers() {
       {/* Search Filters */}
       <Card className="border-gray-100">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            {/* 기존 필터들 */}
+          {/* Mobile-First Filter Layout */}
+          <div className="space-y-4">
+            {/* Search Input - Full Width on Mobile */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">검색</label>
               <Input
@@ -376,45 +377,52 @@ export default function Customers() {
                 value={searchParams.search}
                 onChange={(e) => setSearchParams(prev => ({ ...prev, search: e.target.value }))}
                 data-testid="input-search"
+                className="w-full"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">상태</label>
-              <Select
-                value={searchParams.status}
-                onValueChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
-              >
-                <SelectTrigger data-testid="select-status">
-                  <SelectValue placeholder="전체 상태" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 상태</SelectItem>
-                  {statusOptions.map((status: string) => (
-                    <SelectItem key={status} value={status}>{status}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            
+            {/* Filters Grid - Responsive */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">상태</label>
+                <Select
+                  value={searchParams.status}
+                  onValueChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
+                >
+                  <SelectTrigger data-testid="select-status">
+                    <SelectValue placeholder="전체 상태" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 상태</SelectItem>
+                    {statusOptions.map((status: string) => (
+                      <SelectItem key={status} value={status}>{status}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">담당자</label>
+                <Select
+                  value={searchParams.assignedUserId}
+                  onValueChange={(value) => setSearchParams(prev => ({ ...prev, assignedUserId: value }))}
+                >
+                  <SelectTrigger data-testid="select-counselor">
+                    <SelectValue placeholder="전체 담당자" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 담당자</SelectItem>
+                    {counselors?.map(counselor => (
+                      <SelectItem key={counselor.id} value={counselor.id}>
+                        {counselor.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">담당자</label>
-              <Select
-                value={searchParams.assignedUserId}
-                onValueChange={(value) => setSearchParams(prev => ({ ...prev, assignedUserId: value }))}
-              >
-                <SelectTrigger data-testid="select-counselor">
-                  <SelectValue placeholder="전체 담당자" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 담당자</SelectItem>
-                  {counselors?.map(counselor => (
-                    <SelectItem key={counselor.id} value={counselor.id}>
-                      {counselor.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex space-x-3">
+            
+            {/* Action Buttons - Stack on Mobile */}
+            <div className="flex flex-col sm:flex-row gap-3">
               <Button onClick={handleSearch} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-search">
                 <i className="fas fa-search mr-2"></i>검색
               </Button>
@@ -566,7 +574,9 @@ export default function Customers() {
               ))}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div>
+              {/* Desktop Table View */}
+              <div className="hidden lg:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
@@ -734,6 +744,123 @@ export default function Customers() {
                   )}
                 </tbody>
               </table>
+            </div>
+            
+            {/* Mobile Card View */}
+            <div className="lg:hidden">
+              <div className="p-4 border-b">
+                <Checkbox
+                  checked={selectedCustomers.length === customersData?.customers?.length && customersData.customers.length > 0}
+                  onCheckedChange={handleSelectAll}
+                  data-testid="checkbox-select-all-mobile"
+                />
+                <span className="ml-2 text-sm text-gray-600">전체 선택</span>
+              </div>
+              
+              <div className="space-y-4 p-4">
+                {customersData?.customers?.map((customer, index) => {
+                  const customerNumber = customersData.total - ((searchParams.page - 1) * searchParams.limit) - index;
+                  return (
+                    <div key={customer.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm" data-testid={`card-customer-${customer.id}`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <Checkbox
+                            checked={selectedCustomers.includes(customer.id)}
+                            onCheckedChange={(checked) => handleSelectCustomer(customer.id, checked === true)}
+                            data-testid={`checkbox-customer-mobile-${customer.id}`}
+                          />
+                          <span className="text-xs bg-gray-100 px-2 py-1 rounded">#{customerNumber}</span>
+                        </div>
+                        <div className="flex space-x-2">
+                          <Link href={`/customers/${customer.id}`}>
+                            <Button variant="ghost" size="sm" className="text-blue-500 hover:text-blue-600" title="상세보기">
+                              <i className="fas fa-eye"></i>
+                            </Button>
+                          </Link>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-yellow-500 hover:text-yellow-600" 
+                            title="수정"
+                            onClick={() => handleEditCustomer(customer)}
+                          >
+                            <i className="fas fa-edit"></i>
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-red-500 hover:text-red-600" 
+                            title="삭제"
+                            onClick={() => handleDeleteCustomer(customer.id)}
+                          >
+                            <i className="fas fa-trash"></i>
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <div>
+                          <Link href={`/customers/${customer.id}`}>
+                            <div className="text-lg font-semibold text-blue-600 hover:text-blue-800 cursor-pointer">
+                              {customer.name}
+                            </div>
+                          </Link>
+                          <div className="text-sm text-gray-500">
+                            {customer.gender === 'M' ? '남성' : customer.gender === 'F' ? '여성' : ''}{customer.birthDate && customer.gender !== 'N' ? ' • ' : ''}
+                            {customer.birthDate && format(new Date(customer.birthDate), 'yyyy.MM.dd', { locale: ko })}
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-500">연락처:</span>
+                            <div className="font-medium">{customer.phone}</div>
+                            {customer.secondaryPhone && (
+                              <div className="text-gray-600">{customer.secondaryPhone}</div>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-gray-500">상태:</span>
+                            <div className="font-medium">
+                              <span className={`inline-flex px-2 py-1 text-xs rounded-full ${getStatusBadgeColor(customer.status || '')}`}>
+                                {customer.status}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-500">담당자:</span>
+                            <div className="font-medium">{customer.assignedUser?.name || '미지정'}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">공유담당자:</span>
+                            <div className="font-medium">{customer.sharedUser?.name || '미지정'}</div>
+                          </div>
+                        </div>
+                        
+                        {customer.memo && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">메모:</span>
+                            <div className="text-gray-700 max-h-12 overflow-hidden">{customer.memo}</div>
+                          </div>
+                        )}
+                        
+                        <div className="text-xs text-gray-500 pt-2 border-t">
+                          등록일: {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                
+                {(!customersData?.customers || customersData.customers.length === 0) && (
+                  <div className="text-center py-8 text-gray-500">
+                    검색 결과가 없습니다.
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
