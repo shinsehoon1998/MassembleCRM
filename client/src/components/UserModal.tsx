@@ -23,8 +23,9 @@ interface UserModalProps {
 }
 
 interface CreateUserData {
-  name: string;
-  email?: string;
+  username: string;
+  password?: string;
+  name?: string;
   firstName?: string;
   lastName?: string;
   department?: string;
@@ -36,8 +37,9 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<CreateUserData>({
+    username: '',
+    password: '',
     name: '',
-    email: '',
     firstName: '',
     lastName: '',
     department: '',
@@ -49,8 +51,9 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
   useEffect(() => {
     if (editingUser) {
       setFormData({
-        name: editingUser.name,
-        email: editingUser.email || '',
+        username: editingUser.username || '',
+        password: '', // Don't pre-fill password for security
+        name: editingUser.name || '',
         firstName: editingUser.firstName || '',
         lastName: editingUser.lastName || '',
         department: editingUser.department || '',
@@ -59,8 +62,9 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
       });
     } else {
       setFormData({
+        username: '',
+        password: '',
         name: '',
-        email: '',
         firstName: '',
         lastName: '',
         department: '',
@@ -109,10 +113,18 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
+    if (!formData.username.trim()) {
       toast({
         title: "입력 오류",
-        description: "성명은 필수 입력 사항입니다.",
+        description: "아이디는 필수 입력 사항입니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!editingUser && !formData.password) {
+      toast({
+        title: "입력 오류",
+        description: "비밀번호는 필수 입력 사항입니다.",
         variant: "destructive",
       });
       return;
@@ -122,8 +134,9 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
 
   const handleClose = () => {
     setFormData({
+      username: '',
+      password: '',
       name: '',
-      email: '',
       firstName: '',
       lastName: '',
       department: '',
@@ -154,30 +167,30 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
 
           <div className="space-y-2">
-            <Label htmlFor="name" className="text-sm font-medium">
-              성명 <span className="text-red-500">*</span>
+            <Label htmlFor="username" className="text-sm font-medium">
+              아이디 <span className="text-red-500">*</span>
             </Label>
             <Input
-              id="name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="사용자 이름을 입력하세요"
+              id="username"
+              value={formData.username}
+              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+              placeholder="아이디를 입력하세요"
               required
-              data-testid="input-name"
+              data-testid="input-username"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email" className="text-sm font-medium">
-              이메일
+            <Label htmlFor="password" className="text-sm font-medium">
+              비밀번호 {!editingUser && <span className="text-red-500">*</span>}
             </Label>
             <Input
-              id="email"
-              type="email"
-              value={formData.email || ''}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="이메일을 입력하세요"
-              data-testid="input-email"
+              id="password"
+              type="password"
+              value={formData.password || ''}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              placeholder={editingUser ? "변경할 비밀번호 (선택사항)" : "비밀번호를 입력하세요"}
+              data-testid="input-password"
             />
           </div>
 

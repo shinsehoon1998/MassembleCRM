@@ -42,6 +42,8 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   name: varchar("name").notNull(),
+  username: varchar("username").unique(),
+  password: varchar("password"),
   department: varchar("department"),
   role: userRoleEnum("role").notNull().default("counselor"),
   isActive: boolean("is_active").notNull().default(true),
@@ -181,6 +183,8 @@ export const upsertUserSchema = createInsertSchema(users).pick({
   lastName: true,
   profileImageUrl: true,
   name: true,
+  username: true,
+  password: true,
   department: true,
   role: true,
 });

@@ -79,8 +79,8 @@ function UsersList({ onEditUser }: { onEditUser: (user: User) => void }) {
               <i className="fas fa-user text-white text-sm"></i>
             </div>
             <div>
-              <div className="font-medium text-gray-900">{user.name}</div>
-              <div className="text-sm text-gray-500">{user.email}</div>
+              <div className="font-medium text-gray-900">{user.username || user.name}</div>
+              <div className="text-sm text-gray-500">{user.name}</div>
               {user.department && (
                 <div className="text-xs text-gray-400">{user.department}</div>
               )}

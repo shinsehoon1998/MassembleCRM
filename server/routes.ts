@@ -346,13 +346,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Validate required fields
-      const { name, role = 'counselor', department } = req.body;
-      if (!name) {
-        return res.status(400).json({ message: "Name is required" });
+      const { username, password, role = 'counselor', department, name } = req.body;
+      if (!username) {
+        return res.status(400).json({ message: "Username is required" });
       }
 
       const newUser = await storage.upsertUser({
-        name,
+        username,
+        password,
+        name: name || username, // Use username as name if name not provided
         email: req.body.email,
         firstName: req.body.firstName,
         lastName: req.body.lastName,
@@ -374,7 +376,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Admin access required" });
       }
 
-      const updatedUser = await storage.updateUser(req.params.id, req.body);
+      const { username, password, name, firstName, lastName, department, role, isActive } = req.body;
+      
+      const updateData: any = {
+        username,
+        name: name || username, // Use username as name if name not provided
+        firstName,
+        lastName,
+        department,
+        role,
+        isActive
+      };
+      
+      // Only include password if it's provided (for updates, password is optional)
+      if (password && password.trim()) {
+        updateData.password = password;
+      }
+
+      const updatedUser = await storage.updateUser(req.params.id, updateData);
       res.json(updatedUser);
     } catch (error) {
       console.error("Error updating user:", error);
