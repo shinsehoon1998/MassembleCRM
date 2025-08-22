@@ -22,7 +22,7 @@ import {
   type SystemSetting,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, like, and, count, sql } from "drizzle-orm";
+import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -196,7 +196,7 @@ export class DatabaseStorage implements IStorage {
       .from(customers)
       .leftJoin(users, eq(customers.assignedUserId, users.id))
       .where(whereClause)
-      .orderBy(desc(customers.createdAt))
+      .orderBy(asc(customers.createdAt))
       .limit(limit)
       .offset((page - 1) * limit);
 
