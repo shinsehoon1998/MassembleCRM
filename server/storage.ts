@@ -271,6 +271,11 @@ export class DatabaseStorage implements IStorage {
       .set({ ...customer, updatedAt: new Date() })
       .where(eq(customers.id, id))
       .returning();
+      
+    if (!updatedCustomer) {
+      throw new Error(`Customer with id ${id} not found`);
+    }
+    
     return updatedCustomer;
   }
 
