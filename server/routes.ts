@@ -181,68 +181,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/customers/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const customer = await storage.getCustomer(req.params.id);
-      if (!customer) {
-        return res.status(404).json({ message: "Customer not found" });
-      }
-
-      const deleted = await storage.deleteCustomer(req.params.id);
-      if (!deleted) {
-        return res.status(500).json({ message: "Failed to delete customer" });
-      }
-
-      // Log activity
-      await storage.createActivityLog({
-        userId: req.user.id,
-        action: "customer_deleted",
-        description: `고객 "${customer.name}"을(를) 삭제했습니다.`,
-      });
-
-      res.json({ message: "Customer deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting customer:", error);
-      res.status(500).json({ message: "Failed to delete customer" });
-    }
-  });
-
-  // 디버깅용: 고객 ID 확인 API
-  app.post('/api/customers/check-ids', isAuthenticated, async (req: any, res) => {
-    try {
-      const { customerIds } = req.body;
-      console.log('Checking customer IDs:', customerIds);
-      
-      if (!customerIds || !Array.isArray(customerIds)) {
-        return res.status(400).json({ message: "customerIds array is required" });
-      }
-
-      const results = [];
-      for (const customerId of customerIds) {
-        try {
-          const customer = await storage.getCustomer(customerId);
-          results.push({
-            id: customerId,
-            exists: !!customer,
-            name: customer?.name || null
-          });
-        } catch (error) {
-          results.push({
-            id: customerId,
-            exists: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
-        }
-      }
-
-      res.json({ results });
-    } catch (error) {
-      console.error("Error checking customer IDs:", error);
-      res.status(500).json({ message: "Failed to check customer IDs" });
-    }
-  });
-
-  // Batch operations for customers
+  // Batch operations for customers (배치 엔드포인트를 개별 엔드포인트보다 먼저 정의)
   app.put('/api/customers/batch', isAuthenticated, async (req: any, res) => {
     try {
       const { customerIds, updates } = req.body;
@@ -351,6 +290,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error batch deleting customers:", error);
       res.status(500).json({ message: "Failed to batch delete customers" });
+    }
+  });
+
+  app.delete('/api/customers/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const customer = await storage.getCustomer(req.params.id);
+      if (!customer) {
+        return res.status(404).json({ message: "Customer not found" });
+      }
+
+      const deleted = await storage.deleteCustomer(req.params.id);
+      if (!deleted) {
+        return res.status(500).json({ message: "Failed to delete customer" });
+      }
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.id,
+        action: "customer_deleted",
+        description: `고객 "${customer.name}"을(를) 삭제했습니다.`,
+      });
+
+      res.json({ message: "Customer deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting customer:", error);
+      res.status(500).json({ message: "Failed to delete customer" });
+    }
+  });
+
+  // 디버깅용: 고객 ID 확인 API
+  app.post('/api/customers/check-ids', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds } = req.body;
+      console.log('Checking customer IDs:', customerIds);
+      
+      if (!customerIds || !Array.isArray(customerIds)) {
+        return res.status(400).json({ message: "customerIds array is required" });
+      }
+
+      const results = [];
+      for (const customerId of customerIds) {
+        try {
+          const customer = await storage.getCustomer(customerId);
+          results.push({
+            id: customerId,
+            exists: !!customer,
+            name: customer?.name || null
+          });
+        } catch (error) {
+          results.push({
+            id: customerId,
+            exists: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+
+      res.json({ results });
+    } catch (error) {
+      console.error("Error checking customer IDs:", error);
+      res.status(500).json({ message: "Failed to check customer IDs" });
     }
   });
 
