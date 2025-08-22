@@ -27,6 +27,7 @@ export default function Layout({ children }: LayoutProps) {
     const titles: Record<string, string> = {
       '/': '대시보드',
       '/customers': '고객관리',
+      '/data-import': '데이터 관리',
       '/users': '사용자관리',
       '/settings': '환경설정',
     };
@@ -37,6 +38,7 @@ export default function Layout({ children }: LayoutProps) {
     const descriptions: Record<string, string> = {
       '/': '시스템 현황을 한눈에 확인하세요',
       '/customers': '고객 정보를 관리하고 상담을 진행하세요',
+      '/data-import': 'CSV 템플릿 다운로드 및 대량 업로드를 진행하세요',
       '/users': '시스템 사용자를 관리하세요',
       '/settings': '시스템 환경을 설정하세요',
     };
@@ -94,6 +96,15 @@ export default function Layout({ children }: LayoutProps) {
             }`} data-testid="nav-customers">
               <i className="fas fa-users w-5"></i>
               <span className="ml-3">고객관리</span>
+            </a>
+          </Link>
+
+          <Link href="/data-import">
+            <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+              isNavItemActive('/data-import') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            }`} data-testid="nav-data-import">
+              <i className="fas fa-database w-5"></i>
+              <span className="ml-3">데이터 관리</span>
             </a>
           </Link>
           

@@ -6,6 +6,8 @@ import { setupAuth, isAuthenticated } from "./localAuth";
 import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
+import Papa from "papaparse";
+import multer from "multer";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -852,6 +854,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting system setting:", error);
       res.status(500).json({ message: "Failed to delete system setting" });
+    }
+  });
+
+  // CSV 템플릿 다운로드 API
+  app.get('/api/data-import/template', isAuthenticated, async (req: any, res) => {
+    try {
+      // CSV 템플릿 헤더 정의
+      const csvHeaders = [
+        '이름',
+        '연락처',
+        '보조연락처',
+        '생년월일',
+        '성별',
+        '월소득',
+        '상태',
+        '메모'
+      ];
+
+      // 샘플 데이터 (1줄)
+      const sampleData = [
+        '홍길동',
+        '010-1234-5678',
+        '02-123-4567',
+        '1990-01-01',
+        '남성',
+        '3000000',
+        '상담접수',
+        '샘플 고객 데이터입니다.'
+      ];
+
+      // CSV 형식으로 변환
+      const csvData = [csvHeaders, sampleData];
+      const csv = Papa.unparse(csvData, {
+        encoding: 'utf8'
+      });
+
+      // UTF-8 BOM 추가 (Excel에서 한글 깨짐 방지)
+      const csvWithBOM = '\uFEFF' + csv;
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="customer_template.csv"');
+      res.send(csvWithBOM);
+    } catch (error) {
+      console.error("Error generating CSV template:", error);
+      res.status(500).json({ message: "Failed to generate CSV template" });
+    }
+  });
+
+  // CSV 파일 업로드용 multer 설정
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+        cb(null, true);
+      } else {
+        cb(new Error('CSV 파일만 업로드 가능합니다.'), false);
+      }
+    },
+    limits: {
+      fileSize: 5 * 1024 * 1024 // 5MB 제한
+    }
+  });
+
+  // CSV 대량 업로드 API
+  app.post('/api/data-import/upload', isAuthenticated, upload.single('csvFile'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "CSV 파일이 필요합니다." });
+      }
+
+      // CSV 파일 파싱
+      const csvData = req.file.buffer.toString('utf8');
+      const parsed = Papa.parse(csvData, {
+        header: true,
+        skipEmptyLines: true,
+        encoding: 'utf8'
+      });
+
+      if (parsed.errors.length > 0) {
+        return res.status(400).json({ 
+          message: "CSV 파싱 오류가 발생했습니다.",
+          errors: parsed.errors
+        });
+      }
+
+      const results = {
+        total: 0,
+        success: 0,
+        failed: 0,
+        errors: [] as any[]
+      };
+
+      // 각 행을 고객 데이터로 변환하여 저장
+      for (let i = 0; i < parsed.data.length; i++) {
+        const row: any = parsed.data[i];
+        results.total++;
+
+        try {
+          // 필수 필드 검증
+          if (!row['이름'] || !row['연락처']) {
+            results.failed++;
+            results.errors.push({
+              row: i + 1,
+              error: '이름과 연락처는 필수입니다.'
+            });
+            continue;
+          }
+
+          // 성별 변환
+          let gender = row['성별'];
+          if (gender === '남성' || gender === '남' || gender === 'M' || gender === 'male') {
+            gender = 'male';
+          } else if (gender === '여성' || gender === '여' || gender === 'F' || gender === 'female') {
+            gender = 'female';
+          } else {
+            gender = null;
+          }
+
+          // 상태 변환
+          let status = row['상태'];
+          const validStatuses = ['상담접수', '상담진행', '상담완료', '수임', '불발', '보류'];
+          if (!validStatuses.includes(status)) {
+            status = '상담접수'; // 기본값
+          }
+
+          // 고객 데이터 생성
+          const customerData = {
+            name: row['이름'].trim(),
+            phone: row['연락처'].trim(),
+            secondaryPhone: row['보조연락처'] || null,
+            birthDate: row['생년월일'] || null,
+            gender: gender,
+            monthlyIncome: row['월소득'] ? parseInt(row['월소득'].toString().replace(/[^0-9]/g, '')) : null,
+            status: status,
+            memo: row['메모'] || null
+          };
+
+          // 고객 생성
+          const customer = await storage.createCustomer(customerData);
+
+          // 활동 로그 생성
+          await storage.createActivityLog({
+            userId: req.user.id,
+            customerId: customer.id,
+            action: "customer_csv_imported",
+            description: `CSV 대량 업로드로 고객 "${customer.name}"을(를) 등록했습니다.`,
+          });
+
+          results.success++;
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            row: i + 1,
+            error: error instanceof Error ? error.message : '알 수 없는 오류'
+          });
+        }
+      }
+
+      res.json({
+        message: `CSV 업로드 완료: ${results.success}명 성공, ${results.failed}명 실패`,
+        results: results
+      });
+
+    } catch (error) {
+      console.error("Error processing CSV upload:", error);
+      res.status(500).json({ message: "CSV 업로드 처리 중 오류가 발생했습니다." });
     }
   });
 
