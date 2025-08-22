@@ -438,6 +438,19 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updatedSetting;
   }
+
+  async createSystemSetting(setting: typeof systemSettings.$inferInsert): Promise<SystemSetting> {
+    const [newSetting] = await db
+      .insert(systemSettings)
+      .values(setting)
+      .returning();
+    return newSetting;
+  }
+
+  async deleteSystemSetting(key: string): Promise<boolean> {
+    const result = await db.delete(systemSettings).where(eq(systemSettings.key, key));
+    return (result.rowCount ?? 0) > 0;
+  }
 }
 
 export const storage = new DatabaseStorage();

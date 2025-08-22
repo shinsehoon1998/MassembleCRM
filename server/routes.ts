@@ -552,6 +552,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/system-settings', isAuthenticated, async (req: any, res) => {
+    try {
+      const { key, category, label, description, value } = req.body;
+      const setting = await storage.createSystemSetting({ key, category, label, description, value });
+      res.json(setting);
+    } catch (error) {
+      console.error("Error creating system setting:", error);
+      res.status(500).json({ message: "Failed to create system setting" });
+    }
+  });
+
+  app.delete('/api/system-settings/:key', isAuthenticated, async (req: any, res) => {
+    try {
+      const deleted = await storage.deleteSystemSetting(req.params.key);
+      if (!deleted) {
+        return res.status(404).json({ message: "Setting not found" });
+      }
+      res.json({ message: "Setting deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting system setting:", error);
+      res.status(500).json({ message: "Failed to delete system setting" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

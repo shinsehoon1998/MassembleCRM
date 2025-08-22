@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Trash2, Plus, Edit, Save, X } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { SystemSetting } from "@shared/schema";
@@ -27,6 +28,7 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState('계층구조');
   const [editingValues, setEditingValues] = useState<{ [key: string]: string }>({});
+  const [newItemValue, setNewItemValue] = useState('');
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -55,16 +57,66 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/system-settings'] });
+      setEditingValues({});
       toast({
         title: "성공",
-        description: "설정이 저장되었습니다.",
-        variant: "default",
+        description: "설정이 수정되었습니다.",
       });
     },
     onError: () => {
       toast({
         title: "오류",
-        description: "설정 저장에 실패했습니다.",
+        description: "설정 수정에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createSettingMutation = useMutation({
+    mutationFn: async (data: { category: string; label: string; value: string }) => {
+      const key = `${data.category.toLowerCase()}_${Date.now()}`;
+      const response = await apiRequest("POST", "/api/system-settings", {
+        key,
+        category: data.category,
+        label: data.label,
+        description: data.label,
+        value: data.value,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/system-settings'] });
+      setNewItemValue('');
+      toast({
+        title: "성공",
+        description: "새 항목이 추가되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "항목 추가에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteSettingMutation = useMutation({
+    mutationFn: async (key: string) => {
+      const response = await apiRequest("DELETE", `/api/system-settings/${key}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/system-settings'] });
+      toast({
+        title: "성공",
+        description: "항목이 삭제되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "항목 삭제에 실패했습니다.",
         variant: "destructive",
       });
     },
@@ -90,13 +142,35 @@ export default function Settings() {
 
   const handleSave = (key: string) => {
     const value = editingValues[key];
-    if (value !== undefined) {
-      updateSettingMutation.mutate({ key, value });
-      // Remove from editing values after save
-      setEditingValues(prev => {
-        const newState = { ...prev };
-        delete newState[key];
-        return newState;
+    if (value !== undefined && value.trim()) {
+      updateSettingMutation.mutate({ key, value: value.trim() });
+    }
+  };
+
+  const handleEdit = (setting: SystemSetting) => {
+    setEditingValues({ ...editingValues, [setting.key]: setting.value || '' });
+  };
+
+  const handleCancel = (key: string) => {
+    setEditingValues(prev => {
+      const newState = { ...prev };
+      delete newState[key];
+      return newState;
+    });
+  };
+
+  const handleDelete = (key: string) => {
+    if (confirm('이 항목을 삭제하시겠습니까?')) {
+      deleteSettingMutation.mutate(key);
+    }
+  };
+
+  const handleAddNew = () => {
+    if (newItemValue.trim()) {
+      createSettingMutation.mutate({
+        category: selectedCategory,
+        label: newItemValue.trim(),
+        value: newItemValue.trim(),
       });
     }
   };
@@ -155,81 +229,113 @@ export default function Settings() {
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                 </div>
               ) : (
-                <div className="space-y-6">
-                  {currentCategorySettings.length > 0 ? (
-                    currentCategorySettings.map((setting) => (
-                      <div key={setting.key} className="space-y-2">
-                        <Label htmlFor={setting.key} className="text-sm font-medium text-gray-900">
-                          {setting.label}
-                        </Label>
-                        {setting.description && setting.description.length > 50 ? (
-                          <Textarea
-                            id={setting.key}
-                            value={getDisplayValue(setting)}
-                            onChange={(e) => handleInputChange(setting.key, e.target.value)}
-                            className="min-h-[120px]"
-                            placeholder={setting.description}
-                            data-testid={`input-${setting.key}`}
-                          />
-                        ) : (
-                          <Input
-                            id={setting.key}
-                            value={getDisplayValue(setting)}
-                            onChange={(e) => handleInputChange(setting.key, e.target.value)}
-                            placeholder={setting.description}
-                            data-testid={`input-${setting.key}`}
-                          />
-                        )}
-                        {editingValues[setting.key] !== undefined && (
-                          <div className="flex space-x-2">
-                            <Button
-                              onClick={() => handleSave(setting.key)}
-                              size="sm"
-                              className="bg-blue-600 hover:bg-blue-700"
-                              disabled={updateSettingMutation.isPending}
-                              data-testid={`save-${setting.key}`}
-                            >
-                              저장
-                            </Button>
-                            <Button
-                              onClick={() => setEditingValues(prev => {
-                                const newState = { ...prev };
-                                delete newState[setting.key];
-                                return newState;
-                              })}
-                              size="sm"
-                              variant="outline"
-                              data-testid={`cancel-${setting.key}`}
-                            >
-                              취소
-                            </Button>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium text-gray-900">
+                      {selectedCategory} 관리
+                    </h3>
+                  </div>
+                  
+                  {/* 기존 항목들 */}
+                  <div className="space-y-3">
+                    {currentCategorySettings.length > 0 ? (
+                      currentCategorySettings.map((setting) => (
+                        <div key={setting.key} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                          <div className="flex-1">
+                            {editingValues[setting.key] !== undefined ? (
+                              <Input
+                                value={editingValues[setting.key]}
+                                onChange={(e) => handleInputChange(setting.key, e.target.value)}
+                                className="mr-2"
+                                data-testid={`input-${setting.key}`}
+                                onKeyPress={(e) => e.key === 'Enter' && handleSave(setting.key)}
+                              />
+                            ) : (
+                              <span className="text-sm font-medium text-gray-900">
+                                {setting.value}
+                              </span>
+                            )}
                           </div>
-                        )}
+                          
+                          <div className="flex items-center space-x-2 ml-4">
+                            {editingValues[setting.key] !== undefined ? (
+                              <>
+                                <Button
+                                  onClick={() => handleSave(setting.key)}
+                                  size="sm"
+                                  className="h-8 w-8 p-0 bg-green-600 hover:bg-green-700"
+                                  disabled={updateSettingMutation.isPending}
+                                  data-testid={`save-${setting.key}`}
+                                >
+                                  <Save className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleCancel(setting.key)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                  data-testid={`cancel-${setting.key}`}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  onClick={() => handleEdit(setting)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                  data-testid={`edit-${setting.key}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  onClick={() => handleDelete(setting.key)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  disabled={deleteSettingMutation.isPending}
+                                  data-testid={`delete-${setting.key}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                        아직 {selectedCategory} 항목이 없습니다.
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-12 text-gray-500">
-                      선택된 카테고리에 설정 항목이 없습니다.
-                    </div>
-                  )}
+                    )}
+                  </div>
 
+                  {/* 새 항목 추가 */}
                   <Separator className="my-6" />
                   
-                  <div className="text-center">
-                    <Button
-                      onClick={() => {
-                        // Save all edited values
-                        Object.entries(editingValues).forEach(([key, value]) => {
-                          updateSettingMutation.mutate({ key, value });
-                        });
-                        setEditingValues({});
-                      }}
-                      className="bg-blue-600 hover:bg-blue-700"
-                      disabled={Object.keys(editingValues).length === 0 || updateSettingMutation.isPending}
-                      data-testid="save-all-button"
-                    >
-                      저장
-                    </Button>
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium text-gray-900">새 항목 추가</h4>
+                    <div className="flex space-x-3">
+                      <Input
+                        value={newItemValue}
+                        onChange={(e) => setNewItemValue(e.target.value)}
+                        placeholder={`새 ${selectedCategory} 항목을 입력하세요`}
+                        className="flex-1"
+                        data-testid="input-new-item"
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddNew()}
+                      />
+                      <Button
+                        onClick={handleAddNew}
+                        disabled={!newItemValue.trim() || createSettingMutation.isPending}
+                        className="bg-blue-600 hover:bg-blue-700 px-6"
+                        data-testid="button-add-new"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        추가
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
