@@ -282,7 +282,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                   <SelectValue placeholder="미지정" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">미지정</SelectItem>
+                  <SelectItem value="none">미지정</SelectItem>
                   {counselors.map((counselor) => (
                     <SelectItem key={counselor.id} value={counselor.id}>
                       {counselor.name}

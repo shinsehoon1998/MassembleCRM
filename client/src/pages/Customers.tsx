@@ -145,7 +145,7 @@ export default function Customers() {
                   <SelectValue placeholder="전체 상태" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">전체 상태</SelectItem>
+                  <SelectItem value="all">전체 상태</SelectItem>
                   <SelectItem value="인텍">인텍</SelectItem>
                   <SelectItem value="수수">수수</SelectItem>
                   <SelectItem value="접수">접수</SelectItem>
@@ -164,7 +164,7 @@ export default function Customers() {
                   <SelectValue placeholder="전체 담당자" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">전체 담당자</SelectItem>
+                  <SelectItem value="all">전체 담당자</SelectItem>
                   {counselors?.map(counselor => (
                     <SelectItem key={counselor.id} value={counselor.id}>
                       {counselor.name}
@@ -174,10 +174,10 @@ export default function Customers() {
               </Select>
             </div>
             <div className="flex space-x-3">
-              <Button onClick={handleSearch} className="bg-primary-500 hover:bg-primary-600" data-testid="button-search">
+              <Button onClick={handleSearch} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-search">
                 <i className="fas fa-search mr-2"></i>검색
               </Button>
-              <Button onClick={handleNewCustomer} className="bg-green-500 hover:bg-green-600" data-testid="button-add-customer">
+              <Button onClick={handleNewCustomer} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-add-customer">
                 <i className="fas fa-plus mr-2"></i>신규 등록
               </Button>
               <Button variant="outline" className="bg-gray-500 text-white hover:bg-gray-600">

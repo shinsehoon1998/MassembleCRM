@@ -151,7 +151,7 @@ export default function Dashboard() {
               <CardTitle className="text-lg font-semibold text-gray-900">
                 최근 등록 고객
               </CardTitle>
-              <Button variant="ghost" className="text-sm text-primary-500 hover:text-primary-600">
+              <Button variant="ghost" className="text-sm text-massemble-red hover:text-massemble-red-hover">
                 전체보기 →
               </Button>
             </div>
@@ -223,7 +223,7 @@ export default function Dashboard() {
                           {format(new Date(customer.createdAt), 'MM/dd HH:mm', { locale: ko })}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <Button variant="ghost" size="sm" className="text-primary-500 hover:text-primary-600 mr-3">
+                          <Button variant="ghost" size="sm" className="text-massemble-red hover:text-massemble-red-hover mr-3">
                             <i className="fas fa-eye"></i>
                           </Button>
                           <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-600">

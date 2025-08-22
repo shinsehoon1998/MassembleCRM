@@ -2,6 +2,7 @@ import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
 
 interface LayoutProps {
   children: ReactNode;
@@ -53,23 +54,23 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="flex h-screen bg-gray-50" data-testid="main-layout">
       {/* Sidebar */}
-      <div className="w-64 bg-sidebar text-white flex-shrink-0">
-        <div className="p-6 border-b border-gray-600">
+      <div className="w-64 bg-massemble-black text-white flex-shrink-0">
+        <div className="p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center">
-              <i className="fas fa-user-tie text-lg"></i>
+            <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center p-1">
+              <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">마셈블 CRM</h1>
-              <p className="text-xs text-gray-300">상담 관리 시스템</p>
+              <h1 className="text-xl font-bold text-white">마셈블 CRM</h1>
+              <p className="text-xs text-gray-300">개인회생·파산 상담 관리 시스템</p>
             </div>
           </div>
         </div>
         
         <nav className="mt-6">
           <Link href="/">
-            <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/') ? 'border-primary-500 bg-gray-700 text-white' : 'border-transparent'
+            <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+              isNavItemActive('/') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
             }`} data-testid="nav-dashboard">
               <i className="fas fa-tachometer-alt w-5"></i>
               <span className="ml-3">대시보드</span>
@@ -77,8 +78,8 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
           
           <Link href="/customers">
-            <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/customers') ? 'border-primary-500 bg-gray-700 text-white' : 'border-transparent'
+            <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+              isNavItemActive('/customers') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
             }`} data-testid="nav-customers">
               <i className="fas fa-users w-5"></i>
               <span className="ml-3">고객관리</span>
@@ -87,8 +88,8 @@ export default function Layout({ children }: LayoutProps) {
           
           {(user?.role === 'admin' || user?.role === 'manager') && (
             <Link href="/users">
-              <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/users') ? 'border-primary-500 bg-gray-700 text-white' : 'border-transparent'
+              <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/users') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
               }`} data-testid="nav-users">
                 <i className="fas fa-user-cog w-5"></i>
                 <span className="ml-3">사용자관리</span>
@@ -98,8 +99,8 @@ export default function Layout({ children }: LayoutProps) {
           
           {user?.role === 'admin' && (
             <Link href="/settings">
-              <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/settings') ? 'border-primary-500 bg-gray-700 text-white' : 'border-transparent'
+              <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
               }`} data-testid="nav-settings">
                 <i className="fas fa-cog w-5"></i>
                 <span className="ml-3">환경설정</span>
@@ -107,11 +108,11 @@ export default function Layout({ children }: LayoutProps) {
             </Link>
           )}
           
-          <div className="border-t border-gray-600 mt-6 pt-6">
+          <div className="border-t border-white/10 mt-6 pt-6">
             <Button
               variant="ghost"
               onClick={handleLogout}
-              className="w-full flex items-center justify-start px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white"
+              className="w-full flex items-center justify-start px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white"
               data-testid="button-logout"
             >
               <i className="fas fa-sign-out-alt w-5"></i>
@@ -142,7 +143,7 @@ export default function Layout({ children }: LayoutProps) {
                 </span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-massemble-red rounded-full flex items-center justify-center">
                   <i className="fas fa-user text-white text-sm"></i>
                 </div>
                 <div className="text-sm">
