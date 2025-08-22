@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
+import { UserModal } from "@/components/UserModal";
 
 function UsersList() {
   const { data: users, isLoading } = useQuery<User[]>({
@@ -32,9 +33,9 @@ function UsersList() {
       case 'admin':
         return '관리자';
       case 'manager':
-        return '매니저';
+        return '팀장';
       case 'counselor':
-        return '상담사';
+        return '팀원';
       default:
         return role;
     }
@@ -105,6 +106,7 @@ function UsersList() {
 export default function Users() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -141,7 +143,11 @@ export default function Users() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900">시스템 사용자</h2>
-              <Button className="bg-massemble-red hover:bg-massemble-red-hover text-white">
+              <Button 
+                className="bg-massemble-red hover:bg-massemble-red-hover text-white"
+                onClick={() => setIsUserModalOpen(true)}
+                data-testid="button-add-user"
+              >
                 <i className="fas fa-plus mr-2"></i>
                 사용자 추가
               </Button>
@@ -151,6 +157,11 @@ export default function Users() {
           </div>
         </CardContent>
       </Card>
+      
+      <UserModal 
+        isOpen={isUserModalOpen}
+        onClose={() => setIsUserModalOpen(false)}
+      />
     </div>
   );
 }

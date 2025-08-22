@@ -337,6 +337,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create new user - Admin only
+  app.post('/api/users', isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      // Validate required fields
+      const { username, name, role = 'counselor', department, team, isActive = true } = req.body;
+      if (!username || !name) {
+        return res.status(400).json({ message: "Username and name are required" });
+      }
+
+      const newUser = await storage.upsertUser({
+        name,
+        email: req.body.email,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        department,
+        role
+      });
+      
+      res.status(201).json(newUser);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ message: "Failed to create user" });
+    }
+  });
+
   app.put('/api/users/:id', isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
