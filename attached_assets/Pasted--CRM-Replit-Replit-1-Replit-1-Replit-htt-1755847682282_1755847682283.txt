@@ -1,0 +1,272 @@
+# 마셈블 CRM - Replit 설정 및 실행 가이드
+
+## 🚀 Replit에서 프로젝트 시작하기
+
+### 1. Replit 프로젝트 생성
+1. [Replit](https://replit.com)에 로그인
+2. "Create Repl" 클릭
+3. Template: **PHP Web Server** 선택
+4. Title: "massemble-crm" 입력
+5. "Create Repl" 클릭
+
+### 2. 데이터베이스 설정
+
+#### 옵션 A: Replit Database (SQLite) 사용
+```bash
+# Replit Shell에서 실행
+sqlite3 database.db < sql/schema.sql
+```
+
+#### 옵션 B: 외부 MySQL 사용 (추천)
+- [PlanetScale](https://planetscale.com) 또는 [Aiven](https://aiven.io) 무료 MySQL 생성
+- 연결 정보를 Replit Secrets에 저장:
+  ```
+  DB_HOST=your-host.amazonaws.com
+  DB_NAME=massemble_crm
+  DB_USER=your-username
+  DB_PASS=your-password
+  ```
+
+### 3. 파일 구조 생성
+
+Replit 파일 탐색기에서 다음 구조로 파일/폴더 생성:
+
+```
+massemble-crm/
+├── .replit
+├── index.php
+├── config/
+│   └── database.php
+├── pages/
+│   ├── login.php
+│   ├── dashboard.php
+│   ├── customers.php
+│   ├── customer_detail.php
+│   └── users.php
+├── api/
+│   ├── auth.php
+│   └── customers.php
+├── assets/
+│   ├── css/
+│   │   └── style.css
+│   └── js/
+│       └── main.js
+├── uploads/          # 파일 업로드용
+└── sql/
+    └── schema.sql
+```
+
+### 4. .replit 파일 설정
+
+```toml
+run = "php -S 0.0.0.0:8000 -t ."
+entrypoint = "index.php"
+
+[nix]
+channel = "stable-21_11"
+
+[env]
+XDG_CONFIG_HOME = "/home/runner/.config"
+PATH = "/home/runner/$REPL_SLUG/.config/composer/vendor/bin:/home/runner/$REPL_SLUG/.composer/vendor/bin:$PATH"
+
+[packager]
+language = "php"
+
+[packager.features]
+packageSearch = true
+guessImports = true
+
+[languages]
+[languages.php]
+pattern = "**/*.php"
+
+[languages.html]
+pattern = "**/*.html"
+
+[languages.css]
+pattern = "**/*.css"
+
+[languages.javascript]
+pattern = "**/*.js"
+
+[[ports]]
+localPort = 8000
+externalPort = 80
+```
+
+### 5. 데이터베이스 초기화
+
+SQL 스키마 실행:
+1. MySQL 클라이언트 또는 phpMyAdmin 접속
+2. `sql/schema.sql` 내용 실행
+3. 테스트 계정 확인: admin / admin123
+
+### 6. 환경변수 설정 (Secrets)
+
+Replit 좌측 메뉴에서 "Secrets" 클릭하고 추가:
+- `DB_HOST`: 데이터베이스 호스트
+- `DB_NAME`: massemble_crm
+- `DB_USER`: 사용자명
+- `DB_PASS`: 비밀번호
+
+### 7. 실행 및 테스트
+
+1. "Run" 버튼 클릭
+2. 브라우저에서 프로젝트 URL 접속
+3. 테스트 로그인: admin / admin123
+
+## 📝 주요 기능 사용법
+
+### 고객 등록
+1. 고객관리 메뉴 클릭
+2. "신규 고객 등록" 버튼 클릭
+3. 정보 입력 후 저장
+
+### 상담 이력 관리
+1. 고객 목록에서 고객 선택
+2. "상담 기록" 버튼 클릭
+3. 상담 내용 입력 후 저장
+
+### 상태 변경
+1. 고객 상세 페이지에서 "상태 변경" 클릭
+2. 새로운 상태 선택
+3. 자동으로 이력 기록됨
+
+### 일괄 처리
+1. 고객 목록에서 체크박스로 여러 고객 선택
+2. 상단 일괄 처리 메뉴 사용
+3. 담당자 변경, 상태 변경 등 가능
+
+## 🔧 커스터마이징
+
+### 상태 값 변경
+`sql/schema.sql`에서 status 필드 수정:
+```sql
+status VARCHAR(20) DEFAULT '인텍'
+-- 원하는 상태값으로 변경 가능
+```
+
+### 필드 추가
+1. `sql/schema.sql`에 필드 추가
+2. `pages/customers.php` 폼에 입력 필드 추가
+3. `api/customers.php`에 처리 로직 추가
+
+### 권한 관리
+`api/auth.php`에서 역할별 권한 설정:
+```php
+if ($_SESSION['role'] === 'admin') {
+    // 관리자 전용 기능
+}
+```
+
+## 🐛 문제 해결
+
+### 데이터베이스 연결 오류
+- Secrets 환경변수 확인
+- 데이터베이스 서버 상태 확인
+- 방화벽/화이트리스트 설정 확인
+
+### 한글 깨짐
+- 데이터베이스 charset을 utf8mb4로 설정
+- PHP 파일 인코딩을 UTF-8로 저장
+
+### 파일 업로드 오류
+```bash
+# uploads 폴더 권한 설정
+chmod 777 uploads/
+```
+
+### 세션 오류
+```php
+// index.php 최상단에 추가
+ini_set('session.save_path', '/tmp');
+```
+
+## 📱 모바일 대응
+
+추후 반응형 디자인 적용:
+```css
+@media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-content { padding: 10px; }
+}
+```
+
+## 🔐 보안 강화
+
+### 1. 비밀번호 암호화
+```php
+// 회원가입 시
+$hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+
+// 로그인 시
+password_verify($password, $hashedPassword);
+```
+
+### 2. SQL Injection 방지
+- PDO prepared statements 사용 (이미 적용됨)
+
+### 3. XSS 방지
+- htmlspecialchars() 사용 (이미 적용됨)
+
+### 4. CSRF 토큰
+```php
+// 폼에 토큰 추가
+$_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+```
+
+## 📊 추가 기능 아이디어
+
+### 1. 대시보드 차트
+- Chart.js 활용한 시각화
+- 실시간 통계 업데이트
+
+### 2. 알림 시스템
+- 웹 푸시 알림
+- 이메일/SMS 연동
+
+### 3. 리포트 생성
+- PDF 출력 기능
+- 엑셀 내보내기
+
+### 4. API 확장
+- RESTful API 완성
+- 외부 시스템 연동
+
+## 💡 성능 최적화
+
+### 1. 캐싱
+```php
+// Redis 또는 Memcached 활용
+$cache->set('stats', $stats, 3600);
+```
+
+### 2. 인덱스 최적화
+```sql
+CREATE INDEX idx_status_date ON customers(status, created_at);
+```
+
+### 3. 페이징 개선
+- 무한 스크롤 구현
+- AJAX 로딩
+
+## 📚 참고 자료
+
+- [PHP 공식 문서](https://www.php.net/manual/en/)
+- [Bootstrap 5 문서](https://getbootstrap.com/docs/5.0/)
+- [PDO 튜토리얼](https://phpdelusions.net/pdo)
+- [Chart.js 문서](https://www.chartjs.org/docs/)
+
+## 🆘 지원
+
+문제가 발생하면:
+1. 브라우저 개발자 도구 콘솔 확인
+2. PHP 에러 로그 확인
+3. 데이터베이스 쿼리 로그 확인
+
+---
+
+**마셈블 CRM MVP v1.0**
+- 개인회생 상담 관리에 최적화
+- 확장 가능한 구조
+- 보안 및 성능 고려

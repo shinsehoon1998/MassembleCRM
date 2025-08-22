@@ -1,0 +1,479 @@
+<?php
+// pages/customer_detail.php - 고객 상세 페이지
+require_once 'config/database.php';
+$db = new DBHelper();
+
+$customerId = $_GET['id'] ?? 0;
+
+if (!$customerId) {
+    echo '<div class="alert alert-danger">고객 ID가 필요합니다.</div>';
+    exit;
+}
+
+// 고객 정보 조회
+$customer = $db->selectOne(
+    "SELECT c.*, u1.name as counselor_name, u2.name as secondary_name
+     FROM customers c
+     LEFT JOIN users u1 ON c.assigned_user_id = u1.id
+     LEFT JOIN users u2 ON c.secondary_user_id = u2.id
+     WHERE c.id = :id",
+    ['id' => $customerId]
+);
+
+if (!$customer) {
+    echo '<div class="alert alert-danger">고객을 찾을 수 없습니다.</div>';
+    exit;
+}
+
+// 상담 이력 조회
+$history = $db->select(
+    "SELECT h.*, u.name as user_name
+     FROM consult_history h
+     LEFT JOIN users u ON h.user_id = u.id
+     WHERE h.customer_id = :id
+     ORDER BY h.consult_date DESC",
+    ['id' => $customerId]
+);
+
+// 첨부 파일 조회
+$attachments = $db->select(
+    "SELECT a.*, u.name as uploader_name
+     FROM attachments a
+     LEFT JOIN users u ON a.uploaded_by = u.id
+     WHERE a.customer_id = :id
+     ORDER BY a.created_at DESC",
+    ['id' => $customerId]
+);
+?>
+
+<style>
+.detail-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.detail-card h5 {
+    border-bottom: 2px solid #2c7da0;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    color: #2c7da0;
+}
+
+.info-row {
+    display: flex;
+    padding: 8px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.info-label {
+    flex: 0 0 150px;
+    font-weight: bold;
+    color: #666;
+}
+
+.info-value {
+    flex: 1;
+    color: #333;
+}
+
+.timeline {
+    position: relative;
+    padding-left: 30px;
+}
+
+.timeline:before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ddd;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 20px;
+}
+
+.timeline-item:before {
+    content: '';
+    position: absolute;
+    left: -25px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #2c7da0;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.timeline-content {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 14px;
+    color: #666;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.tab-content {
+    padding-top: 20px;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.file-icon {
+    font-size: 24px;
+    margin-right: 15px;
+    color: #666;
+}
+</style>
+
+<!-- 액션 버튼 -->
+<div class="action-buttons">
+    <button class="btn btn-primary" onclick="editCustomer(<?php echo $customerId; ?>)">
+        <i class="fas fa-edit"></i> 정보 수정
+    </button>
+    <button class="btn btn-success" onclick="openHistoryModal()">
+        <i class="fas fa-comment"></i> 상담 기록
+    </button>
+    <button class="btn btn-info" onclick="openFileModal()">
+        <i class="fas fa-paperclip"></i> 파일 첨부
+    </button>
+    <button class="btn btn-warning" onclick="changeStatus()">
+        <i class="fas fa-exchange-alt"></i> 상태 변경
+    </button>
+    <a href="index.php?page=customers" class="btn btn-secondary">
+        <i class="fas fa-list"></i> 목록으로
+    </a>
+</div>
+
+<!-- 고객 기본 정보 -->
+<div class="detail-card">
+    <h5><i class="fas fa-user"></i> 고객 정보</h5>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="info-row">
+                <div class="info-label">이름</div>
+                <div class="info-value"><?php echo htmlspecialchars($customer['name']); ?></div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">연락처</div>
+                <div class="info-value">
+                    <?php echo htmlspecialchars($customer['phone']); ?>
+                    <?php if ($customer['phone2']): ?>
+                        / <?php echo htmlspecialchars($customer['phone2']); ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">생년월일</div>
+                <div class="info-value">
+                    <?php echo $customer['birth_date'] ? date('Y년 m월 d일', strtotime($customer['birth_date'])) : '-'; ?>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">성별</div>
+                <div class="info-value">
+                    <?php 
+                    $gender = ['M' => '남성', 'F' => '여성', 'N' => '-'];
+                    echo $gender[$customer['gender']] ?? '-';
+                    ?>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">주소</div>
+                <div class="info-value">
+                    <?php 
+                    if ($customer['address']) {
+                        echo "({$customer['zipcode']}) {$customer['address']} {$customer['address_detail']}";
+                    } else {
+                        echo '-';
+                    }
+                    ?>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="info-row">
+                <div class="info-label">채무금액</div>
+                <div class="info-value">
+                    <?php echo $customer['debt_amount'] ? number_format($customer['debt_amount']) . '원' : '-'; ?>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">월소득</div>
+                <div class="info-value">
+                    <?php echo $customer['monthly_income'] ? number_format($customer['monthly_income']) . '원' : '-'; ?>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">직업</div>
+                <div class="info-value">
+                    <?php echo htmlspecialchars($customer['job_type'] ?? '-'); ?>
+                    <?php if ($customer['company_name']): ?>
+                        (<?php echo htmlspecialchars($customer['company_name']); ?>)
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">상태</div>
+                <div class="info-value">
+                    <span class="status-badge status-<?php echo $customer['status']; ?>">
+                        <?php echo $customer['status']; ?>
+                    </span>
+                </div>
+            </div>
+            <div class="info-row">
+                <div class="info-label">담당자</div>
+                <div class="info-value">
+                    <?php echo htmlspecialchars($customer['counselor_name'] ?? '미지정'); ?>
+                    <?php if ($customer['secondary_name']): ?>
+                        / <?php echo htmlspecialchars($customer['secondary_name']); ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php if ($customer['memo']): ?>
+    <div class="mt-3">
+        <div class="info-label">메모</div>
+        <div class="alert alert-light">
+            <?php echo nl2br(htmlspecialchars($customer['memo'])); ?>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<!-- 탭 메뉴 -->
+<ul class="nav nav-tabs" id="detailTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button">
+            <i class="fas fa-history"></i> 상담 이력 (<?php echo count($history); ?>)
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="files-tab" data-bs-toggle="tab" data-bs-target="#files" type="button">
+            <i class="fas fa-file"></i> 첨부 파일 (<?php echo count($attachments); ?>)
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="schedule-tab" data-bs-toggle="tab" data-bs-target="#schedule" type="button">
+            <i class="fas fa-calendar"></i> 일정
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="detailTabContent">
+    <!-- 상담 이력 탭 -->
+    <div class="tab-pane fade show active" id="history" role="tabpanel">
+        <div class="detail-card">
+            <h5><i class="fas fa-comments"></i> 상담 이력</h5>
+            <?php if (empty($history)): ?>
+                <p class="text-muted">상담 이력이 없습니다.</p>
+            <?php else: ?>
+                <div class="timeline">
+                    <?php foreach ($history as $item): ?>
+                    <div class="timeline-item">
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <div>
+                                    <strong><?php echo htmlspecialchars($item['user_name']); ?></strong>
+                                    <span class="badge bg-secondary"><?php echo $item['consult_type']; ?></span>
+                                    <?php if ($item['status_before'] && $item['status_after']): ?>
+                                        <span class="badge bg-info">
+                                            <?php echo $item['status_before']; ?> → <?php echo $item['status_after']; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div><?php echo date('Y-m-d H:i', strtotime($item['consult_date'])); ?></div>
+                            </div>
+                            <div><?php echo nl2br(htmlspecialchars($item['content'])); ?></div>
+                            <?php if ($item['next_action']): ?>
+                                <div class="mt-2 text-primary">
+                                    <i class="fas fa-arrow-right"></i> 
+                                    다음 액션: <?php echo htmlspecialchars($item['next_action']); ?>
+                                    <?php if ($item['next_date']): ?>
+                                        (<?php echo date('Y-m-d', strtotime($item['next_date'])); ?>)
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- 첨부 파일 탭 -->
+    <div class="tab-pane fade" id="files" role="tabpanel">
+        <div class="detail-card">
+            <h5><i class="fas fa-paperclip"></i> 첨부 파일</h5>
+            <?php if (empty($attachments)): ?>
+                <p class="text-muted">첨부된 파일이 없습니다.</p>
+            <?php else: ?>
+                <?php foreach ($attachments as $file): ?>
+                <div class="file-item">
+                    <div class="file-icon">
+                        <?php
+                        $icon = 'fa-file';
+                        if (strpos($file['file_type'], 'image') !== false) $icon = 'fa-file-image';
+                        elseif (strpos($file['file_type'], 'pdf') !== false) $icon = 'fa-file-pdf';
+                        elseif (strpos($file['file_type'], 'word') !== false) $icon = 'fa-file-word';
+                        elseif (strpos($file['file_type'], 'excel') !== false) $icon = 'fa-file-excel';
+                        ?>
+                        <i class="fas <?php echo $icon; ?>"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div><?php echo htmlspecialchars($file['file_name']); ?></div>
+                        <small class="text-muted">
+                            <?php echo round($file['file_size'] / 1024, 2); ?> KB | 
+                            <?php echo htmlspecialchars($file['uploader_name']); ?> | 
+                            <?php echo date('Y-m-d H:i', strtotime($file['created_at'])); ?>
+                        </small>
+                    </div>
+                    <div>
+                        <a href="<?php echo htmlspecialchars($file['file_path']); ?>" 
+                           class="btn btn-sm btn-outline-primary" download>
+                            <i class="fas fa-download"></i>
+                        </a>
+                        <button class="btn btn-sm btn-outline-danger" 
+                                onclick="deleteFile(<?php echo $file['id']; ?>)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- 일정 탭 -->
+    <div class="tab-pane fade" id="schedule" role="tabpanel">
+        <div class="detail-card">
+            <h5><i class="fas fa-calendar-alt"></i> 예약 일정</h5>
+            <p class="text-muted">일정 기능은 준비 중입니다.</p>
+        </div>
+    </div>
+</div>
+
+<!-- 상담 기록 모달 -->
+<div class="modal fade" id="historyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">상담 기록 추가</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="historyForm">
+                    <input type="hidden" name="customer_id" value="<?php echo $customerId; ?>">
+                    <div class="mb-3">
+                        <label class="form-label">상담 유형</label>
+                        <select class="form-select" name="consult_type" required>
+                            <option value="전화">전화</option>
+                            <option value="방문">방문</option>
+                            <option value="카톡">카톡</option>
+                            <option value="이메일">이메일</option>
+                            <option value="기타">기타</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">상담 내용</label>
+                        <textarea class="form-control" name="content" rows="5" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">다음 액션</label>
+                        <input type="text" class="form-control" name="next_action">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">다음 일정</label>
+                        <input type="date" class="form-control" name="next_date">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" onclick="saveHistory()">저장</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openHistoryModal() {
+    document.getElementById('historyForm').reset();
+    new bootstrap.Modal(document.getElementById('historyModal')).show();
+}
+
+async function saveHistory() {
+    const formData = new FormData(document.getElementById('historyForm'));
+    
+    const response = await fetch('api/customers.php?action=add_history', {
+        method: 'POST',
+        body: formData
+    });
+    
+    const result = await response.json();
+    if (result.success) {
+        alert('상담 기록이 추가되었습니다.');
+        location.reload();
+    } else {
+        alert(result.message || '저장에 실패했습니다.');
+    }
+}
+
+function changeStatus() {
+    const newStatus = prompt('변경할 상태를 입력하세요 (인텍/수수/접수/작업/완료):', '<?php echo $customer['status']; ?>');
+    
+    if (newStatus && ['인텍', '수수', '접수', '작업', '완료'].includes(newStatus)) {
+        const formData = new FormData();
+        formData.append('id', '<?php echo $customerId; ?>');
+        formData.append('status', newStatus);
+        
+        fetch('api/customers.php?action=update', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                alert('상태가 변경되었습니다.');
+                location.reload();
+            } else {
+                alert(result.message || '변경에 실패했습니다.');
+            }
+        });
+    }
+}
+
+function editCustomer(id) {
+    // 부모 페이지의 함수 호출
+    window.parent.openCustomerModal(id);
+}
+</script>

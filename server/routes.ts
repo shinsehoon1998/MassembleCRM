@@ -2,8 +2,9 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema } from "@shared/schema";
 import { z } from "zod";
+import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -188,6 +189,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Error creating consultation:", error);
       res.status(500).json({ message: "Failed to create consultation" });
+    }
+  });
+
+  // File upload endpoint for getting presigned URL
+  app.post('/api/objects/upload', isAuthenticated, async (req, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      res.json({ uploadURL });
+    } catch (error) {
+      console.error("Error getting upload URL:", error);
+      res.status(500).json({ message: "Failed to get upload URL" });
+    }
+  });
+
+  // File download endpoint
+  app.get('/objects/:objectPath(*)', isAuthenticated, async (req, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(req.path);
+      objectStorageService.downloadObject(objectFile, res);
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      if (error instanceof ObjectNotFoundError) {
+        return res.sendStatus(404);
+      }
+      return res.sendStatus(500);
+    }
+  });
+
+  // Attachment routes
+  app.get('/api/customers/:id/attachments', isAuthenticated, async (req, res) => {
+    try {
+      const attachments = await storage.getAttachments(req.params.id);
+      res.json(attachments);
+    } catch (error) {
+      console.error("Error fetching attachments:", error);
+      res.status(500).json({ message: "Failed to fetch attachments" });
+    }
+  });
+
+  app.post('/api/customers/:id/attachments', isAuthenticated, async (req: any, res) => {
+    try {
+      const objectStorageService = new ObjectStorageService();
+      let filePath = req.body.filePath;
+      
+      // If it's a full URL, normalize it
+      if (filePath && filePath.includes('storage.googleapis.com')) {
+        filePath = objectStorageService.normalizeObjectEntityPath(filePath);
+      }
+
+      const validatedData = insertAttachmentSchema.parse({
+        ...req.body,
+        customerId: req.params.id,
+        uploadedBy: req.user.claims.sub,
+        filePath: filePath,
+      });
+
+      const attachment = await storage.createAttachment(validatedData);
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        customerId: req.params.id,
+        action: "file_uploaded",
+        description: `파일 "${attachment.originalName}"을(를) 첨부했습니다.`,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating attachment:", error);
+      res.status(500).json({ message: "Failed to create attachment" });
+    }
+  });
+
+  app.delete('/api/attachments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const deleted = await storage.deleteAttachment(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "Attachment not found" });
+      }
+
+      // Log activity
+      await storage.createActivityLog({
+        userId: req.user.claims.sub,
+        action: "file_deleted",
+        description: "파일을 삭제했습니다.",
+      });
+
+      res.json({ message: "Attachment deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting attachment:", error);
+      res.status(500).json({ message: "Failed to delete attachment" });
+    }
+  });
+
+  // Activity log routes
+  app.get('/api/customers/:id/activity-logs', isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const activityLogs = await storage.getActivityLogs(req.params.id, limit);
+      res.json(activityLogs);
+    } catch (error) {
+      console.error("Error fetching activity logs:", error);
+      res.status(500).json({ message: "Failed to fetch activity logs" });
+    }
+  });
+
+  app.get('/api/activity-logs', isAuthenticated, async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const activityLogs = await storage.getActivityLogs(undefined, limit);
+      res.json(activityLogs);
+    } catch (error) {
+      console.error("Error fetching activity logs:", error);
+      res.status(500).json({ message: "Failed to fetch activity logs" });
     }
   });
 

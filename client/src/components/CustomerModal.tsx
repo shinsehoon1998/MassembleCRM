@@ -22,6 +22,8 @@ interface CustomerModalProps {
 
 const customerFormSchema = insertCustomerSchema.extend({
   birthDate: z.string().optional(),
+  debtAmount: z.string().optional(),
+  monthlyIncome: z.string().optional(),
 });
 
 type CustomerFormData = z.infer<typeof customerFormSchema>;
@@ -45,10 +47,21 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
       secondaryPhone: "",
       birthDate: "",
       gender: "N",
+      zipcode: "",
+      address: "",
+      addressDetail: "",
       debtAmount: "",
       monthlyIncome: "",
+      jobType: "",
+      companyName: "",
+      consultType: "",
+      consultPath: "",
       status: "인텍",
       assignedUserId: "",
+      secondaryUserId: "",
+      department: "",
+      team: "",
+      source: "manual",
       memo: "",
     },
   });
@@ -63,10 +76,21 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         secondaryPhone: customer.secondaryPhone || "",
         birthDate: customer.birthDate ? new Date(customer.birthDate).toISOString().split('T')[0] : "",
         gender: customer.gender || "N",
-        debtAmount: customer.debtAmount || "",
-        monthlyIncome: customer.monthlyIncome || "",
+        zipcode: customer.zipcode || "",
+        address: customer.address || "",
+        addressDetail: customer.addressDetail || "",
+        debtAmount: customer.debtAmount?.toString() || "",
+        monthlyIncome: customer.monthlyIncome?.toString() || "",
+        jobType: customer.jobType || "",
+        companyName: customer.companyName || "",
+        consultType: customer.consultType || "",
+        consultPath: customer.consultPath || "",
         status: customer.status,
         assignedUserId: customer.assignedUserId || "",
+        secondaryUserId: customer.secondaryUserId || "",
+        department: customer.department || "",
+        team: customer.team || "",
+        source: customer.source || "manual",
         memo: customer.memo || "",
       });
     } else {
@@ -76,10 +100,21 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         secondaryPhone: "",
         birthDate: "",
         gender: "N",
+        zipcode: "",
+        address: "",
+        addressDetail: "",
         debtAmount: "",
         monthlyIncome: "",
+        jobType: "",
+        companyName: "",
+        consultType: "",
+        consultPath: "",
         status: "인텍",
         assignedUserId: "",
+        secondaryUserId: "",
+        department: "",
+        team: "",
+        source: "manual",
         memo: "",
       });
     }
@@ -90,10 +125,21 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
       const payload = {
         ...data,
         birthDate: data.birthDate ? new Date(data.birthDate).toISOString() : null,
-        debtAmount: data.debtAmount ? data.debtAmount.toString() : null,
-        monthlyIncome: data.monthlyIncome ? data.monthlyIncome.toString() : null,
+        debtAmount: data.debtAmount || null,
+        monthlyIncome: data.monthlyIncome || null,
         assignedUserId: data.assignedUserId || null,
+        secondaryUserId: data.secondaryUserId || null,
         secondaryPhone: data.secondaryPhone || null,
+        zipcode: data.zipcode || null,
+        address: data.address || null,
+        addressDetail: data.addressDetail || null,
+        jobType: data.jobType || null,
+        companyName: data.companyName || null,
+        consultType: data.consultType || null,
+        consultPath: data.consultPath || null,
+        department: data.department || null,
+        team: data.team || null,
+        source: data.source || "manual",
         memo: data.memo || null,
       };
       
@@ -192,7 +238,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
             <div>
               <Label htmlFor="gender">성별</Label>
               <Select
-                value={watchedValues.gender}
+                value={watchedValues.gender || "N"}
                 onValueChange={(value) => setValue("gender", value as "M" | "F" | "N")}
               >
                 <SelectTrigger data-testid="select-customer-gender">
@@ -229,7 +275,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
             <div>
               <Label htmlFor="assignedUserId">담당자</Label>
               <Select
-                value={watchedValues.assignedUserId}
+                value={watchedValues.assignedUserId || ""}
                 onValueChange={(value) => setValue("assignedUserId", value)}
               >
                 <SelectTrigger data-testid="select-customer-counselor">
@@ -266,13 +312,165 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
             </div>
           </div>
           
-          <div>
+          {/* 주소 정보 */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">주소 정보</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="zipcode">우편번호</Label>
+                <Input
+                  id="zipcode"
+                  {...register("zipcode")}
+                  data-testid="input-customer-zipcode"
+                  placeholder="12345"
+                />
+              </div>
+              
+              <div className="md:col-span-2">
+                <Label htmlFor="address">주소</Label>
+                <Input
+                  id="address"
+                  {...register("address")}
+                  data-testid="input-customer-address"
+                  placeholder="서울시 강남구 역삼동"
+                />
+              </div>
+              
+              <div className="md:col-span-3">
+                <Label htmlFor="addressDetail">상세주소</Label>
+                <Input
+                  id="addressDetail"
+                  {...register("addressDetail")}
+                  data-testid="input-customer-address-detail"
+                  placeholder="123번지 456호"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* 직업 정보 */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">직업 정보</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="jobType">직업</Label>
+                <Input
+                  id="jobType"
+                  {...register("jobType")}
+                  data-testid="input-customer-job-type"
+                  placeholder="사무직, 서비스업, 자영업 등"
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="companyName">회사명</Label>
+                <Input
+                  id="companyName"
+                  {...register("companyName")}
+                  data-testid="input-customer-company-name"
+                  placeholder="회사명 입력"
+                />
+              </div>
+            </div>
+          </div>
+          
+          {/* 상담 정보 */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">상담 정보</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="consultType">상담 유형</Label>
+                <Select
+                  value={watchedValues.consultType || ""}
+                  onValueChange={(value) => setValue("consultType", value)}
+                >
+                  <SelectTrigger data-testid="select-customer-consult-type">
+                    <SelectValue placeholder="상담 유형 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="other">다른위치</SelectItem>
+                    <SelectItem value="개인회생">개인회생</SelectItem>
+                    <SelectItem value="개인파산">개인파산</SelectItem>
+                    <SelectItem value="임임처분">임임처분</SelectItem>
+                    <SelectItem value="상담만">상담만</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="consultPath">상담 경로</Label>
+                <Select
+                  value={watchedValues.consultPath || ""}
+                  onValueChange={(value) => setValue("consultPath", value)}
+                >
+                  <SelectTrigger data-testid="select-customer-consult-path">
+                    <SelectValue placeholder="상담 경로 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="waiting">대기</SelectItem>
+                    <SelectItem value="인터넷">인터넷</SelectItem>
+                    <SelectItem value="전화">전화</SelectItem>
+                    <SelectItem value="지인소개">지인소개</SelectItem>
+                    <SelectItem value="방문">방문</SelectItem>
+                    <SelectItem value="기타">기타</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          
+          {/* 부가 담당자 */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">추가 정보</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="secondaryUserId">부가 담당자</Label>
+                <Select
+                  value={watchedValues.secondaryUserId || ""}
+                  onValueChange={(value) => setValue("secondaryUserId", value)}
+                >
+                  <SelectTrigger data-testid="select-customer-secondary-counselor">
+                    <SelectValue placeholder="부가 담당자 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">선택 안함</SelectItem>
+                    {counselors.map((counselor) => (
+                      <SelectItem key={counselor.id} value={counselor.id}>
+                        {counselor.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="source">등록 경로</Label>
+                <Select
+                  value={watchedValues.source || "manual"}
+                  onValueChange={(value) => setValue("source", value)}
+                >
+                  <SelectTrigger data-testid="select-customer-source">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">수동 등록</SelectItem>
+                    <SelectItem value="web">웹 사이트</SelectItem>
+                    <SelectItem value="phone">전화 상담</SelectItem>
+                    <SelectItem value="import">데이터 가져오기</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          
+          <div className="border-t pt-6">
             <Label htmlFor="memo">메모</Label>
             <Textarea
               id="memo"
               rows={3}
               {...register("memo")}
               data-testid="input-customer-memo"
+              placeholder="고객에 대한 추가 정보나 메모를 입력하세요..."
             />
           </div>
           

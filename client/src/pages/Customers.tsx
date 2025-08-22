@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -268,9 +269,11 @@ export default function Customers() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900" data-testid="text-customer-name">
-                              {customer.name}
-                            </div>
+                            <Link href={`/customers/${customer.id}`}>
+                              <div className="text-sm font-medium text-blue-600 hover:text-blue-800 cursor-pointer" data-testid="text-customer-name">
+                                {customer.name}
+                              </div>
+                            </Link>
                             <div className="text-sm text-gray-500">
                               {customer.gender === 'M' ? '남' : customer.gender === 'F' ? '여' : ''}{customer.birthDate && customer.gender !== 'N' ? ', ' : ''}
                               {customer.birthDate && format(new Date(customer.birthDate), 'yyyy.MM.dd', { locale: ko })}
@@ -308,9 +311,11 @@ export default function Customers() {
                           {format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko })}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <Button variant="ghost" size="sm" className="text-primary-500 hover:text-primary-600 mr-3" title="상세보기">
-                            <i className="fas fa-eye"></i>
-                          </Button>
+                          <Link href={`/customers/${customer.id}`}>
+                            <Button variant="ghost" size="sm" className="text-primary-500 hover:text-primary-600 mr-3" title="상세보기" data-testid={`button-view-${customer.id}`}>
+                              <i className="fas fa-eye"></i>
+                            </Button>
+                          </Link>
                           <Button 
                             variant="ghost" 
                             size="sm" 

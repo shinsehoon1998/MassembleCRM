@@ -1,0 +1,417 @@
+<?php
+// ============================================
+// api/auth.php - 인증 API
+// ============================================
+session_start();
+require_once '../config/database.php';
+
+header('Content-Type: application/json');
+
+$action = $_GET['action'] ?? '';
+$db = new DBHelper();
+
+switch ($action) {
+    case 'login':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Invalid method']);
+            exit;
+        }
+        
+        $username = $_POST['username'] ?? '';
+        $password = $_POST['password'] ?? '';
+        
+        // 사용자 조회
+        $user = $db->selectOne(
+            "SELECT * FROM users WHERE username = :username AND is_active = 1",
+            ['username' => $username]
+        );
+        
+        // 테스트용: 비밀번호 검증 간소화 (실제로는 password_verify 사용)
+        if ($user && ($password === 'admin123' || password_verify($password, $user['password']))) {
+            // 세션 설정
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['name'] = $user['name'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['department'] = $user['department'];
+            $_SESSION['team'] = $user['team'];
+            
+            // 마지막 로그인 시간 업데이트
+            $db->update('users', 
+                ['last_login' => date('Y-m-d H:i:s')],
+                'id = :id',
+                ['id' => $user['id']]
+            );
+            
+            // 활동 로그
+            logActivity($user['id'], 'login', 'user', $user['id'], 'Login successful');
+            
+            echo json_encode(['success' => true, 'message' => '로그인 성공']);
+        } else {
+            echo json_encode(['success' => false, 'message' => '아이디 또는 비밀번호가 올바르지 않습니다.']);
+        }
+        break;
+        
+    case 'logout':
+        // 활동 로그
+        if (isset($_SESSION['user_id'])) {
+            logActivity($_SESSION['user_id'], 'logout', 'user', $_SESSION['user_id'], 'Logout');
+        }
+        
+        session_destroy();
+        header('Location: ../index.php?page=login');
+        exit;
+        
+    case 'check':
+        echo json_encode([
+            'success' => true,
+            'logged_in' => isset($_SESSION['user_id']),
+            'user' => $_SESSION ?? null
+        ]);
+        break;
+        
+    default:
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}
+
+// ============================================
+// api/customers.php - 고객 관리 API
+// ============================================
+session_start();
+require_once '../config/database.php';
+
+// 로그인 체크
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    exit;
+}
+
+header('Content-Type: application/json');
+
+$action = $_GET['action'] ?? '';
+$db = new DBHelper();
+$userId = $_SESSION['user_id'];
+
+switch ($action) {
+    case 'list':
+        $page = $_GET['page'] ?? 1;
+        $search = $_GET['search'] ?? '';
+        $status = $_GET['status'] ?? '';
+        
+        $where = "1=1";
+        $params = [];
+        
+        if ($search) {
+            $where .= " AND (c.name LIKE :search OR c.phone LIKE :search)";
+            $params['search'] = "%{$search}%";
+        }
+        
+        if ($status) {
+            $where .= " AND c.status = :status";
+            $params['status'] = $status;
+        }
+        
+        $sql = "
+            SELECT c.*, u.name as counselor_name 
+            FROM customers c
+            LEFT JOIN users u ON c.assigned_user_id = u.id
+            WHERE {$where}
+            ORDER BY c.created_at DESC
+        ";
+        
+        $result = $db->paginate($sql, $params, $page);
+        echo json_encode(['success' => true, 'data' => $result]);
+        break;
+        
+    case 'get':
+        $id = $_GET['id'] ?? 0;
+        
+        $customer = $db->selectOne(
+            "SELECT c.*, u.name as counselor_name 
+             FROM customers c
+             LEFT JOIN users u ON c.assigned_user_id = u.id
+             WHERE c.id = :id",
+            ['id' => $id]
+        );
+        
+        if ($customer) {
+            // 상담 이력 조회
+            $history = $db->select(
+                "SELECT h.*, u.name as user_name
+                 FROM consult_history h
+                 LEFT JOIN users u ON h.user_id = u.id
+                 WHERE h.customer_id = :id
+                 ORDER BY h.consult_date DESC",
+                ['id' => $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'customer' => $customer,
+                'history' => $history
+            ]);
+        } else {
+            echo json_encode(['success' => false, 'message' => '고객을 찾을 수 없습니다.']);
+        }
+        break;
+        
+    case 'create':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Invalid method']);
+            exit;
+        }
+        
+        $data = [
+            'name' => $_POST['name'] ?? '',
+            'phone' => $_POST['phone'] ?? '',
+            'phone2' => $_POST['phone2'] ?? null,
+            'birth_date' => $_POST['birth_date'] ?: null,
+            'gender' => $_POST['gender'] ?? 'N',
+            'zipcode' => $_POST['zipcode'] ?? null,
+            'address' => $_POST['address'] ?? null,
+            'address_detail' => $_POST['address_detail'] ?? null,
+            'debt_amount' => $_POST['debt_amount'] ?: null,
+            'monthly_income' => $_POST['monthly_income'] ?: null,
+            'job_type' => $_POST['job_type'] ?? null,
+            'company_name' => $_POST['company_name'] ?? null,
+            'consult_type' => $_POST['consult_type'] ?? null,
+            'consult_path' => $_POST['consult_path'] ?? null,
+            'status' => $_POST['status'] ?? '인텍',
+            'assigned_user_id' => $_POST['assigned_user_id'] ?: null,
+            'secondary_user_id' => $_POST['secondary_user_id'] ?: null,
+            'department' => $_POST['department'] ?? $_SESSION['department'],
+            'team' => $_POST['team'] ?? $_SESSION['team'],
+            'memo' => $_POST['memo'] ?? null,
+            'source' => $_POST['source'] ?? 'manual'
+        ];
+        
+        // 필수 필드 검증
+        if (empty($data['name']) || empty($data['phone'])) {
+            echo json_encode(['success' => false, 'message' => '이름과 연락처는 필수입니다.']);
+            exit;
+        }
+        
+        // 중복 체크
+        $existing = $db->selectOne(
+            "SELECT id FROM customers WHERE phone = :phone",
+            ['phone' => $data['phone']]
+        );
+        
+        if ($existing) {
+            echo json_encode(['success' => false, 'message' => '이미 등록된 연락처입니다.']);
+            exit;
+        }
+        
+        $customerId = $db->insert('customers', $data);
+        
+        if ($customerId) {
+            // 상담 이력 추가
+            $db->insert('consult_history', [
+                'customer_id' => $customerId,
+                'user_id' => $userId,
+                'consult_type' => '신규등록',
+                'content' => '고객 신규 등록',
+                'status_after' => $data['status']
+            ]);
+            
+            // 활동 로그
+            logActivity($userId, 'create', 'customer', $customerId, "고객 등록: {$data['name']}");
+            
+            echo json_encode(['success' => true, 'message' => '고객이 등록되었습니다.', 'id' => $customerId]);
+        } else {
+            echo json_encode(['success' => false, 'message' => '등록에 실패했습니다.']);
+        }
+        break;
+        
+    case 'update':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Invalid method']);
+            exit;
+        }
+        
+        $id = $_POST['id'] ?? 0;
+        
+        if (!$id) {
+            echo json_encode(['success' => false, 'message' => '고객 ID가 필요합니다.']);
+            exit;
+        }
+        
+        // 기존 데이터 조회
+        $oldCustomer = $db->selectOne("SELECT * FROM customers WHERE id = :id", ['id' => $id]);
+        
+        if (!$oldCustomer) {
+            echo json_encode(['success' => false, 'message' => '고객을 찾을 수 없습니다.']);
+            exit;
+        }
+        
+        $data = [
+            'name' => $_POST['name'] ?? $oldCustomer['name'],
+            'phone' => $_POST['phone'] ?? $oldCustomer['phone'],
+            'phone2' => $_POST['phone2'] ?? $oldCustomer['phone2'],
+            'birth_date' => $_POST['birth_date'] ?: $oldCustomer['birth_date'],
+            'gender' => $_POST['gender'] ?? $oldCustomer['gender'],
+            'zipcode' => $_POST['zipcode'] ?? $oldCustomer['zipcode'],
+            'address' => $_POST['address'] ?? $oldCustomer['address'],
+            'address_detail' => $_POST['address_detail'] ?? $oldCustomer['address_detail'],
+            'debt_amount' => $_POST['debt_amount'] ?: $oldCustomer['debt_amount'],
+            'monthly_income' => $_POST['monthly_income'] ?: $oldCustomer['monthly_income'],
+            'job_type' => $_POST['job_type'] ?? $oldCustomer['job_type'],
+            'company_name' => $_POST['company_name'] ?? $oldCustomer['company_name'],
+            'consult_type' => $_POST['consult_type'] ?? $oldCustomer['consult_type'],
+            'consult_path' => $_POST['consult_path'] ?? $oldCustomer['consult_path'],
+            'status' => $_POST['status'] ?? $oldCustomer['status'],
+            'assigned_user_id' => $_POST['assigned_user_id'] ?: $oldCustomer['assigned_user_id'],
+            'secondary_user_id' => $_POST['secondary_user_id'] ?: $oldCustomer['secondary_user_id'],
+            'department' => $_POST['department'] ?? $oldCustomer['department'],
+            'team' => $_POST['team'] ?? $oldCustomer['team'],
+            'memo' => $_POST['memo'] ?? $oldCustomer['memo']
+        ];
+        
+        $result = $db->update('customers', $data, 'id = :id', ['id' => $id]);
+        
+        if ($result !== false) {
+            // 상태 변경 시 이력 추가
+            if ($oldCustomer['status'] !== $data['status']) {
+                $db->insert('consult_history', [
+                    'customer_id' => $id,
+                    'user_id' => $userId,
+                    'consult_type' => '상태변경',
+                    'content' => "상태 변경: {$oldCustomer['status']} → {$data['status']}",
+                    'status_before' => $oldCustomer['status'],
+                    'status_after' => $data['status']
+                ]);
+            }
+            
+            // 활동 로그
+            logActivity($userId, 'update', 'customer', $id, "고객 정보 수정: {$data['name']}");
+            
+            echo json_encode(['success' => true, 'message' => '고객 정보가 수정되었습니다.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => '수정에 실패했습니다.']);
+        }
+        break;
+        
+    case 'delete':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Invalid method']);
+            exit;
+        }
+        
+        $id = $_GET['id'] ?? 0;
+        
+        if (!$id) {
+            echo json_encode(['success' => false, 'message' => '고객 ID가 필요합니다.']);
+            exit;
+        }
+        
+        // 고객 정보 조회
+        $customer = $db->selectOne("SELECT name FROM customers WHERE id = :id", ['id' => $id]);
+        
+        if (!$customer) {
+            echo json_encode(['success' => false, 'message' => '고객을 찾을 수 없습니다.']);
+            exit;
+        }
+        
+        $result = $db->delete('customers', 'id = :id', ['id' => $id]);
+        
+        if ($result) {
+            // 활동 로그
+            logActivity($userId, 'delete', 'customer', $id, "고객 삭제: {$customer['name']}");
+            
+            echo json_encode(['success' => true, 'message' => '고객이 삭제되었습니다.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => '삭제에 실패했습니다.']);
+        }
+        break;
+        
+    case 'add_history':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Invalid method']);
+            exit;
+        }
+        
+        $data = [
+            'customer_id' => $_POST['customer_id'] ?? 0,
+            'user_id' => $userId,
+            'consult_type' => $_POST['consult_type'] ?? '',
+            'content' => $_POST['content'] ?? '',
+            'next_action' => $_POST['next_action'] ?? null,
+            'next_date' => $_POST['next_date'] ?: null
+        ];
+        
+        if (!$data['customer_id'] || !$data['content']) {
+            echo json_encode(['success' => false, 'message' => '필수 정보가 누락되었습니다.']);
+            exit;
+        }
+        
+        $historyId = $db->insert('consult_history', $data);
+        
+        if ($historyId) {
+            echo json_encode(['success' => true, 'message' => '상담 이력이 추가되었습니다.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => '이력 추가에 실패했습니다.']);
+        }
+        break;
+        
+    case 'bulk_update':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['success' => false, 'message' => 'Invalid method']);
+            exit;
+        }
+        
+        $ids = json_decode($_POST['ids'] ?? '[]', true);
+        $field = $_POST['field'] ?? '';
+        $value = $_POST['value'] ?? '';
+        
+        if (empty($ids) || !$field) {
+            echo json_encode(['success' => false, 'message' => '필수 정보가 누락되었습니다.']);
+            exit;
+        }
+        
+        // 허용된 필드만 업데이트
+        $allowedFields = ['status', 'assigned_user_id', 'department', 'team'];
+        if (!in_array($field, $allowedFields)) {
+            echo json_encode(['success' => false, 'message' => '허용되지 않은 필드입니다.']);
+            exit;
+        }
+        
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = "UPDATE customers SET {$field} = ? WHERE id IN ({$placeholders})";
+        
+        try {
+            $stmt = Database::getInstance()->getConnection()->prepare($sql);
+            $params = array_merge([$value], $ids);
+            $stmt->execute($params);
+            
+            // 활동 로그
+            logActivity($userId, 'bulk_update', 'customer', 0, 
+                "일괄 수정: " . count($ids) . "건, {$field} = {$value}");
+            
+            echo json_encode(['success' => true, 'message' => count($ids) . '건이 수정되었습니다.']);
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => '일괄 수정에 실패했습니다.']);
+        }
+        break;
+        
+    case 'stats':
+        // 통계 데이터 조회
+        $stats = [
+            'total' => $db->selectOne("SELECT COUNT(*) as cnt FROM customers")['cnt'] ?? 0,
+            'today' => $db->selectOne("SELECT COUNT(*) as cnt FROM customers WHERE DATE(created_at) = CURDATE()")['cnt'] ?? 0,
+            'status' => $db->select("SELECT status, COUNT(*) as cnt FROM customers GROUP BY status"),
+            'monthly' => $db->select("
+                SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as cnt 
+                FROM customers 
+                WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+                GROUP BY month
+                ORDER BY month
+            ")
+        ];
+        
+        echo json_encode(['success' => true, 'stats' => $stats]);
+        break;
+        
+    default:
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}

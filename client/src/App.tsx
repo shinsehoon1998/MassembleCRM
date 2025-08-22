@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
+import CustomerDetail from "@/pages/CustomerDetail";
 import Users from "@/pages/Users";
 import Settings from "@/pages/Settings";
 import Layout from "@/components/Layout";
@@ -36,6 +37,7 @@ function Router() {
         <Layout>
           <Route path="/" component={Dashboard} />
           <Route path="/customers" component={Customers} />
+          <Route path="/customers/:id" component={CustomerDetail} />
           <Route path="/users" component={Users} />
           <Route path="/settings" component={Settings} />
         </Layout>

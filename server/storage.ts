@@ -3,6 +3,7 @@ import {
   customers,
   consultations,
   activityLogs,
+  attachments,
   type User,
   type UpsertUser,
   type Customer,
@@ -14,6 +15,9 @@ import {
   type InsertConsultation,
   type ActivityLog,
   type InsertActivityLog,
+  type Attachment,
+  type AttachmentWithUser,
+  type InsertAttachment,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, like, and, count, sql } from "drizzle-orm";
@@ -64,6 +68,11 @@ export interface IStorage {
   getUsers(): Promise<User[]>;
   updateUser(id: string, user: Partial<User>): Promise<User>;
   getCounselors(): Promise<User[]>;
+
+  // Attachment operations
+  getAttachments(customerId: string): Promise<AttachmentWithUser[]>;
+  createAttachment(attachment: InsertAttachment): Promise<Attachment>;
+  deleteAttachment(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -302,6 +311,10 @@ export class DatabaseStorage implements IStorage {
         userId: consultations.userId,
         title: consultations.title,
         content: consultations.content,
+        consultType: consultations.consultType,
+        statusBefore: consultations.statusBefore,
+        statusAfter: consultations.statusAfter,
+        nextAction: consultations.nextAction,
         consultationDate: consultations.consultationDate,
         nextSchedule: consultations.nextSchedule,
         createdAt: consultations.createdAt,
@@ -366,6 +379,42 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(and(eq(users.isActive, true), sql`${users.role} IN ('counselor', 'manager', 'admin')`))
       .orderBy(users.name);
+  }
+
+  async getAttachments(customerId: string): Promise<AttachmentWithUser[]> {
+    const attachmentsList = await db
+      .select({
+        id: attachments.id,
+        customerId: attachments.customerId,
+        uploadedBy: attachments.uploadedBy,
+        fileName: attachments.fileName,
+        originalName: attachments.originalName,
+        filePath: attachments.filePath,
+        fileSize: attachments.fileSize,
+        fileType: attachments.fileType,
+        description: attachments.description,
+        createdAt: attachments.createdAt,
+        uploader: users,
+      })
+      .from(attachments)
+      .innerJoin(users, eq(attachments.uploadedBy, users.id))
+      .where(eq(attachments.customerId, customerId))
+      .orderBy(desc(attachments.createdAt));
+
+    return attachmentsList as AttachmentWithUser[];
+  }
+
+  async createAttachment(attachment: InsertAttachment): Promise<Attachment> {
+    const [newAttachment] = await db
+      .insert(attachments)
+      .values(attachment)
+      .returning();
+    return newAttachment;
+  }
+
+  async deleteAttachment(id: string): Promise<boolean> {
+    const result = await db.delete(attachments).where(eq(attachments.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 }
 
