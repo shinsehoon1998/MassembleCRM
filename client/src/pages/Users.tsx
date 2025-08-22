@@ -10,7 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 import { UserModal } from "@/components/UserModal";
 
-function UsersList() {
+function UsersList({ onEditUser }: { onEditUser: (user: User) => void }) {
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ['/api/users'],
   });
@@ -93,7 +93,13 @@ function UsersList() {
             <Badge variant={user.isActive ? "default" : "secondary"}>
               {user.isActive ? "활성" : "비활성"}
             </Badge>
-            <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-600">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-gray-400 hover:text-gray-600"
+              onClick={() => onEditUser(user)}
+              data-testid={`button-edit-user-${user.id}`}
+            >
               <i className="fas fa-edit"></i>
             </Button>
           </div>
@@ -107,6 +113,17 @@ export default function Users() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+
+  const handleEditUser = (user: User) => {
+    setEditingUser(user);
+    setIsUserModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setEditingUser(null);
+    setIsUserModalOpen(false);
+  };
 
   // Redirect to home if not authenticated
   useEffect(() => {
@@ -153,14 +170,15 @@ export default function Users() {
               </Button>
             </div>
             
-            <UsersList />
+            <UsersList onEditUser={handleEditUser} />
           </div>
         </CardContent>
       </Card>
       
       <UserModal 
         isOpen={isUserModalOpen}
-        onClose={() => setIsUserModalOpen(false)}
+        onClose={handleCloseModal}
+        editingUser={editingUser}
       />
     </div>
   );

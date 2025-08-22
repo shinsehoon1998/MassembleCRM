@@ -1,5 +1,6 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { User } from "@shared/schema";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +19,7 @@ import { apiRequest } from "@/lib/queryClient";
 interface UserModalProps {
   isOpen: boolean;
   onClose: () => void;
+  editingUser?: User | null;
 }
 
 interface CreateUserData {
@@ -27,9 +29,10 @@ interface CreateUserData {
   lastName?: string;
   department?: string;
   role: 'admin' | 'manager' | 'counselor';
+  isActive?: boolean;
 }
 
-export function UserModal({ isOpen, onClose }: UserModalProps) {
+export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<CreateUserData>({
@@ -39,12 +42,41 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
     lastName: '',
     department: '',
     role: 'counselor',
+    isActive: true,
   });
+
+  // Reset form when editing user changes or modal opens
+  useEffect(() => {
+    if (editingUser) {
+      setFormData({
+        name: editingUser.name,
+        email: editingUser.email || '',
+        firstName: editingUser.firstName || '',
+        lastName: editingUser.lastName || '',
+        department: editingUser.department || '',
+        role: editingUser.role,
+        isActive: editingUser.isActive,
+      });
+    } else {
+      setFormData({
+        name: '',
+        email: '',
+        firstName: '',
+        lastName: '',
+        department: '',
+        role: 'counselor',
+        isActive: true,
+      });
+    }
+  }, [editingUser, isOpen]);
 
   const createUserMutation = useMutation({
     mutationFn: async (userData: CreateUserData) => {
-      const response = await fetch('/api/users', {
-        method: 'POST',
+      const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
+      const method = editingUser ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
         body: JSON.stringify(userData),
         headers: {
           'Content-Type': 'application/json',
@@ -52,22 +84,24 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
       });
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to create user');
+        throw new Error(error.message || `Failed to ${editingUser ? 'update' : 'create'} user`);
       }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/users'] });
       toast({
-        title: "사용자 추가 완료",
-        description: "새 사용자가 성공적으로 추가되었습니다.",
+        title: editingUser ? "사용자 수정 완료" : "사용자 추가 완료",
+        description: editingUser 
+          ? "사용자 정보가 성공적으로 수정되었습니다." 
+          : "새 사용자가 성공적으로 추가되었습니다.",
       });
       handleClose();
     },
     onError: (error: Error) => {
       toast({
-        title: "사용자 추가 실패",
-        description: error.message || "사용자 추가 중 오류가 발생했습니다.",
+        title: editingUser ? "사용자 수정 실패" : "사용자 추가 실패",
+        description: error.message || `사용자 ${editingUser ? '수정' : '추가'} 중 오류가 발생했습니다.`,
         variant: "destructive",
       });
     },
@@ -94,6 +128,7 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
       lastName: '',
       department: '',
       role: 'counselor',
+      isActive: true,
     });
     onClose();
   };
@@ -111,7 +146,9 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">회원등록</DialogTitle>
+          <DialogTitle className="text-lg font-semibold">
+            {editingUser ? '사용자 수정' : '회원등록'}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -203,6 +240,20 @@ export function UserModal({ isOpen, onClose }: UserModalProps) {
               </SelectContent>
             </Select>
           </div>
+
+          {editingUser && (
+            <div className="flex items-center space-x-2 pt-4 border-t">
+              <Checkbox 
+                id="isActive" 
+                checked={formData.isActive || false}
+                onCheckedChange={(checked) => 
+                  setFormData({ ...formData, isActive: checked as boolean })
+                }
+                data-testid="checkbox-active"
+              />
+              <Label htmlFor="isActive" className="text-sm">계정 활성화</Label>
+            </div>
+          )}
 
         </form>
 
