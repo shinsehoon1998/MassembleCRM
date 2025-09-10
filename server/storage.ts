@@ -138,7 +138,7 @@ export interface IStorage {
   addCustomerToGroup(customerId: string, groupId: string, addedBy: string): Promise<CustomerGroupMapping>;
   removeCustomerFromGroup(customerId: string, groupId: string): Promise<boolean>;
   getCustomersInGroup(groupId: string): Promise<CustomerWithUser[]>;
-  getCustomerGroups(customerId: string): Promise<CustomerGroup[]>;
+  getCustomerGroupsByCustomerId(customerId: string): Promise<CustomerGroup[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -658,11 +658,19 @@ export class DatabaseStorage implements IStorage {
 
   // 고객 그룹 관련 메서드들
   async getCustomerGroups(): Promise<CustomerGroup[]> {
-    return await db
-      .select()
-      .from(customerGroups)
-      .where(eq(customerGroups.isActive, true))
-      .orderBy(asc(customerGroups.name));
+    console.log('[DEBUG] getCustomerGroups method called');
+    try {
+      const result = await db
+        .select()
+        .from(customerGroups)
+        .where(eq(customerGroups.isActive, true))
+        .orderBy(asc(customerGroups.name));
+      console.log('[DEBUG] getCustomerGroups result:', result.length, 'groups found');
+      return result;
+    } catch (error) {
+      console.error('[ERROR] getCustomerGroups failed:', error);
+      throw error;
+    }
   }
 
   async createCustomerGroup(group: InsertCustomerGroup): Promise<CustomerGroup> {
@@ -769,7 +777,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(customers.name));
   }
 
-  async getCustomerGroups(customerId: string): Promise<CustomerGroup[]> {
+  async getCustomerGroupsByCustomerId(customerId: string): Promise<CustomerGroup[]> {
     return await db
       .select({
         id: customerGroups.id,

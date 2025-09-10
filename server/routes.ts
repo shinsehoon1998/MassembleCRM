@@ -1560,7 +1560,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/customers/:customerId/groups', isAuthenticated, async (req, res) => {
     try {
       const { customerId } = req.params;
-      const groups = await storage.getCustomerGroups(customerId);
+      const groups = await storage.getCustomerGroupsByCustomerId(customerId);
       res.json(groups);
     } catch (error) {
       console.error('Failed to get customer groups:', error);
