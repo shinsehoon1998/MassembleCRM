@@ -73,6 +73,9 @@ export const customers = pgTable("customers", {
   department: varchar("department"),
   team: varchar("team"),
   source: varchar("source").default("manual"),
+  marketingConsent: boolean("marketing_consent").default(false),
+  marketingConsentDate: timestamp("marketing_consent_date"),
+  marketingConsentMethod: varchar("marketing_consent_method"),
   memo: text("memo"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -246,6 +249,72 @@ export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
+
+// ARS 캠페인 테이블
+export const arsCampaigns = pgTable("ars_campaigns", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  name: varchar("name", { length: 255 }).notNull(),
+  scenarioId: varchar("scenario_id", { length: 50 }).notNull(),
+  totalCount: integer("total_count").default(0),
+  successCount: integer("success_count").default(0),
+  failedCount: integer("failed_count").default(0),
+  consentCount: integer("consent_count").default(0),
+  rejectCount: integer("reject_count").default(0),
+  status: varchar("status", { length: 20 }).default("draft"),
+  historyKey: varchar("history_key", { length: 100 }),
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ARS 발송 로그
+export const arsSendLogs = pgTable("ars_send_logs", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  campaignId: integer("campaign_id").references(() => arsCampaigns.id),
+  customerId: varchar("customer_id").notNull().references(() => customers.id),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  scenarioId: varchar("scenario_id", { length: 50 }),
+  historyKey: varchar("history_key", { length: 100 }),
+  status: varchar("status", { length: 20 }).default("pending"),
+  dtmfInput: varchar("dtmf_input", { length: 10 }),
+  duration: integer("duration").default(0),
+  recordingUrl: varchar("recording_url", { length: 500 }),
+  sentAt: timestamp("sent_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ARS API 로그
+export const arsApiLogs = pgTable("ars_api_logs", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  endpoint: varchar("endpoint", { length: 255 }),
+  method: varchar("method", { length: 10 }),
+  requestData: text("request_data"),
+  responseData: text("response_data"),
+  httpCode: integer("http_code"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// ARS 관련 스키마
+export const insertArsCampaignSchema = createInsertSchema(arsCampaigns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertArsSendLogSchema = createInsertSchema(arsSendLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+// ARS 타입 정의
+export type ArsCampaign = typeof arsCampaigns.$inferSelect;
+export type InsertArsCampaign = z.infer<typeof insertArsCampaignSchema>;
+export type ArsSendLog = typeof arsSendLogs.$inferSelect;
+export type InsertArsSendLog = z.infer<typeof insertArsSendLogSchema>;
 
 // Extended types with relations
 export type CustomerWithUser = Customer & {
