@@ -10,6 +10,7 @@ import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
 import CustomerDetail from "@/pages/CustomerDetail";
 import DataImport from "@/pages/DataImport";
+import ArsCampaigns from "@/pages/ArsCampaigns";
 import Users from "@/pages/Users";
 import Settings from "@/pages/Settings";
 import Layout from "@/components/Layout";
@@ -45,6 +46,7 @@ function Router() {
           <Route path="/customers" component={Customers} />
           <Route path="/customers/:id" component={CustomerDetail} />
           <Route path="/data-import" component={DataImport} />
+          <Route path="/ars-campaigns" component={ArsCampaigns} />
           <Route path="/users" component={Users} />
           <Route path="/settings" component={Settings} />
         </Layout>
