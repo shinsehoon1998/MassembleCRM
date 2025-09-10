@@ -30,7 +30,6 @@ export default function ArsCampaigns() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkCampaignData, setBulkCampaignData] = useState({
     campaignName: "",
-    sendNumber: "",
     scenarioId: "marketing_consent",
     targetCount: 0,
   });
@@ -49,7 +48,6 @@ export default function ArsCampaigns() {
   const sendBulkArsMutation = useMutation({
     mutationFn: async (data: {
       customerIds: string[];
-      sendNumber: string;
       campaignName: string;
       scenarioId: string;
     }) => {
@@ -117,10 +115,10 @@ export default function ArsCampaigns() {
   });
 
   const handleBulkSend = () => {
-    if (!bulkCampaignData.campaignName || !bulkCampaignData.sendNumber) {
+    if (!bulkCampaignData.campaignName) {
       toast({
         title: "입력 오류",
-        description: "캠페인명과 발신번호를 입력해주세요.",
+        description: "캠페인명을 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -140,7 +138,6 @@ export default function ArsCampaigns() {
     
     sendBulkArsMutation.mutate({
       customerIds,
-      sendNumber: bulkCampaignData.sendNumber,
       campaignName: bulkCampaignData.campaignName,
       scenarioId: bulkCampaignData.scenarioId,
     });
@@ -206,19 +203,9 @@ export default function ArsCampaigns() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="sendNumber">발신번호</Label>
-                  <Input
-                    id="sendNumber"
-                    placeholder="02-1234-5678"
-                    value={bulkCampaignData.sendNumber}
-                    onChange={(e) =>
-                      setBulkCampaignData(prev => ({
-                        ...prev,
-                        sendNumber: e.target.value,
-                      }))
-                    }
-                    data-testid="input-send-number"
-                  />
+                  <div className="text-sm text-gray-600 p-3 bg-gray-50 rounded-md">
+                    <strong>발신번호:</strong> 1660-2426 (고정)
+                  </div>
                 </div>
 
                 <div className="space-y-2">
