@@ -1,0 +1,510 @@
+<?php
+/**
+ * 아톡비즈 ARS 연동 시스템
+ * 마셈블 CRM과 아톡비즈 ARS를 연동하여 마케팅 동의 오토콜 시스템 구현
+ */
+
+// ============================================
+// config/atalk_config.php - 아톡비즈 설정
+// ============================================
+
+define('ATALK_API_KEY', 'YOUR_API_KEY'); // 아톡비즈에서 발급받은 API 키
+define('ATALK_SECRET_KEY', 'YOUR_SECRET_KEY'); // 시크릿 키
+define('ATALK_SENDER_NUMBER', '15881234'); // 발신번호 (사전 등록 필요)
+define('ATALK_BASE_URL', 'https://api.atalkbiz.com/v1');
+
+// ARS 시나리오 ID (아톡비즈에서 생성)
+define('SCENARIO_MARKETING_CONSENT', 'SCENARIO_001'); // 마케팅 동의 시나리오
+define('SCENARIO_INFO_UPDATE', 'SCENARIO_002'); // 정보 업데이트 시나리오
+
+// ============================================
+// classes/AtalkARS.php - 아톡비즈 ARS 클래스
+// ============================================
+
+class AtalkARS {
+    private $apiKey;
+    private $secretKey;
+    private $baseUrl;
+    private $db;
+    
+    public function __construct() {
+        $this->apiKey = ATALK_API_KEY;
+        $this->secretKey = ATALK_SECRET_KEY;
+        $this->baseUrl = ATALK_BASE_URL;
+        $this->db = new DBHelper();
+    }
+    
+    /**
+     * API 요청 헤더 생성
+     */
+    private function getHeaders() {
+        $timestamp = time();
+        $signature = $this->generateSignature($timestamp);
+        
+        return [
+            'Content-Type: application/json',
+            'X-API-KEY: ' . $this->apiKey,
+            'X-TIMESTAMP: ' . $timestamp,
+            'X-SIGNATURE: ' . $signature
+        ];
+    }
+    
+    /**
+     * 서명 생성
+     */
+    private function generateSignature($timestamp) {
+        $data = $this->apiKey . $timestamp . $this->secretKey;
+        return hash('sha256', $data);
+    }
+    
+    /**
+     * API 요청 실행
+     */
+    private function executeRequest($endpoint, $method = 'POST', $data = null) {
+        $url = $this->baseUrl . $endpoint;
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $this->getHeaders());
+        
+        if ($method === 'POST' && $data) {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        }
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        $result = json_decode($response, true);
+        
+        // 로그 기록
+        $this->logApiCall($endpoint, $method, $data, $result, $httpCode);
+        
+        return [
+            'success' => $httpCode === 200,
+            'data' => $result,
+            'http_code' => $httpCode
+        ];
+    }
+    
+    /**
+     * 단일 ARS 발송
+     */
+    public function sendSingleARS($phone, $scenarioId, $params = []) {
+        $data = [
+            'sender' => ATALK_SENDER_NUMBER,
+            'receiver' => $this->formatPhone($phone),
+            'scenario_id' => $scenarioId,
+            'params' => $params,
+            'callback_url' => 'https://your-domain.repl.co/api/ars_callback.php'
+        ];
+        
+        return $this->executeRequest('/ars/send', 'POST', $data);
+    }
+    
+    /**
+     * 대량 ARS 발송
+     */
+    public function sendBulkARS($customers, $scenarioId) {
+        $receivers = [];
+        
+        foreach ($customers as $customer) {
+            $receivers[] = [
+                'phone' => $this->formatPhone($customer['phone']),
+                'name' => $customer['name'],
+                'params' => [
+                    'customer_id' => $customer['id'],
+                    'customer_name' => $customer['name'],
+                    'debt_amount' => $customer['debt_amount']
+                ]
+            ];
+        }
+        
+        $data = [
+            'sender' => ATALK_SENDER_NUMBER,
+            'receivers' => $receivers,
+            'scenario_id' => $scenarioId,
+            'callback_url' => 'https://your-domain.repl.co/api/ars_callback.php',
+            'send_time' => date('Y-m-d H:i:s'), // 즉시 발송
+            'ttl' => 3600 // 1시간 내 발송
+        ];
+        
+        return $this->executeRequest('/ars/bulk', 'POST', $data);
+    }
+    
+    /**
+     * 예약 발송
+     */
+    public function scheduleARS($customers, $scenarioId, $sendTime) {
+        $receivers = [];
+        
+        foreach ($customers as $customer) {
+            $receivers[] = [
+                'phone' => $this->formatPhone($customer['phone']),
+                'params' => ['customer_id' => $customer['id']]
+            ];
+        }
+        
+        $data = [
+            'sender' => ATALK_SENDER_NUMBER,
+            'receivers' => $receivers,
+            'scenario_id' => $scenarioId,
+            'send_time' => $sendTime, // 예약 시간
+            'callback_url' => 'https://your-domain.repl.co/api/ars_callback.php'
+        ];
+        
+        return $this->executeRequest('/ars/schedule', 'POST', $data);
+    }
+    
+    /**
+     * 발송 상태 조회
+     */
+    public function getStatus($messageId) {
+        return $this->executeRequest('/ars/status/' . $messageId, 'GET');
+    }
+    
+    /**
+     * 발송 이력 조회
+     */
+    public function getHistory($startDate, $endDate, $page = 1) {
+        $params = [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'page' => $page,
+            'limit' => 100
+        ];
+        
+        return $this->executeRequest('/ars/history?' . http_build_query($params), 'GET');
+    }
+    
+    /**
+     * 전화번호 포맷팅
+     */
+    private function formatPhone($phone) {
+        return preg_replace('/[^0-9]/', '', $phone);
+    }
+    
+    /**
+     * API 호출 로그 기록
+     */
+    private function logApiCall($endpoint, $method, $request, $response, $httpCode) {
+        $this->db->insert('ars_api_logs', [
+            'endpoint' => $endpoint,
+            'method' => $method,
+            'request_data' => json_encode($request),
+            'response_data' => json_encode($response),
+            'http_code' => $httpCode,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+}
+
+// ============================================
+// api/ars_campaign.php - ARS 캠페인 관리
+// ============================================
+
+session_start();
+require_once '../config/database.php';
+require_once '../config/atalk_config.php';
+require_once '../classes/AtalkARS.php';
+
+header('Content-Type: application/json');
+
+$action = $_GET['action'] ?? '';
+$ars = new AtalkARS();
+$db = new DBHelper();
+
+switch ($action) {
+    case 'send_marketing_consent':
+        // 마케팅 동의 받기 캠페인
+        
+        // 1. 마케팅 동의가 없는 고객 조회
+        $customers = $db->select("
+            SELECT id, name, phone, debt_amount 
+            FROM customers 
+            WHERE marketing_consent = 0 
+              AND phone IS NOT NULL 
+              AND status IN ('인텍', '수수')
+            LIMIT 100
+        ");
+        
+        if (empty($customers)) {
+            echo json_encode(['success' => false, 'message' => '발송 대상이 없습니다.']);
+            exit;
+        }
+        
+        // 2. 캠페인 생성
+        $campaignId = $db->insert('ars_campaigns', [
+            'name' => '마케팅 동의 캠페인 - ' . date('Y-m-d'),
+            'scenario_id' => SCENARIO_MARKETING_CONSENT,
+            'total_count' => count($customers),
+            'status' => 'processing',
+            'created_by' => $_SESSION['user_id'],
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+        
+        // 3. ARS 발송
+        $result = $ars->sendBulkARS($customers, SCENARIO_MARKETING_CONSENT);
+        
+        if ($result['success']) {
+            // 4. 발송 이력 저장
+            foreach ($customers as $customer) {
+                $db->insert('ars_send_logs', [
+                    'campaign_id' => $campaignId,
+                    'customer_id' => $customer['id'],
+                    'phone' => $customer['phone'],
+                    'scenario_id' => SCENARIO_MARKETING_CONSENT,
+                    'message_id' => $result['data']['message_id'] ?? null,
+                    'status' => 'sent',
+                    'sent_at' => date('Y-m-d H:i:s')
+                ]);
+            }
+            
+            // 5. 캠페인 상태 업데이트
+            $db->update('ars_campaigns', 
+                ['status' => 'sent', 'message_id' => $result['data']['message_id']],
+                'id = :id',
+                ['id' => $campaignId]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'message' => count($customers) . '명에게 ARS를 발송했습니다.',
+                'campaign_id' => $campaignId,
+                'message_id' => $result['data']['message_id']
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'ARS 발송 실패: ' . ($result['data']['message'] ?? 'Unknown error')
+            ]);
+        }
+        break;
+        
+    case 'send_single':
+        // 개별 발송
+        $customerId = $_POST['customer_id'] ?? 0;
+        $scenarioId = $_POST['scenario_id'] ?? SCENARIO_MARKETING_CONSENT;
+        
+        $customer = $db->selectOne("
+            SELECT * FROM customers WHERE id = :id",
+            ['id' => $customerId]
+        );
+        
+        if (!$customer) {
+            echo json_encode(['success' => false, 'message' => '고객을 찾을 수 없습니다.']);
+            exit;
+        }
+        
+        $result = $ars->sendSingleARS($customer['phone'], $scenarioId, [
+            'customer_name' => $customer['name'],
+            'debt_amount' => $customer['debt_amount']
+        ]);
+        
+        if ($result['success']) {
+            $db->insert('ars_send_logs', [
+                'customer_id' => $customerId,
+                'phone' => $customer['phone'],
+                'scenario_id' => $scenarioId,
+                'message_id' => $result['data']['message_id'] ?? null,
+                'status' => 'sent',
+                'sent_at' => date('Y-m-d H:i:s')
+            ]);
+            
+            echo json_encode(['success' => true, 'message' => 'ARS를 발송했습니다.']);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'ARS 발송 실패']);
+        }
+        break;
+        
+    case 'schedule':
+        // 예약 발송
+        $customerIds = json_decode($_POST['customer_ids'] ?? '[]', true);
+        $scenarioId = $_POST['scenario_id'] ?? SCENARIO_MARKETING_CONSENT;
+        $sendTime = $_POST['send_time'] ?? '';
+        
+        if (empty($customerIds) || empty($sendTime)) {
+            echo json_encode(['success' => false, 'message' => '필수 정보가 누락되었습니다.']);
+            exit;
+        }
+        
+        $customers = $db->select("
+            SELECT * FROM customers WHERE id IN (" . implode(',', $customerIds) . ")"
+        );
+        
+        $result = $ars->scheduleARS($customers, $scenarioId, $sendTime);
+        
+        echo json_encode($result);
+        break;
+        
+    case 'check_status':
+        // 발송 상태 확인
+        $messageId = $_GET['message_id'] ?? '';
+        
+        if (empty($messageId)) {
+            echo json_encode(['success' => false, 'message' => 'Message ID가 필요합니다.']);
+            exit;
+        }
+        
+        $result = $ars->getStatus($messageId);
+        
+        if ($result['success']) {
+            // 상태 업데이트
+            $status = $result['data']['status'] ?? 'unknown';
+            $db->update('ars_send_logs',
+                ['status' => $status, 'updated_at' => date('Y-m-d H:i:s')],
+                'message_id = :message_id',
+                ['message_id' => $messageId]
+            );
+        }
+        
+        echo json_encode($result);
+        break;
+        
+    case 'get_history':
+        // 발송 이력 조회
+        $startDate = $_GET['start_date'] ?? date('Y-m-d', strtotime('-7 days'));
+        $endDate = $_GET['end_date'] ?? date('Y-m-d');
+        $page = $_GET['page'] ?? 1;
+        
+        $result = $ars->getHistory($startDate, $endDate, $page);
+        echo json_encode($result);
+        break;
+        
+    default:
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}
+
+// ============================================
+// api/ars_callback.php - ARS 콜백 처리
+// ============================================
+
+/**
+ * 아톡비즈에서 호출하는 콜백 URL
+ * ARS 통화 결과를 실시간으로 수신
+ */
+
+require_once '../config/database.php';
+
+// POST 데이터 수신
+$input = file_get_contents('php://input');
+$data = json_decode($input, true);
+
+// 로그 기록
+file_put_contents('../logs/ars_callback.log', 
+    date('Y-m-d H:i:s') . ' - ' . $input . "\n", 
+    FILE_APPEND
+);
+
+if (!$data) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Invalid data']);
+    exit;
+}
+
+$db = new DBHelper();
+
+// 콜백 데이터 파싱
+$messageId = $data['message_id'] ?? '';
+$phone = $data['phone'] ?? '';
+$status = $data['status'] ?? ''; // success, failed, no_answer, busy
+$duration = $data['duration'] ?? 0; // 통화 시간 (초)
+$dtmfInput = $data['dtmf_input'] ?? ''; // 사용자 입력 (1: 동의, 2: 거부)
+$recordingUrl = $data['recording_url'] ?? ''; // 녹취 파일 URL
+
+// ARS 로그 업데이트
+$log = $db->selectOne("
+    SELECT * FROM ars_send_logs 
+    WHERE message_id = :message_id",
+    ['message_id' => $messageId]
+);
+
+if ($log) {
+    // 로그 업데이트
+    $db->update('ars_send_logs', [
+        'status' => $status,
+        'duration' => $duration,
+        'dtmf_input' => $dtmfInput,
+        'recording_url' => $recordingUrl,
+        'completed_at' => date('Y-m-d H:i:s')
+    ], 'id = :id', ['id' => $log['id']]);
+    
+    // 마케팅 동의 처리
+    if ($dtmfInput === '1') {
+        // 동의
+        $db->update('customers', 
+            [
+                'marketing_consent' => 1,
+                'marketing_consent_date' => date('Y-m-d H:i:s'),
+                'marketing_consent_method' => 'ARS'
+            ],
+            'id = :id',
+            ['id' => $log['customer_id']]
+        );
+        
+        // 상담 이력 추가
+        $db->insert('consult_history', [
+            'customer_id' => $log['customer_id'],
+            'user_id' => 0, // 시스템
+            'consult_type' => 'ARS',
+            'content' => '마케팅 수신 동의 (ARS)',
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+        
+    } elseif ($dtmfInput === '2') {
+        // 거부
+        $db->update('customers',
+            [
+                'marketing_consent' => 0,
+                'marketing_consent_date' => date('Y-m-d H:i:s'),
+                'marketing_reject_reason' => 'ARS 거부'
+            ],
+            'id = :id',
+            ['id' => $log['customer_id']]
+        );
+        
+        // 상담 이력 추가
+        $db->insert('consult_history', [
+            'customer_id' => $log['customer_id'],
+            'user_id' => 0,
+            'consult_type' => 'ARS',
+            'content' => '마케팅 수신 거부 (ARS)',
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+    
+    // 캠페인 통계 업데이트
+    if ($log['campaign_id']) {
+        updateCampaignStats($log['campaign_id']);
+    }
+}
+
+// 응답
+http_response_code(200);
+echo json_encode(['success' => true, 'message' => 'Callback processed']);
+
+// 캠페인 통계 업데이트 함수
+function updateCampaignStats($campaignId) {
+    global $db;
+    
+    $stats = $db->selectOne("
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
+            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
+            SUM(CASE WHEN dtmf_input = '1' THEN 1 ELSE 0 END) as consent_count,
+            SUM(CASE WHEN dtmf_input = '2' THEN 1 ELSE 0 END) as reject_count
+        FROM ars_send_logs
+        WHERE campaign_id = :campaign_id",
+        ['campaign_id' => $campaignId]
+    );
+    
+    $db->update('ars_campaigns', [
+        'success_count' => $stats['success_count'],
+        'failed_count' => $stats['failed_count'],
+        'consent_count' => $stats['consent_count'],
+        'reject_count' => $stats['reject_count'],
+        'updated_at' => date('Y-m-d H:i:s')
+    ], 'id = :id', ['id' => $campaignId]);
+}

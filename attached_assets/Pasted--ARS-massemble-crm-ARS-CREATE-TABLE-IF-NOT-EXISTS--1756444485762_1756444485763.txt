@@ -1,0 +1,170 @@
+-- ARS 시스템 추가 테이블 스키마
+-- 기존 massemble_crm 데이터베이스에 추가
+
+-- ARS 캠페인 테이블
+CREATE TABLE IF NOT EXISTS ars_campaigns (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    scenario_id VARCHAR(50) NOT NULL,
+    total_count INT DEFAULT 0,
+    success_count INT DEFAULT 0,
+    failed_count INT DEFAULT 0,
+    consent_count INT DEFAULT 0,
+    reject_count INT DEFAULT 0,
+    status ENUM('draft', 'processing', 'sent', 'completed', 'failed') DEFAULT 'draft',
+    message_id VARCHAR(100),
+    scheduled_at DATETIME,
+    started_at DATETIME,
+    completed_at DATETIME,
+    created_by INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_status (status),
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ARS 발송 로그
+CREATE TABLE IF NOT EXISTS ars_send_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT,
+    customer_id INT NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    scenario_id VARCHAR(50),
+    message_id VARCHAR(100),
+    status ENUM('pending', 'sent', 'success', 'failed', 'no_answer', 'busy') DEFAULT 'pending',
+    dtmf_input VARCHAR(10),  -- 사용자 입력 (1, 2 등)
+    duration INT DEFAULT 0,   -- 통화 시간 (초)
+    recording_url VARCHAR(500), -- 녹취 파일 URL
+    sent_at DATETIME,
+    completed_at DATETIME,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (campaign_id) REFERENCES ars_campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    INDEX idx_campaign (campaign_id),
+    INDEX idx_customer (customer_id),
+    INDEX idx_status (status),
+    INDEX idx_sent (sent_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ARS API 호출 로그
+CREATE TABLE IF NOT EXISTS ars_api_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    endpoint VARCHAR(255),
+    method VARCHAR(10),
+    request_data TEXT,
+    response_data TEXT,
+    http_code INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    INDEX idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ARS 시나리오 템플릿
+CREATE TABLE IF NOT EXISTS ars_scenarios (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    scenario_id VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    script TEXT,  -- ARS 스크립트 내용
+    dtmf_options JSON,  -- DTMF 옵션 설정
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    INDEX idx_scenario_id (scenario_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ARS 응답 통계
+CREATE TABLE IF NOT EXISTS ars_response_stats (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    date DATE NOT NULL,
+    hour INT,  -- 시간대별 통계 (0-23)
+    total_calls INT DEFAULT 0,
+    success_calls INT DEFAULT 0,
+    failed_calls INT DEFAULT 0,
+    consent_count INT DEFAULT 0,
+    reject_count INT DEFAULT 0,
+    avg_duration FLOAT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    UNIQUE KEY unique_date_hour (date, hour),
+    INDEX idx_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 고객 테이블에 마케팅 동의 필드 추가 (이미 없는 경우)
+ALTER TABLE customers 
+ADD COLUMN IF NOT EXISTS marketing_consent BOOLEAN DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS marketing_consent_date DATETIME,
+ADD COLUMN IF NOT EXISTS marketing_consent_method VARCHAR(50),
+ADD COLUMN IF NOT EXISTS marketing_reject_reason VARCHAR(255),
+ADD INDEX IF NOT EXISTS idx_marketing (marketing_consent);
+
+-- 샘플 시나리오 데이터 삽입
+INSERT INTO ars_scenarios (scenario_id, name, description, script, dtmf_options) VALUES
+('SCENARIO_001', '마케팅 동의', '마케팅 수신 동의를 받기 위한 ARS', 
+'안녕하세요. 마셈블입니다. {customer_name}님 맞으신가요? 
+개인회생 관련 유용한 정보를 문자로 받아보시겠습니까?
+동의하시면 1번, 거부하시면 2번을 눌러주세요.',
+'{"1": "동의", "2": "거부", "9": "상담원 연결"}'),
+
+('SCENARIO_002', '정보 업데이트', '고객 정보 확인 및 업데이트',
+'안녕하세요. 마셈블입니다. 
+고객님의 정보를 확인하고자 합니다.
+현재 등록된 연락처가 맞으신가요?
+맞으시면 1번, 변경을 원하시면 2번을 눌러주세요.',
+'{"1": "확인", "2": "변경", "0": "처음으로"}'),
+
+('SCENARIO_003', '만족도 조사', '서비스 만족도 조사',
+'안녕하세요. 마셈블입니다.
+저희 서비스에 대한 만족도를 조사하고 있습니다.
+매우 만족은 1번, 만족은 2번, 보통은 3번, 불만족은 4번을 눌러주세요.',
+'{"1": "매우만족", "2": "만족", "3": "보통", "4": "불만족"}');
+
+-- 기본 캠페인 통계 뷰
+CREATE OR REPLACE VIEW v_ars_campaign_stats AS
+SELECT 
+    c.id,
+    c.name,
+    c.created_at,
+    c.status,
+    c.total_count,
+    COUNT(DISTINCT l.customer_id) as unique_customers,
+    SUM(CASE WHEN l.status = 'success' THEN 1 ELSE 0 END) as success_count,
+    SUM(CASE WHEN l.dtmf_input = '1' THEN 1 ELSE 0 END) as consent_count,
+    SUM(CASE WHEN l.dtmf_input = '2' THEN 1 ELSE 0 END) as reject_count,
+    AVG(l.duration) as avg_duration,
+    MAX(l.completed_at) as last_activity
+FROM ars_campaigns c
+LEFT JOIN ars_send_logs l ON c.id = l.campaign_id
+GROUP BY c.id;
+
+-- 일별 통계 뷰
+CREATE OR REPLACE VIEW v_ars_daily_stats AS
+SELECT 
+    DATE(sent_at) as date,
+    COUNT(*) as total_calls,
+    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_calls,
+    SUM(CASE WHEN dtmf_input = '1' THEN 1 ELSE 0 END) as consent_count,
+    SUM(CASE WHEN dtmf_input = '2' THEN 1 ELSE 0 END) as reject_count,
+    AVG(duration) as avg_duration
+FROM ars_send_logs
+WHERE sent_at IS NOT NULL
+GROUP BY DATE(sent_at);
+
+-- 고객별 ARS 이력 뷰
+CREATE OR REPLACE VIEW v_customer_ars_history AS
+SELECT 
+    c.id as customer_id,
+    c.name,
+    c.phone,
+    c.marketing_consent,
+    COUNT(l.id) as total_ars_calls,
+    MAX(l.sent_at) as last_ars_date,
+    MAX(CASE WHEN l.dtmf_input = '1' THEN l.sent_at END) as consent_date,
+    MAX(CASE WHEN l.dtmf_input = '2' THEN l.sent_at END) as reject_date
+FROM customers c
+LEFT JOIN ars_send_logs l ON c.id = l.customer_id
+GROUP BY c.id;

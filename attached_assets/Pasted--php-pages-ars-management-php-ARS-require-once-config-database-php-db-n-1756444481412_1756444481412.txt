@@ -1,0 +1,625 @@
+<?php
+// pages/ars_management.php - ARS 캠페인 관리 페이지
+require_once '../config/database.php';
+$db = new DBHelper();
+
+// 캠페인 통계 조회
+$stats = $db->selectOne("
+    SELECT 
+        COUNT(DISTINCT customer_id) as total_customers,
+        SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) as today_sent,
+        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
+        SUM(CASE WHEN dtmf_input = '1' THEN 1 ELSE 0 END) as consent_count
+    FROM ars_send_logs
+");
+
+// 최근 캠페인 목록
+$campaigns = $db->select("
+    SELECT c.*, u.name as created_by_name
+    FROM ars_campaigns c
+    LEFT JOIN users u ON c.created_by = u.id
+    ORDER BY c.created_at DESC
+    LIMIT 10
+");
+
+// 마케팅 동의 없는 고객 수
+$targetCount = $db->selectOne("
+    SELECT COUNT(*) as cnt 
+    FROM customers 
+    WHERE marketing_consent = 0 
+      AND phone IS NOT NULL
+      AND status IN ('인텍', '수수')
+")['cnt'];
+?>
+
+<style>
+.ars-dashboard {
+    padding: 20px;
+}
+
+.stat-box {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.stat-box h3 {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 10px;
+}
+
+.stat-box .number {
+    font-size: 32px;
+    font-weight: bold;
+    color: #2c7da0;
+}
+
+.stat-box .sub-info {
+    color: #999;
+    font-size: 12px;
+    margin-top: 5px;
+}
+
+.campaign-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.campaign-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.campaign-title {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+}
+
+.campaign-status {
+    padding: 5px 15px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.status-processing {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-sent {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-completed {
+    background: #cce5ff;
+    color: #004085;
+}
+
+.campaign-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-label {
+    color: #999;
+    font-size: 12px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.scenario-select {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.scenario-card {
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.scenario-card:hover {
+    border-color: #2c7da0;
+    background: #f0f8ff;
+}
+
+.scenario-card.selected {
+    border-color: #2c7da0;
+    background: #e6f3ff;
+}
+
+.flow-diagram {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.flow-step {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.step-number {
+    width: 40px;
+    height: 40px;
+    background: #2c7da0;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 20px;
+}
+
+.step-content {
+    flex: 1;
+}
+
+.step-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.step-desc {
+    color: #666;
+    font-size: 14px;
+}
+
+.progress-bar-container {
+    background: #f0f0f0;
+    border-radius: 10px;
+    height: 30px;
+    position: relative;
+    overflow: hidden;
+    margin: 20px 0;
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, #2c7da0, #61a5c2);
+    height: 100%;
+    transition: width 0.5s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+}
+
+.filter-section {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.filter-group {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.result-table {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.modal-backdrop {
+    background: rgba(0,0,0,0.5);
+}
+
+.schedule-form {
+    display: grid;
+    gap: 15px;
+}
+
+.time-slot {
+    display: inline-block;
+    padding: 8px 15px;
+    margin: 5px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.time-slot:hover {
+    background: #f0f0f0;
+}
+
+.time-slot.selected {
+    background: #2c7da0;
+    color: white;
+}
+</style>
+
+<div class="ars-dashboard">
+    <!-- 헤더 -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-phone-volume"></i> ARS 캠페인 관리</h2>
+        <button class="btn btn-primary" onclick="openNewCampaignModal()">
+            <i class="fas fa-plus"></i> 새 캠페인 시작
+        </button>
+    </div>
+
+    <!-- 통계 대시보드 -->
+    <div class="row">
+        <div class="col-md-3">
+            <div class="stat-box">
+                <h3>발송 가능 고객</h3>
+                <div class="number"><?php echo number_format($targetCount); ?></div>
+                <div class="sub-info">마케팅 미동의 고객</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-box">
+                <h3>오늘 발송</h3>
+                <div class="number"><?php echo number_format($stats['today_sent'] ?? 0); ?></div>
+                <div class="sub-info">건</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-box">
+                <h3>통화 성공률</h3>
+                <div class="number">
+                    <?php 
+                    $total = $stats['total_customers'] ?? 1;
+                    $success = $stats['success_count'] ?? 0;
+                    echo round(($success / $total) * 100, 1);
+                    ?>%
+                </div>
+                <div class="sub-info">전체 평균</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-box">
+                <h3>동의 획득</h3>
+                <div class="number"><?php echo number_format($stats['consent_count'] ?? 0); ?></div>
+                <div class="sub-info">누적 동의 수</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ARS 플로우 다이어그램 -->
+    <div class="flow-diagram">
+        <h4>ARS 시나리오 플로우</h4>
+        <div class="flow-step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <div class="step-title">전화 연결</div>
+                <div class="step-desc">고객에게 발신번호로 전화 연결</div>
+            </div>
+        </div>
+        <div class="flow-step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <div class="step-title">인사말 & 본인 확인</div>
+                <div class="step-desc">"안녕하세요. 마셈블입니다. {고객명}님 맞으신가요?"</div>
+            </div>
+        </div>
+        <div class="flow-step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <div class="step-title">마케팅 동의 안내</div>
+                <div class="step-desc">"개인회생 관련 유용한 정보를 문자로 받아보시겠습니까?"</div>
+            </div>
+        </div>
+        <div class="flow-step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <div class="step-title">응답 수집</div>
+                <div class="step-desc">"동의하시면 1번, 거부하시면 2번을 눌러주세요"</div>
+            </div>
+        </div>
+        <div class="flow-step">
+            <div class="step-number">5</div>
+            <div class="step-content">
+                <div class="step-title">결과 처리</div>
+                <div class="step-desc">응답 결과를 CRM에 자동 반영</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 캠페인 목록 -->
+    <div class="mt-4">
+        <h4>최근 캠페인</h4>
+        <?php foreach ($campaigns as $campaign): ?>
+        <div class="campaign-card">
+            <div class="campaign-header">
+                <div>
+                    <div class="campaign-title"><?php echo htmlspecialchars($campaign['name']); ?></div>
+                    <div class="text-muted" style="font-size: 12px;">
+                        생성: <?php echo date('Y-m-d H:i', strtotime($campaign['created_at'])); ?> | 
+                        생성자: <?php echo htmlspecialchars($campaign['created_by_name']); ?>
+                    </div>
+                </div>
+                <span class="campaign-status status-<?php echo $campaign['status']; ?>">
+                    <?php echo strtoupper($campaign['status']); ?>
+                </span>
+            </div>
+            
+            <div class="campaign-stats">
+                <div class="stat-item">
+                    <div class="stat-label">발송 대상</div>
+                    <div class="stat-value"><?php echo number_format($campaign['total_count']); ?></div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">통화 성공</div>
+                    <div class="stat-value"><?php echo number_format($campaign['success_count'] ?? 0); ?></div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">동의</div>
+                    <div class="stat-value"><?php echo number_format($campaign['consent_count'] ?? 0); ?></div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">거부</div>
+                    <div class="stat-value"><?php echo number_format($campaign['reject_count'] ?? 0); ?></div>
+                </div>
+            </div>
+            
+            <!-- 진행률 표시 -->
+            <?php 
+            $progress = $campaign['total_count'] > 0 
+                ? round((($campaign['success_count'] + $campaign['failed_count']) / $campaign['total_count']) * 100, 1)
+                : 0;
+            ?>
+            <div class="progress-bar-container">
+                <div class="progress-bar" style="width: <?php echo $progress; ?>%">
+                    <?php echo $progress; ?>%
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+                <button class="btn btn-sm btn-info" onclick="viewCampaignDetail('<?php echo $campaign['id']; ?>')">
+                    <i class="fas fa-chart-line"></i> 상세보기
+                </button>
+                <button class="btn btn-sm btn-warning" onclick="checkCampaignStatus('<?php echo $campaign['message_id']; ?>')">
+                    <i class="fas fa-sync"></i> 상태 확인
+                </button>
+                <button class="btn btn-sm btn-success" onclick="downloadReport('<?php echo $campaign['id']; ?>')">
+                    <i class="fas fa-download"></i> 리포트
+                </button>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<!-- 새 캠페인 모달 -->
+<div class="modal fade" id="newCampaignModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">새 ARS 캠페인</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 시나리오 선택 -->
+                <div class="scenario-select">
+                    <h6>시나리오 선택</h6>
+                    <div class="scenario-card" onclick="selectScenario('marketing_consent')">
+                        <h5><i class="fas fa-bullhorn"></i> 마케팅 동의</h5>
+                        <p>마케팅 수신 동의를 받기 위한 ARS</p>
+                    </div>
+                    <div class="scenario-card" onclick="selectScenario('info_update')">
+                        <h5><i class="fas fa-user-edit"></i> 정보 업데이트</h5>
+                        <p>고객 정보 확인 및 업데이트</p>
+                    </div>
+                    <div class="scenario-card" onclick="selectScenario('satisfaction')">
+                        <h5><i class="fas fa-star"></i> 만족도 조사</h5>
+                        <p>서비스 만족도 조사</p>
+                    </div>
+                </div>
+                
+                <!-- 대상 선택 -->
+                <div class="filter-section">
+                    <h6>발송 대상 필터</h6>
+                    <div class="filter-group">
+                        <select class="form-select" id="statusFilter">
+                            <option value="">상태 전체</option>
+                            <option value="인텍">인텍</option>
+                            <option value="수수">수수</option>
+                            <option value="접수">접수</option>
+                        </select>
+                        <select class="form-select" id="consentFilter">
+                            <option value="0">마케팅 미동의</option>
+                            <option value="1">마케팅 동의</option>
+                            <option value="">전체</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="previewTargets()">
+                            대상 미리보기
+                        </button>
+                    </div>
+                    <div id="targetPreview" class="mt-3"></div>
+                </div>
+                
+                <!-- 발송 시간 설정 -->
+                <div class="schedule-form">
+                    <h6>발송 시간</h6>
+                    <div>
+                        <input type="radio" name="sendType" id="sendNow" value="now" checked>
+                        <label for="sendNow">즉시 발송</label>
+                    </div>
+                    <div>
+                        <input type="radio" name="sendType" id="sendSchedule" value="schedule">
+                        <label for="sendSchedule">예약 발송</label>
+                    </div>
+                    <div id="scheduleOptions" style="display: none;">
+                        <input type="datetime-local" class="form-control" id="scheduleTime">
+                        <div class="mt-2">
+                            <small>추천 시간대:</small>
+                            <div>
+                                <span class="time-slot" onclick="selectTimeSlot('10:00')">오전 10시</span>
+                                <span class="time-slot" onclick="selectTimeSlot('14:00')">오후 2시</span>
+                                <span class="time-slot" onclick="selectTimeSlot('16:00')">오후 4시</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" onclick="startCampaign()">
+                    <i class="fas fa-paper-plane"></i> 캠페인 시작
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let selectedScenario = 'marketing_consent';
+let targetCustomers = [];
+
+function openNewCampaignModal() {
+    $('#newCampaignModal').modal('show');
+    previewTargets();
+}
+
+function selectScenario(scenario) {
+    selectedScenario = scenario;
+    document.querySelectorAll('.scenario-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+    event.currentTarget.classList.add('selected');
+}
+
+async function previewTargets() {
+    const status = document.getElementById('statusFilter').value;
+    const consent = document.getElementById('consentFilter').value;
+    
+    // API 호출하여 대상 고객 조회
+    const response = await fetch(`api/ars_targets.php?status=${status}&consent=${consent}`);
+    const data = await response.json();
+    
+    targetCustomers = data.customers;
+    
+    document.getElementById('targetPreview').innerHTML = `
+        <div class="alert alert-info">
+            <strong>발송 대상: ${data.count}명</strong>
+            <div class="mt-2">
+                <small>예상 비용: ${(data.count * 35).toLocaleString()}원 (건당 35원)</small>
+            </div>
+        </div>
+    `;
+}
+
+async function startCampaign() {
+    if (targetCustomers.length === 0) {
+        alert('발송 대상이 없습니다.');
+        return;
+    }
+    
+    if (!confirm(`${targetCustomers.length}명에게 ARS를 발송하시겠습니까?`)) {
+        return;
+    }
+    
+    const sendType = document.querySelector('input[name="sendType"]:checked').value;
+    const scheduleTime = sendType === 'schedule' ? document.getElementById('scheduleTime').value : null;
+    
+    const formData = new FormData();
+    formData.append('scenario_id', selectedScenario);
+    formData.append('customer_ids', JSON.stringify(targetCustomers.map(c => c.id)));
+    formData.append('send_time', scheduleTime || '');
+    
+    try {
+        const response = await fetch('api/ars_campaign.php?action=send_marketing_consent', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('캠페인이 시작되었습니다!');
+            $('#newCampaignModal').modal('hide');
+            location.reload();
+        } else {
+            alert('오류: ' + result.message);
+        }
+    } catch (error) {
+        alert('시스템 오류가 발생했습니다.');
+        console.error(error);
+    }
+}
+
+async function checkCampaignStatus(messageId) {
+    const response = await fetch(`api/ars_campaign.php?action=check_status&message_id=${messageId}`);
+    const result = await response.json();
+    
+    if (result.success) {
+        alert('상태가 업데이트되었습니다.');
+        location.reload();
+    } else {
+        alert('상태 확인 실패: ' + result.message);
+    }
+}
+
+function viewCampaignDetail(campaignId) {
+    window.location.href = `index.php?page=ars_detail&id=${campaignId}`;
+}
+
+function downloadReport(campaignId) {
+    window.open(`api/ars_report.php?campaign_id=${campaignId}`, '_blank');
+}
+
+// 예약 발송 옵션 토글
+document.getElementById('sendSchedule').addEventListener('change', function() {
+    document.getElementById('scheduleOptions').style.display = this.checked ? 'block' : 'none';
+});
+
+document.getElementById('sendNow').addEventListener('change', function() {
+    document.getElementById('scheduleOptions').style.display = this.checked ? 'none' : 'block';
+});
+
+// 자동 새로고침 (30초마다)
+setInterval(() => {
+    fetch('api/ars_campaign.php?action=get_status')
+        .then(response => response.json())
+        .then(data => {
+            // 진행 중인 캠페인 상태 업데이트
+            updateCampaignStatus(data);
+        });
+}, 30000);
+
+function updateCampaignStatus(data) {
+    // DOM 업데이트 로직
+    console.log('Campaign status updated', data);
+}
+</script>
