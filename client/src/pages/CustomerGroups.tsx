@@ -41,10 +41,7 @@ export default function CustomerGroups() {
   // 고객 그룹 생성
   const createGroupMutation = useMutation({
     mutationFn: async (data: InsertCustomerGroup) => {
-      return await apiRequest("/api/customer-groups", {
-        method: "POST",
-        body: data,
-      });
+      return await apiRequest("POST", "/api/customer-groups", data);
     },
     onSuccess: () => {
       toast({
@@ -67,10 +64,7 @@ export default function CustomerGroups() {
   // 고객 그룹 수정
   const updateGroupMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<CustomerGroup> }) => {
-      return await apiRequest(`/api/customer-groups/${id}`, {
-        method: "PUT",
-        body: data,
-      });
+      return await apiRequest("PUT", `/api/customer-groups/${id}`, data);
     },
     onSuccess: () => {
       toast({
@@ -93,9 +87,7 @@ export default function CustomerGroups() {
   // 고객 그룹 삭제
   const deleteGroupMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest(`/api/customer-groups/${id}`, {
-        method: "DELETE",
-      });
+      return await apiRequest("DELETE", `/api/customer-groups/${id}`);
     },
     onSuccess: () => {
       toast({

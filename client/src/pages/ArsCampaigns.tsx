@@ -6,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Phone, Users, Calendar, TrendingUp, Send, RefreshCw } from "lucide-react";
+import { Phone, Users, Calendar, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +30,8 @@ import {
 export default function ArsCampaigns() {
   const { toast } = useToast();
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [bulkCampaignData, setBulkCampaignData] = useState({
     campaignName: "",
     scenarioId: "marketing_consent",
@@ -62,6 +66,19 @@ export default function ArsCampaigns() {
     enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
   });
 
+  // 선택된 캠페인의 상세 정보 조회
+  const { data: campaignDetail, isLoading: campaignDetailLoading } = useQuery({
+    queryKey: [`/api/ars/campaigns/${selectedCampaign?.id}/detail`],
+    enabled: !!selectedCampaign?.id && showDetailModal,
+    refetchInterval: showDetailModal ? 5000 : false, // 5초마다 자동 갱신
+  });
+
+  // 선택된 캠페인의 통화 기록 조회
+  const { data: campaignHistory } = useQuery({
+    queryKey: [`/api/ars/campaigns/${selectedCampaign?.id}/history`],
+    enabled: !!selectedCampaign?.id && showDetailModal,
+  });
+
   // 대량 ARS 발송
   const sendBulkArsMutation = useMutation({
     mutationFn: async (data: {
@@ -70,10 +87,7 @@ export default function ArsCampaigns() {
       campaignName: string;
       scenarioId: string;
     }) => {
-      return apiRequest("/api/ars/send-bulk", {
-        method: "POST",
-        body: data,
-      });
+      return apiRequest("POST", "/api/ars/send-bulk", data);
     },
     onSuccess: () => {
       toast({
@@ -177,6 +191,29 @@ export default function ArsCampaigns() {
     }
     
     sendBulkArsMutation.mutate(sendData);
+  };
+
+  const handleViewCampaignDetail = (campaign: any) => {
+    setSelectedCampaign(campaign);
+    setShowDetailModal(true);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed": return "bg-green-500";
+      case "failed": return "bg-red-500"; 
+      case "pending": return "bg-yellow-500";
+      default: return "bg-gray-500";
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "completed": return "완료";
+      case "failed": return "실패";
+      case "pending": return "대기중";
+      default: return "알 수 없음";
+    }
   };
 
   if (campaignsLoading) {
@@ -452,6 +489,15 @@ export default function ArsCampaigns() {
                          campaign.status === 'stopped' ? '중단됨' : 
                          campaign.status === 'sent' ? '발송중' : '진행중'}
                       </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewCampaignDetail(campaign)}
+                        data-testid={`button-view-campaign-${campaign.id}`}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        상세보기
+                      </Button>
                       {(campaign.status === 'sent' || campaign.status === 'pending') && (
                         <Button
                           variant="outline"
@@ -477,6 +523,194 @@ export default function ArsCampaigns() {
           )}
         </CardContent>
       </Card>
+
+      {/* 캠페인 상세보기 모달 */}
+      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              캠페인 상세보기: {selectedCampaign?.name}
+            </DialogTitle>
+            <DialogDescription>
+              캠페인의 실시간 진행 상황과 발송 결과를 확인할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {campaignDetailLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <span className="ml-2">상세 정보를 불러오는 중...</span>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* 캠페인 기본 정보 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">캠페인 정보</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-500">캠페인명</Label>
+                      <p className="font-semibold">{selectedCampaign?.name}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-500">상태</Label>
+                      <Badge 
+                        variant={selectedCampaign?.status === 'completed' ? 'default' : 
+                                selectedCampaign?.status === 'stopped' ? 'destructive' : 'secondary'}
+                      >
+                        {selectedCampaign?.status === 'completed' ? '완료' : 
+                         selectedCampaign?.status === 'stopped' ? '중단됨' : 
+                         selectedCampaign?.status === 'sent' ? '발송중' : '진행중'}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-500">시나리오</Label>
+                      <p>{selectedCampaign?.scenarioId}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-500">발신번호</Label>
+                      <p>{selectedCampaign?.sendNumber || '1660-2426'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-500">생성일시</Label>
+                      <p>{selectedCampaign?.createdAt ? new Date(selectedCampaign.createdAt).toLocaleString('ko-KR') : '-'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-500">대상 고객</Label>
+                      <p>{selectedCampaign?.targetCount || 0}명</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 실시간 진행 상황 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    실시간 진행 상황
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {campaignDetail ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">전체 진행률</span>
+                        <span className="text-sm font-medium">
+                          {campaignDetail.completedCount || 0} / {campaignDetail.totalCount || 0}
+                        </span>
+                      </div>
+                      <Progress 
+                        value={campaignDetail.totalCount > 0 ? 
+                          (campaignDetail.completedCount / campaignDetail.totalCount) * 100 : 0} 
+                        className="h-3"
+                      />
+                      
+                      <div className="grid grid-cols-3 gap-4 mt-4">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-2">
+                            <CheckCircle className="h-5 w-5 text-green-500 mr-1" />
+                            <span className="font-medium text-green-700">성공</span>
+                          </div>
+                          <p className="text-2xl font-bold text-green-600">
+                            {campaignDetail.successCount || 0}
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-2">
+                            <XCircle className="h-5 w-5 text-red-500 mr-1" />
+                            <span className="font-medium text-red-700">실패</span>
+                          </div>
+                          <p className="text-2xl font-bold text-red-600">
+                            {campaignDetail.failedCount || 0}
+                          </p>
+                        </div>
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-2">
+                            <Clock className="h-5 w-5 text-yellow-500 mr-1" />
+                            <span className="font-medium text-yellow-700">대기중</span>
+                          </div>
+                          <p className="text-2xl font-bold text-yellow-600">
+                            {campaignDetail.pendingCount || 0}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      진행 상황 정보를 불러올 수 없습니다.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 발송 기록 상세 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>발송 기록</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {campaignHistory && campaignHistory.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>고객명</TableHead>
+                          <TableHead>전화번호</TableHead>
+                          <TableHead>상태</TableHead>
+                          <TableHead>발송시간</TableHead>
+                          <TableHead>결과</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {campaignHistory.map((record: any, index: number) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">
+                              {record.customerName || '-'}
+                            </TableCell>
+                            <TableCell>{record.phone || '-'}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`${getStatusColor(record.status)} text-white`}
+                              >
+                                {getStatusText(record.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {record.sentAt ? new Date(record.sentAt).toLocaleString('ko-KR') : '-'}
+                            </TableCell>
+                            <TableCell className="text-sm text-gray-600">
+                              {record.result || '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                      <p>발송 기록이 없습니다.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          <div className="flex justify-end pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowDetailModal(false)}
+              data-testid="button-close-detail"
+            >
+              닫기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
