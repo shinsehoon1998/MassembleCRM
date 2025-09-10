@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { db } from './db';
 import { arsCampaigns, arsSendLogs, arsApiLogs, customers } from '@shared/schema';
 import type { InsertArsCampaign, InsertArsSendLog } from '@shared/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 
 // 아톡비즈 API 설정
 const ATALK_API_CONFIG = {
@@ -401,6 +401,79 @@ export class AtalkArsService {
         phone: customer.phone!,
         status: customer.status,
       }));
+  }
+
+  /**
+   * 캠페인 종료
+   */
+  async stopCampaign(campaignId: number): Promise<{
+    success: boolean;
+    message: string;
+    stoppedCount?: number;
+  }> {
+    try {
+      // 캠페인 상태를 종료로 변경
+      const [campaign] = await db
+        .update(arsCampaigns)
+        .set({ 
+          status: 'stopped',
+        })
+        .where(eq(arsCampaigns.id, campaignId))
+        .returning();
+
+      if (!campaign) {
+        return {
+          success: false,
+          message: '캠페인을 찾을 수 없습니다.',
+        };
+      }
+
+      // 해당 캠페인의 대기 중인 발송들을 취소 상태로 변경
+      const result = await db
+        .update(arsSendLogs)
+        .set({ 
+          status: 'cancelled',
+        })
+        .where(sql`${arsSendLogs.campaignId} = ${campaignId} AND ${arsSendLogs.status} = 'pending'`);
+
+      const stoppedCount = result.rowCount || 0;
+
+      // API 로그 기록
+      await this.logApiCall(
+        'campaign_stop',
+        'POST',
+        { campaignId },
+        { 
+          success: true, 
+          stoppedCount,
+          campaignName: campaign.name 
+        },
+        200
+      );
+
+      return {
+        success: true,
+        message: `캠페인이 종료되었습니다. ${stoppedCount}개의 대기 중인 발송이 취소되었습니다.`,
+        stoppedCount,
+      };
+
+    } catch (error) {
+      console.error('Failed to stop campaign:', error);
+      
+      // 오류 로그 기록
+      await this.logApiCall(
+        'campaign_stop',
+        'POST',
+        { campaignId },
+        { error: error instanceof Error ? error.message : 'Unknown error' },
+        500
+      );
+
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '캠페인 종료에 실패했습니다.',
+      };
+    }
   }
 }
 

@@ -93,6 +93,29 @@ export default function ArsCampaigns() {
     },
   });
 
+  // 캠페인 종료
+  const stopCampaignMutation = useMutation({
+    mutationFn: async (campaignId: number) => {
+      const response = await apiRequest("POST", `/api/ars/campaigns/${campaignId}/stop`);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "캠페인 종료",
+        description: data.message,
+        variant: data.success ? "default" : "destructive",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleBulkSend = () => {
     if (!bulkCampaignData.campaignName || !bulkCampaignData.sendNumber) {
       toast({
@@ -333,9 +356,31 @@ export default function ArsCampaigns() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary" data-testid={`badge-campaign-status-${campaign.id}`}>
-                        {campaign.status === 'completed' ? '완료' : '진행중'}
+                      <Badge 
+                        variant={campaign.status === 'completed' ? 'default' : campaign.status === 'stopped' ? 'destructive' : 'secondary'} 
+                        data-testid={`badge-campaign-status-${campaign.id}`}
+                      >
+                        {campaign.status === 'completed' ? '완료' : 
+                         campaign.status === 'stopped' ? '중단됨' : 
+                         campaign.status === 'sent' ? '발송중' : '진행중'}
                       </Badge>
+                      {(campaign.status === 'sent' || campaign.status === 'pending') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`캠페인 "${campaign.name}"을(를) 종료하시겠습니까?\n진행 중인 발송이 중단됩니다.`)) {
+                              stopCampaignMutation.mutate(campaign.id);
+                            }
+                          }}
+                          disabled={stopCampaignMutation.isPending}
+                          className="text-red-600 hover:text-red-700 hover:border-red-300"
+                          data-testid={`button-stop-campaign-${campaign.id}`}
+                        >
+                          <i className="fas fa-stop mr-1"></i>
+                          {stopCampaignMutation.isPending ? '종료 중...' : '종료'}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
