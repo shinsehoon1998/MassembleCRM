@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { PlusIcon, EditIcon, TrashIcon, UsersIcon } from "lucide-react";
+import { PlusIcon, EditIcon, TrashIcon, UsersIcon, UserMinus, Search, UserPlus } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { CustomerGroup, InsertCustomerGroup, CustomerWithUser } from "@shared/schema";
 
 export default function CustomerGroups() {
@@ -30,7 +31,7 @@ export default function CustomerGroups() {
   });
 
   // 고객 그룹 목록 조회
-  const { data: groups = [], isLoading } = useQuery({
+  const { data: groups = [], isLoading } = useQuery<CustomerGroup[]>({
     queryKey: ["/api/customer-groups"],
   });
 
