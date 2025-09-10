@@ -12,6 +12,7 @@ import CustomerDetail from "@/pages/CustomerDetail";
 import DataImport from "@/pages/DataImport";
 import ArsCampaigns from "@/pages/ArsCampaigns";
 import ScenarioManagement from "@/pages/ScenarioManagement";
+import CustomerGroups from "@/pages/CustomerGroups";
 import Users from "@/pages/Users";
 import Settings from "@/pages/Settings";
 import Layout from "@/components/Layout";
@@ -49,6 +50,7 @@ function Router() {
           <Route path="/data-import" component={DataImport} />
           <Route path="/ars-campaigns" component={ArsCampaigns} />
           <Route path="/scenario-management" component={ScenarioManagement} />
+          <Route path="/customer-groups" component={CustomerGroups} />
           <Route path="/users" component={Users} />
           <Route path="/settings" component={Settings} />
         </Layout>
