@@ -1144,34 +1144,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 대량 ARS 발송 (캠페인)
   app.post('/api/ars/send-bulk', isAuthenticated, async (req: any, res) => {
     try {
-      const { customerIds, sendNumber, campaignName, scenarioId = 'marketing_consent' } = req.body;
+      const { customerIds, groupId, sendNumber = '1660-2426', campaignName, scenarioId = 'marketing_consent' } = req.body;
 
-      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+      if (!campaignName) {
+        return res.status(400).json({ message: '캠페인명은 필수입니다.' });
+      }
+
+      let targetCustomerIds = customerIds;
+
+      // 그룹 ID가 제공된 경우 해당 그룹의 고객들을 가져옴
+      if (groupId) {
+        const groupCustomers = await storage.getCustomersInGroup(groupId);
+        if (!groupCustomers || groupCustomers.length === 0) {
+          return res.status(400).json({ message: '선택된 그룹에 고객이 없습니다.' });
+        }
+        targetCustomerIds = groupCustomers.map(customer => customer.id);
+      }
+
+      if (!targetCustomerIds || !Array.isArray(targetCustomerIds) || targetCustomerIds.length === 0) {
         return res.status(400).json({ message: '발송 대상 고객을 선택해주세요.' });
       }
 
-      if (!sendNumber || !campaignName) {
-        return res.status(400).json({ message: '발신번호와 캠페인명은 필수입니다.' });
-      }
-
       const result = await atalkArsService.sendBulkArs(
-        customerIds,
+        targetCustomerIds,
         sendNumber,
         campaignName,
         scenarioId
       );
 
       // 활동 로그 기록
+      const logDescription = groupId 
+        ? `ARS 캠페인 "${campaignName}" 생성 - 그룹 대상: ${targetCustomerIds.length}명`
+        : `ARS 캠페인 "${campaignName}" 생성 - 전체 대상: ${targetCustomerIds.length}명`;
+
       await storage.createActivityLog({
         userId: req.user.id,
         customerId: null,
         action: "ars_campaign_created",
-        description: `ARS 캠페인 "${campaignName}" 생성 - 대상: ${customerIds.length}명`,
+        description: logDescription,
       });
 
       res.json({
         success: true,
-        message: `${customerIds.length}명에게 ARS 발송을 시작했습니다.`,
+        message: `${targetCustomerIds.length}명에게 ARS 발송을 시작했습니다.`,
         campaignId: result.campaignId,
         successCount: result.historyKeys.length,
         failedCount: result.failedCount,

@@ -31,6 +31,8 @@ export default function ArsCampaigns() {
   const [bulkCampaignData, setBulkCampaignData] = useState({
     campaignName: "",
     scenarioId: "marketing_consent",
+    targetType: "all", // "all" 또는 "group"
+    groupId: "",
     targetCount: 0,
   });
 
@@ -49,14 +51,29 @@ export default function ArsCampaigns() {
     queryKey: ["/api/ars/scenarios"],
   });
 
+  // 고객 그룹 목록 조회
+  const { data: customerGroups } = useQuery({
+    queryKey: ["/api/customer-groups"],
+  });
+
+  // 선택된 그룹의 고객 수 조회
+  const { data: groupCustomers } = useQuery({
+    queryKey: [`/api/customer-groups/${bulkCampaignData.groupId}/customers`],
+    enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
+  });
+
   // 대량 ARS 발송
   const sendBulkArsMutation = useMutation({
     mutationFn: async (data: {
-      customerIds: string[];
+      customerIds?: string[];
+      groupId?: string;
       campaignName: string;
       scenarioId: string;
     }) => {
-      return apiRequest("POST", `/api/ars/send-bulk`, data);
+      return apiRequest("/api/ars/send-bulk", {
+        method: "POST",
+        body: data,
+      });
     },
     onSuccess: () => {
       toast({
@@ -129,23 +146,37 @@ export default function ArsCampaigns() {
       return;
     }
 
-    const targets = (marketingTargets as any)?.targets || [];
-    if (!targets.length) {
+    if (bulkCampaignData.targetType === "group" && !bulkCampaignData.groupId) {
       toast({
-        title: "대상 없음",
-        description: "마케팅 대상 고객이 없습니다.",
+        title: "그룹 선택 필요",
+        description: "발송할 고객 그룹을 선택해주세요.",
         variant: "destructive",
       });
       return;
     }
 
-    const customerIds = targets.map((customer: any) => customer.id);
-    
-    sendBulkArsMutation.mutate({
-      customerIds,
+    const sendData: any = {
       campaignName: bulkCampaignData.campaignName,
       scenarioId: bulkCampaignData.scenarioId,
-    });
+    };
+
+    if (bulkCampaignData.targetType === "group") {
+      sendData.groupId = bulkCampaignData.groupId;
+    } else {
+      // 전체 마케팅 동의 고객
+      const targets = (marketingTargets as any)?.targets || [];
+      if (!targets.length) {
+        toast({
+          title: "대상 없음",
+          description: "마케팅 대상 고객이 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      sendData.customerIds = targets.map((customer: any) => customer.id);
+    }
+    
+    sendBulkArsMutation.mutate(sendData);
   };
 
   if (campaignsLoading) {
@@ -237,11 +268,74 @@ export default function ArsCampaigns() {
                   </Select>
                 </div>
 
+                <div className="space-y-2">
+                  <Label>발송 대상</Label>
+                  <Select
+                    value={bulkCampaignData.targetType}
+                    onValueChange={(value) =>
+                      setBulkCampaignData(prev => ({
+                        ...prev,
+                        targetType: value,
+                        groupId: value === "all" ? "" : prev.groupId,
+                      }))
+                    }
+                  >
+                    <SelectTrigger data-testid="select-target-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전체 마케팅 동의 고객</SelectItem>
+                      <SelectItem value="group">특정 고객 그룹</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {bulkCampaignData.targetType === "group" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="group">고객 그룹</Label>
+                    <Select
+                      value={bulkCampaignData.groupId}
+                      onValueChange={(value) =>
+                        setBulkCampaignData(prev => ({
+                          ...prev,
+                          groupId: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-customer-group">
+                        <SelectValue placeholder="그룹을 선택하세요" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(customerGroups as any)?.map((group: any) => (
+                          <SelectItem key={group.id} value={group.id}>
+                            <div className="flex items-center space-x-2">
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: group.color }}
+                              ></div>
+                              <span>{group.name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="bg-blue-50 p-3 rounded-lg">
                   <p className="text-sm text-blue-800">
                     <Users className="h-4 w-4 inline mr-1" />
-                    발송 대상: {(marketingTargets as any)?.count || 0}명
+                    발송 대상: {
+                      bulkCampaignData.targetType === "group" 
+                        ? (groupCustomers as any)?.length || 0
+                        : (marketingTargets as any)?.count || 0
+                    }명
                   </p>
+                  {bulkCampaignData.targetType === "group" && bulkCampaignData.groupId && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      선택된 그룹: {(customerGroups as any)?.find((g: any) => g.id === bulkCampaignData.groupId)?.name}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2">
