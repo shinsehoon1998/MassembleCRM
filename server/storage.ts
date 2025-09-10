@@ -5,6 +5,8 @@ import {
   activityLogs,
   attachments,
   systemSettings,
+  arsCampaigns,
+  arsSendLogs,
   type User,
   type UpsertUser,
   type Customer,
@@ -20,6 +22,10 @@ import {
   type AttachmentWithUser,
   type InsertAttachment,
   type SystemSetting,
+  type ArsCampaign,
+  type InsertArsCampaign,
+  type ArsSendLog,
+  type InsertArsSendLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
@@ -95,6 +101,20 @@ export interface IStorage {
   // System settings operations
   getSystemSettings(): Promise<SystemSetting[]>;
   updateSystemSetting(key: string, value: string): Promise<SystemSetting>;
+
+  // ARS operations
+  getArsCampaigns(): Promise<ArsCampaign[]>;
+  getArsSendLogs(params: {
+    campaignId?: number;
+    customerId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    logs: ArsSendLog[];
+    total: number;
+    totalPages: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -521,6 +541,66 @@ export class DatabaseStorage implements IStorage {
   async deleteSystemSetting(key: string): Promise<boolean> {
     const result = await db.delete(systemSettings).where(eq(systemSettings.key, key));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // ARS 캠페인 조회
+  async getArsCampaigns(): Promise<ArsCampaign[]> {
+    const campaigns = await db
+      .select()
+      .from(arsCampaigns)
+      .orderBy(desc(arsCampaigns.createdAt));
+    return campaigns;
+  }
+
+  // ARS 발송 로그 조회
+  async getArsSendLogs(params: {
+    campaignId?: number;
+    customerId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    logs: ArsSendLog[];
+    total: number;
+    totalPages: number;
+  }> {
+    const { campaignId, customerId, status, page = 1, limit = 50 } = params;
+    const conditions = [];
+
+    if (campaignId) {
+      conditions.push(eq(arsSendLogs.campaignId, campaignId));
+    }
+
+    if (customerId) {
+      conditions.push(eq(arsSendLogs.customerId, customerId));
+    }
+
+    if (status) {
+      conditions.push(eq(arsSendLogs.status, status));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // 총 개수 조회
+    const [{ count: totalCount }] = await db
+      .select({ count: count() })
+      .from(arsSendLogs)
+      .where(whereClause);
+
+    // 페이징된 로그 조회
+    const logs = await db
+      .select()
+      .from(arsSendLogs)
+      .where(whereClause)
+      .orderBy(desc(arsSendLogs.createdAt))
+      .limit(limit)
+      .offset((page - 1) * limit);
+
+    return {
+      logs,
+      total: totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+    };
   }
 }
 

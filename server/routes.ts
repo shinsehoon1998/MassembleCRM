@@ -8,6 +8,7 @@ import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
 import multer from "multer";
+import { atalkArsService } from "./arsService";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -1102,6 +1103,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error processing CSV upload:", error);
       res.status(500).json({ message: "CSV 업로드 처리 중 오류가 발생했습니다." });
+    }
+  });
+
+  // ============================================
+  // ARS API 엔드포인트
+  // ============================================
+
+  // 개별 고객 ARS 발송
+  app.post('/api/ars/send-single', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerId, sendNumber, scenarioId = 'marketing_consent' } = req.body;
+
+      if (!customerId || !sendNumber) {
+        return res.status(400).json({ message: '고객 ID와 발신번호는 필수입니다.' });
+      }
+
+      const result = await atalkArsService.sendSingleArs(customerId, sendNumber, scenarioId);
+
+      if (result.success) {
+        // 활동 로그 기록
+        await storage.createActivityLog({
+          userId: req.user.id,
+          customerId,
+          action: "ars_sent",
+          description: `ARS 발송 완료 (발신번호: ${sendNumber})`,
+        });
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error sending ARS:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: error instanceof Error ? error.message : 'ARS 발송 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  // 대량 ARS 발송 (캠페인)
+  app.post('/api/ars/send-bulk', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds, sendNumber, campaignName, scenarioId = 'marketing_consent' } = req.body;
+
+      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: '발송 대상 고객을 선택해주세요.' });
+      }
+
+      if (!sendNumber || !campaignName) {
+        return res.status(400).json({ message: '발신번호와 캠페인명은 필수입니다.' });
+      }
+
+      const result = await atalkArsService.sendBulkArs(
+        customerIds,
+        sendNumber,
+        campaignName,
+        scenarioId
+      );
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaign_created",
+        description: `ARS 캠페인 "${campaignName}" 생성 - 대상: ${customerIds.length}명`,
+      });
+
+      res.json({
+        success: true,
+        message: `${customerIds.length}명에게 ARS 발송을 시작했습니다.`,
+        campaignId: result.campaignId,
+        successCount: result.historyKeys.length,
+        failedCount: result.failedCount,
+      });
+    } catch (error) {
+      console.error("Error sending bulk ARS:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: error instanceof Error ? error.message : '대량 ARS 발송 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  // 마케팅 동의 대상 고객 조회
+  app.get('/api/ars/marketing-targets', isAuthenticated, async (req: any, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const targets = await atalkArsService.getMarketingTargetCustomers(limit);
+      
+      res.json({
+        targets,
+        count: targets.length,
+      });
+    } catch (error) {
+      console.error("Error getting marketing targets:", error);
+      res.status(500).json({ message: "마케팅 대상 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // ARS 발송 이력 조회
+  app.get('/api/ars/history/:historyKey', isAuthenticated, async (req: any, res) => {
+    try {
+      const { historyKey } = req.params;
+      const history = await atalkArsService.getCallHistory(historyKey);
+      res.json(history);
+    } catch (error) {
+      console.error("Error getting call history:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "ARS 이력 조회 중 오류가 발생했습니다." 
+      });
+    }
+  });
+
+  // ARS 발송 결과 업데이트 (배치 작업)
+  app.post('/api/ars/update-results', isAuthenticated, async (req: any, res) => {
+    try {
+      await atalkArsService.updateCallResults();
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_results_updated",
+        description: "ARS 발송 결과를 업데이트했습니다.",
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'ARS 발송 결과가 업데이트되었습니다.' 
+      });
+    } catch (error) {
+      console.error("Error updating call results:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "ARS 결과 업데이트 중 오류가 발생했습니다." 
+      });
+    }
+  });
+
+  // ARS 캠페인 통계 조회
+  app.get('/api/ars/campaigns', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaigns = await storage.getArsCampaigns();
+      res.json(campaigns);
+    } catch (error) {
+      console.error("Error getting ARS campaigns:", error);
+      res.status(500).json({ message: "ARS 캠페인 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // ARS 발송 로그 조회
+  app.get('/api/ars/logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const { campaignId, customerId, status, page = 1, limit = 50 } = req.query;
+      const logs = await storage.getArsSendLogs({
+        campaignId: campaignId ? parseInt(campaignId as string) : undefined,
+        customerId: customerId as string,
+        status: status as string,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+      });
+      res.json(logs);
+    } catch (error) {
+      console.error("Error getting ARS logs:", error);
+      res.status(500).json({ message: "ARS 로그 조회 중 오류가 발생했습니다." });
     }
   });
 

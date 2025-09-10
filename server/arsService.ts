@@ -81,7 +81,8 @@ export class AtalkArsService {
       return result as T;
     } catch (error) {
       // 에러 로그 저장
-      await this.logApiCall(endpoint, method, data, { error: error.message }, 500);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await this.logApiCall(endpoint, method, data, { error: errorMessage }, 500);
       throw error;
     }
   }
@@ -169,7 +170,7 @@ export class AtalkArsService {
 
       return {
         success: false,
-        message: error.message || 'ARS 발송에 실패했습니다.',
+        message: error instanceof Error ? error.message : 'ARS 발송에 실패했습니다.',
       };
     }
   }
