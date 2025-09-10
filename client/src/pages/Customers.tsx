@@ -36,6 +36,11 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithUser | null>(null);
   const [editingMemo, setEditingMemo] = useState<{ [key: string]: string }>({});
   const [showBatchActions, setShowBatchActions] = useState(false);
+  const [showArsModal, setShowArsModal] = useState(false);
+  const [arsData, setArsData] = useState({
+    sendNumber: "",
+    scenarioId: "marketing_consent",
+  });
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -141,6 +146,67 @@ export default function Customers() {
       toast({
         title: "삭제 실패",
         description: errorMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // ARS 발송 기능
+  const sendSingleArsMutation = useMutation({
+    mutationFn: async ({ customerId, sendNumber, scenarioId }: { 
+      customerId: string, 
+      sendNumber: string, 
+      scenarioId: string 
+    }) => {
+      const response = await apiRequest("POST", `/api/ars/send-single`, { 
+        customerId, 
+        sendNumber, 
+        scenarioId 
+      });
+      return response.json();
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: "ARS 발송 성공",
+        description: `고객에게 ARS가 발송되었습니다.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "ARS 발송 실패",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const sendBulkArsMutation = useMutation({
+    mutationFn: async ({ customerIds, sendNumber, scenarioId }: { 
+      customerIds: string[], 
+      sendNumber: string, 
+      scenarioId: string 
+    }) => {
+      const response = await apiRequest("POST", `/api/ars/send-bulk`, { 
+        customerIds, 
+        sendNumber, 
+        scenarioId,
+        campaignName: `일괄 ARS 발송 (${new Date().toLocaleDateString('ko-KR')})`,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setSelectedCustomers([]);
+      setShowBatchActions(false);
+      setShowArsModal(false);
+      toast({
+        title: "대량 ARS 발송 성공",
+        description: `${selectedCustomers.length}명에게 ARS 발송을 시작했습니다.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "대량 ARS 발송 실패",
+        description: error.message,
         variant: "destructive",
       });
     },
@@ -507,6 +573,15 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Button
+                  onClick={() => setShowArsModal(true)}
+                  variant="outline"
+                  size="sm"
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                  data-testid="button-bulk-ars"
+                >
+                  <i className="fas fa-phone mr-1"></i>ARS 발송
+                </Button>
                 <Button 
                   variant="destructive" 
                   size="sm" 
@@ -789,6 +864,22 @@ export default function Customers() {
                           <Button 
                             variant="ghost" 
                             size="sm" 
+                            className="text-blue-500 hover:text-blue-600" 
+                            title="ARS 발송"
+                            onClick={() => {
+                              sendSingleArsMutation.mutate({
+                                customerId: customer.id,
+                                sendNumber: "02-1234-5678", // 기본 발신번호
+                                scenarioId: "marketing_consent"
+                              });
+                            }}
+                            disabled={sendSingleArsMutation.isPending}
+                          >
+                            <i className="fas fa-phone"></i>
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
                             className="text-red-500 hover:text-red-600" 
                             title="삭제"
                             onClick={() => handleDeleteCustomer(customer.id)}
@@ -922,6 +1013,98 @@ export default function Customers() {
         customer={editingCustomer}
         counselors={counselors || []}
       />
+
+      {/* ARS Modal */}
+      {showArsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">ARS 대량 발송</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowArsModal(false)}
+                data-testid="button-close-ars-modal"
+              >
+                <i className="fas fa-times"></i>
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="sendNumber" className="block text-sm font-medium text-gray-700 mb-1">
+                  발신번호
+                </label>
+                <Input
+                  id="sendNumber"
+                  placeholder="02-1234-5678"
+                  value={arsData.sendNumber}
+                  onChange={(e) => setArsData(prev => ({ ...prev, sendNumber: e.target.value }))}
+                  data-testid="input-ars-send-number"
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="scenario" className="block text-sm font-medium text-gray-700 mb-1">
+                  시나리오
+                </label>
+                <Select
+                  value={arsData.scenarioId}
+                  onValueChange={(value) => setArsData(prev => ({ ...prev, scenarioId: value }))}
+                >
+                  <SelectTrigger data-testid="select-ars-scenario">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="marketing_consent">마케팅 동의 확인</SelectItem>
+                    <SelectItem value="consultation_reminder">상담 안내</SelectItem>
+                    <SelectItem value="follow_up">후속 연락</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <i className="fas fa-users mr-1"></i>
+                  발송 대상: {selectedCustomers.length}명
+                </p>
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowArsModal(false)}
+                  data-testid="button-cancel-ars"
+                >
+                  취소
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (!arsData.sendNumber) {
+                      toast({
+                        title: "입력 오류",
+                        description: "발신번호를 입력해주세요.",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    sendBulkArsMutation.mutate({
+                      customerIds: selectedCustomers,
+                      sendNumber: arsData.sendNumber,
+                      scenarioId: arsData.scenarioId,
+                    });
+                  }}
+                  disabled={sendBulkArsMutation.isPending}
+                  className="bg-blue-600 hover:bg-blue-700"
+                  data-testid="button-send-ars"
+                >
+                  {sendBulkArsMutation.isPending ? "발송 중..." : "ARS 발송"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

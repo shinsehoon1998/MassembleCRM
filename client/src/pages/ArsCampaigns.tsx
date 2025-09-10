@@ -53,10 +53,7 @@ export default function ArsCampaigns() {
       campaignName: string;
       scenarioId: string;
     }) => {
-      return apiRequest(`/api/ars/send-bulk`, {
-        method: "POST",
-        data,
-      });
+      return apiRequest("POST", `/api/ars/send-bulk`, data);
     },
     onSuccess: () => {
       toast({
@@ -78,9 +75,7 @@ export default function ArsCampaigns() {
   // ARS 결과 업데이트
   const updateResultsMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest(`/api/ars/update-results`, {
-        method: "POST",
-      });
+      return apiRequest("POST", `/api/ars/update-results`);
     },
     onSuccess: () => {
       toast({
@@ -108,7 +103,7 @@ export default function ArsCampaigns() {
       return;
     }
 
-    const targets = marketingTargets?.targets || [];
+    const targets = (marketingTargets as any)?.targets || [];
     if (!targets.length) {
       toast({
         title: "대상 없음",
