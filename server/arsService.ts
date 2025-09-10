@@ -11,6 +11,7 @@ const ATALK_API_CONFIG = {
   company: '627923',
   userId: 'bWI2Mjc5MjM=',
   campaignName: '주식회사마셈블',
+  defaultSendNumber: '1660-2426', // 고정 발신번호
 };
 
 export interface AtalkApiResponse {
@@ -34,6 +35,12 @@ export interface CallHistoryRequest {
   user_id: string;
   text_campaign_name: string;
   text_page: string;
+}
+
+export interface CampaignStopRequest {
+  history_key: string;
+  company: string;
+  user_id: string;
 }
 
 export interface CallHistoryResponse {
@@ -134,7 +141,7 @@ export class AtalkArsService {
 
       // ARS 호출 요청 데이터
       const callData: CallRequest = {
-        text_send_no: sendNumber,
+        text_send_no: ATALK_API_CONFIG.defaultSendNumber, // 고정 발신번호 사용
         company: ATALK_API_CONFIG.company,
         user_id: ATALK_API_CONFIG.userId,
         text_campaign_name: ATALK_API_CONFIG.campaignName,
@@ -212,7 +219,7 @@ export class AtalkArsService {
         const formattedPhone = customer.phone.replace(/[^0-9]/g, '');
 
         const callData: CallRequest = {
-          text_send_no: sendNumber,
+          text_send_no: ATALK_API_CONFIG.defaultSendNumber, // 고정 발신번호 사용
           company: ATALK_API_CONFIG.company,
           user_id: ATALK_API_CONFIG.userId,
           text_campaign_name: ATALK_API_CONFIG.campaignName,
@@ -406,20 +413,38 @@ export class AtalkArsService {
   /**
    * 캠페인 종료
    */
+  // 아톡비즈 API로 캠페인 중단 요청
+  private async stopCampaignViaApi(historyKey: string): Promise<boolean> {
+    try {
+      const stopData: CampaignStopRequest = {
+        history_key: historyKey,
+        company: ATALK_API_CONFIG.company,
+        user_id: ATALK_API_CONFIG.userId,
+      };
+
+      const response = await this.makeApiCall<AtalkApiResponse>(
+        '/calllist/stop',
+        stopData
+      );
+
+      return response.code === '200' || response.code === 'success';
+    } catch (error) {
+      console.error('Failed to stop campaign via API:', error);
+      return false;
+    }
+  }
+
   async stopCampaign(campaignId: number): Promise<{
     success: boolean;
     message: string;
     stoppedCount?: number;
   }> {
     try {
-      // 캠페인 상태를 종료로 변경
+      // 먼저 캠페인 정보 조회
       const [campaign] = await db
-        .update(arsCampaigns)
-        .set({ 
-          status: 'stopped',
-        })
-        .where(eq(arsCampaigns.id, campaignId))
-        .returning();
+        .select()
+        .from(arsCampaigns)
+        .where(eq(arsCampaigns.id, campaignId));
 
       if (!campaign) {
         return {
@@ -427,6 +452,23 @@ export class AtalkArsService {
           message: '캠페인을 찾을 수 없습니다.',
         };
       }
+
+      // 아톡비즈 API로 캠페인 중단 요청 (history_key가 있는 경우)
+      if (campaign.historyKey) {
+        const apiStopSuccess = await this.stopCampaignViaApi(campaign.historyKey);
+        if (!apiStopSuccess) {
+          console.warn(`Failed to stop campaign via API for campaign ${campaignId}`);
+        }
+      }
+
+      // 캠페인 상태를 종료로 변경
+      const [updatedCampaign] = await db
+        .update(arsCampaigns)
+        .set({ 
+          status: 'stopped',
+        })
+        .where(eq(arsCampaigns.id, campaignId))
+        .returning();
 
       // 해당 캠페인의 대기 중인 발송들을 취소 상태로 변경
       const result = await db
