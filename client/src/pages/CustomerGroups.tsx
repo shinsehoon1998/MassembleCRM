@@ -21,6 +21,8 @@ export default function CustomerGroups() {
   const [isCustomersDialogOpen, setIsCustomersDialogOpen] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<CustomerGroup | null>(null);
   const [editingGroup, setEditingGroup] = useState<CustomerGroup | null>(null);
+  const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [formData, setFormData] = useState<Partial<InsertCustomerGroup>>({
     name: "",
     description: "",
@@ -33,9 +35,15 @@ export default function CustomerGroups() {
   });
 
   // 선택된 그룹의 고객 목록 조회
-  const { data: groupCustomers = [] } = useQuery({
+  const { data: groupCustomers = [] } = useQuery<any[]>({
     queryKey: [`/api/customer-groups/${selectedGroup?.id}/customers`],
     enabled: !!selectedGroup,
+  });
+
+  // 모든 고객 목록 조회 (그룹에 추가할 때 사용)
+  const { data: allCustomers = [] } = useQuery<any[]>({
+    queryKey: ["/api/customers"],
+    enabled: isCustomersDialogOpen,
   });
 
   // 고객 그룹 생성
@@ -105,6 +113,49 @@ export default function CustomerGroups() {
     },
   });
 
+  // 고객을 그룹에 추가
+  const addCustomersToGroupMutation = useMutation({
+    mutationFn: async ({ groupId, customerIds }: { groupId: string; customerIds: string[] }) => {
+      return await apiRequest("POST", `/api/customer-groups/${groupId}/customers`, { customerIds });
+    },
+    onSuccess: () => {
+      toast({
+        title: "고객 추가 완료",
+        description: "선택한 고객들이 그룹에 추가되었습니다.",
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/customer-groups/${selectedGroup?.id}/customers`] });
+      setSelectedCustomers([]);
+    },
+    onError: (error) => {
+      toast({
+        title: "추가 실패",
+        description: error.message || "고객 추가 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 그룹에서 고객 제거
+  const removeCustomerFromGroupMutation = useMutation({
+    mutationFn: async ({ groupId, customerId }: { groupId: string; customerId: string }) => {
+      return await apiRequest("DELETE", `/api/customer-groups/${groupId}/customers/${customerId}`);
+    },
+    onSuccess: () => {
+      toast({
+        title: "고객 제거 완료",
+        description: "고객이 그룹에서 제거되었습니다.",
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/customer-groups/${selectedGroup?.id}/customers`] });
+    },
+    onError: (error) => {
+      toast({
+        title: "제거 실패",
+        description: error.message || "고객 제거 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreateGroup = () => {
     if (!formData.name?.trim()) {
       toast({
@@ -146,8 +197,44 @@ export default function CustomerGroups() {
 
   const openCustomersDialog = (group: CustomerGroup) => {
     setSelectedGroup(group);
+    setSelectedCustomers([]);
+    setCustomerSearchQuery("");
     setIsCustomersDialogOpen(true);
   };
+
+  const handleCustomerSelect = (customerId: string) => {
+    setSelectedCustomers(prev => 
+      prev.includes(customerId) 
+        ? prev.filter(id => id !== customerId)
+        : [...prev, customerId]
+    );
+  };
+
+  const handleAddSelectedCustomers = () => {
+    if (!selectedGroup || selectedCustomers.length === 0) return;
+    
+    addCustomersToGroupMutation.mutate({
+      groupId: selectedGroup.id,
+      customerIds: selectedCustomers,
+    });
+  };
+
+  const handleRemoveCustomer = (customerId: string) => {
+    if (!selectedGroup) return;
+    
+    removeCustomerFromGroupMutation.mutate({
+      groupId: selectedGroup.id,
+      customerId,
+    });
+  };
+
+  // 그룹에 속하지 않은 고객들만 필터링
+  const availableCustomers = allCustomers.filter(customer => 
+    !groupCustomers.some(groupCustomer => groupCustomer.id === customer.id) &&
+    (customerSearchQuery === "" || 
+     customer.name?.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
+     customer.phone?.includes(customerSearchQuery))
+  );
 
   if (isLoading) {
     return (
@@ -264,7 +351,7 @@ export default function CustomerGroups() {
                   <div className="flex items-center space-x-2">
                     <div
                       className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: group.color }}
+                      style={{ backgroundColor: group.color || "#3B82F6" }}
                     ></div>
                     <CardTitle className="text-lg">{group.name}</CardTitle>
                   </div>
@@ -327,7 +414,7 @@ export default function CustomerGroups() {
               
               <CardContent>
                 <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>생성일: {new Date(group.createdAt).toLocaleDateString()}</span>
+                  <span>생성일: {group.createdAt ? new Date(group.createdAt).toLocaleDateString() : '알 수 없음'}</span>
                   {group.isActive && (
                     <Badge variant="secondary" className="text-xs">활성</Badge>
                   )}
@@ -407,56 +494,149 @@ export default function CustomerGroups() {
         </DialogContent>
       </Dialog>
 
-      {/* 그룹 내 고객 목록 대화상자 */}
+      {/* 고객 관리 모달 */}
       <Dialog open={isCustomersDialogOpen} onOpenChange={setIsCustomersDialogOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {selectedGroup?.name} 그룹 고객 목록
+            <DialogTitle className="flex items-center gap-2">
+              <UsersIcon className="h-5 w-5" />
+              고객 관리: {selectedGroup?.name}
             </DialogTitle>
             <DialogDescription>
-              이 그룹에 속한 고객들을 확인할 수 있습니다.
+              그룹에 속한 고객을 관리하고 새로운 고객을 추가할 수 있습니다.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="max-h-96 overflow-y-auto">
-            {groupCustomers.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                이 그룹에 속한 고객이 없습니다.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>이름</TableHead>
-                    <TableHead>전화번호</TableHead>
-                    <TableHead>상태</TableHead>
-                    <TableHead>담당자</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {groupCustomers.map((customer: CustomerWithUser) => (
-                    <TableRow key={customer.id}>
-                      <TableCell className="font-medium">{customer.name}</TableCell>
-                      <TableCell>{customer.phone}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{customer.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {customer.assignedUser?.name || "미배정"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+
+          <div className="space-y-6">
+            {/* 현재 그룹에 속한 고객들 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">현재 그룹 고객 ({groupCustomers.length}명)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {groupCustomers.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <UsersIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p>이 그룹에 속한 고객이 없습니다.</p>
+                    <p className="text-sm mt-1">아래에서 고객을 선택하여 추가해보세요.</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>고객명</TableHead>
+                        <TableHead>전화번호</TableHead>
+                        <TableHead>이메일</TableHead>
+                        <TableHead>담당자</TableHead>
+                        <TableHead className="text-right">작업</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {groupCustomers.map((customer: any) => (
+                        <TableRow key={customer.id}>
+                          <TableCell className="font-medium">{customer.name}</TableCell>
+                          <TableCell>{customer.phone}</TableCell>
+                          <TableCell>{customer.email || '-'}</TableCell>
+                          <TableCell>{customer.counselor?.name || '-'}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRemoveCustomer(customer.id)}
+                              disabled={removeCustomerFromGroupMutation.isPending}
+                              className="text-red-600 hover:text-red-700 hover:border-red-300"
+                              data-testid={`button-remove-customer-${customer.id}`}
+                            >
+                              <UserMinus className="h-4 w-4 mr-1" />
+                              제거
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 고객 추가 섹션 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">고객 추가</CardTitle>
+                <div className="flex items-center space-x-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                    <Input
+                      placeholder="고객명 또는 전화번호로 검색..."
+                      value={customerSearchQuery}
+                      onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                      className="pl-10"
+                      data-testid="input-customer-search"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAddSelectedCustomers}
+                    disabled={selectedCustomers.length === 0 || addCustomersToGroupMutation.isPending}
+                    data-testid="button-add-selected-customers"
+                  >
+                    <UserPlus className="h-4 w-4 mr-1" />
+                    선택한 고객 추가 ({selectedCustomers.length})
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {availableCustomers.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <Search className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p>추가할 수 있는 고객이 없습니다.</p>
+                    <p className="text-sm mt-1">모든 고객이 이미 그룹에 속해있거나 검색 결과가 없습니다.</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">선택</TableHead>
+                        <TableHead>고객명</TableHead>
+                        <TableHead>전화번호</TableHead>
+                        <TableHead>이메일</TableHead>
+                        <TableHead>담당자</TableHead>
+                        <TableHead>상태</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {availableCustomers.map((customer: any) => (
+                        <TableRow key={customer.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedCustomers.includes(customer.id)}
+                              onCheckedChange={() => handleCustomerSelect(customer.id)}
+                              data-testid={`checkbox-customer-${customer.id}`}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">{customer.name}</TableCell>
+                          <TableCell>{customer.phone}</TableCell>
+                          <TableCell>{customer.email || '-'}</TableCell>
+                          <TableCell>{customer.counselor?.name || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {customer.status === 'active' ? '상담중' : 
+                               customer.status === 'completed' ? '완료' : '대기중'}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
           </div>
-          
-          <div className="flex justify-end">
+
+          <div className="flex justify-end pt-4">
             <Button
               variant="outline"
               onClick={() => setIsCustomersDialogOpen(false)}
-              data-testid="button-close-customers"
+              data-testid="button-close-customers-dialog"
             >
               닫기
             </Button>
