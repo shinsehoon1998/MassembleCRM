@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -1365,6 +1365,191 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Failed to delete scenario:', error);
       res.status(500).json({ message: 'Failed to delete scenario' });
+    }
+  });
+
+  // ============================================
+  // 고객 그룹 관리 API
+  // ============================================
+
+  // 고객 그룹 목록 조회
+  app.get('/api/customer-groups', isAuthenticated, async (req, res) => {
+    try {
+      const groups = await storage.getCustomerGroups();
+      res.json(groups);
+    } catch (error) {
+      console.error('Failed to get customer groups:', error);
+      res.status(500).json({ message: '고객 그룹 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 고객 그룹 생성
+  app.post('/api/customer-groups', isAuthenticated, async (req: any, res) => {
+    try {
+      const validatedData = insertCustomerGroupSchema.parse(req.body);
+      validatedData.createdBy = req.user?.id || 'unknown';
+      
+      const group = await storage.createCustomerGroup(validatedData);
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "customer_group_created",
+        description: `고객 그룹 "${group.name}" 생성`,
+      });
+      
+      res.json(group);
+    } catch (error) {
+      console.error('Failed to create customer group:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: '입력 데이터가 올바르지 않습니다.', errors: error.errors });
+      }
+      res.status(500).json({ message: '고객 그룹 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 고객 그룹 수정
+  app.put('/api/customer-groups/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = insertCustomerGroupSchema.partial().parse(req.body);
+      
+      const group = await storage.updateCustomerGroup(id, validatedData);
+      if (!group) {
+        return res.status(404).json({ message: '그룹을 찾을 수 없습니다.' });
+      }
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "customer_group_updated",
+        description: `고객 그룹 "${group.name}" 수정`,
+      });
+      
+      res.json(group);
+    } catch (error) {
+      console.error('Failed to update customer group:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: '입력 데이터가 올바르지 않습니다.', errors: error.errors });
+      }
+      res.status(500).json({ message: '고객 그룹 수정 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 고객 그룹 삭제
+  app.delete('/api/customer-groups/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      
+      const success = await storage.deleteCustomerGroup(id);
+      if (!success) {
+        return res.status(404).json({ message: '그룹을 찾을 수 없습니다.' });
+      }
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "customer_group_deleted",
+        description: `고객 그룹 삭제`,
+      });
+      
+      res.json({ message: '고객 그룹이 삭제되었습니다.' });
+    } catch (error) {
+      console.error('Failed to delete customer group:', error);
+      res.status(500).json({ message: '고객 그룹 삭제 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 그룹에 고객 추가
+  app.post('/api/customer-groups/:groupId/customers', isAuthenticated, async (req: any, res) => {
+    try {
+      const { groupId } = req.params;
+      const { customerIds } = req.body;
+
+      if (!Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: '고객을 선택해주세요.' });
+      }
+
+      const results = [];
+      for (const customerId of customerIds) {
+        try {
+          const mapping = await storage.addCustomerToGroup(customerId, groupId, req.user.id);
+          results.push({ customerId, success: true, mapping });
+        } catch (error) {
+          console.error(`Failed to add customer ${customerId} to group:`, error);
+          results.push({ customerId, success: false, error: error.message });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "customers_added_to_group",
+        description: `고객 ${successCount}명을 그룹에 추가`,
+      });
+
+      res.json({
+        message: `${successCount}명의 고객이 그룹에 추가되었습니다.`,
+        results,
+      });
+    } catch (error) {
+      console.error('Failed to add customers to group:', error);
+      res.status(500).json({ message: '고객 그룹 추가 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 그룹에서 고객 제거
+  app.delete('/api/customer-groups/:groupId/customers/:customerId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { groupId, customerId } = req.params;
+      
+      const success = await storage.removeCustomerFromGroup(customerId, groupId);
+      if (!success) {
+        return res.status(404).json({ message: '그룹에서 고객을 찾을 수 없습니다.' });
+      }
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId,
+        action: "customer_removed_from_group",
+        description: `고객을 그룹에서 제거`,
+      });
+      
+      res.json({ message: '고객이 그룹에서 제거되었습니다.' });
+    } catch (error) {
+      console.error('Failed to remove customer from group:', error);
+      res.status(500).json({ message: '고객 그룹 제거 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 그룹 내 고객 목록 조회
+  app.get('/api/customer-groups/:groupId/customers', isAuthenticated, async (req, res) => {
+    try {
+      const { groupId } = req.params;
+      const customers = await storage.getCustomersInGroup(groupId);
+      res.json(customers);
+    } catch (error) {
+      console.error('Failed to get customers in group:', error);
+      res.status(500).json({ message: '그룹 내 고객 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 특정 고객의 그룹 목록 조회
+  app.get('/api/customers/:customerId/groups', isAuthenticated, async (req, res) => {
+    try {
+      const { customerId } = req.params;
+      const groups = await storage.getCustomerGroups(customerId);
+      res.json(groups);
+    } catch (error) {
+      console.error('Failed to get customer groups:', error);
+      res.status(500).json({ message: '고객 그룹 조회 중 오류가 발생했습니다.' });
     }
   });
 
