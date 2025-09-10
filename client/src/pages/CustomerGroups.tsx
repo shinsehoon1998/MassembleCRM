@@ -42,10 +42,12 @@ export default function CustomerGroups() {
   });
 
   // 모든 고객 목록 조회 (그룹에 추가할 때 사용)
-  const { data: allCustomers = [] } = useQuery<any[]>({
+  const { data: allCustomersData } = useQuery<{customers: any[]}>({
     queryKey: ["/api/customers"],
     enabled: isCustomersDialogOpen,
   });
+  
+  const allCustomers = allCustomersData?.customers || [];
 
   // 고객 그룹 생성
   const createGroupMutation = useMutation({
