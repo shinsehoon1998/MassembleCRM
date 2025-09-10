@@ -298,6 +298,17 @@ export const arsApiLogs = pgTable("ars_api_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ARS 시나리오
+export const arsScenarios = pgTable("ars_scenarios", {
+  id: varchar("id", { length: 50 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // ARS 관련 스키마
 export const insertArsCampaignSchema = createInsertSchema(arsCampaigns).omit({
   id: true,
@@ -310,11 +321,18 @@ export const insertArsSendLogSchema = createInsertSchema(arsSendLogs).omit({
   createdAt: true,
 });
 
+export const insertArsScenarioSchema = createInsertSchema(arsScenarios).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
 // ARS 타입 정의
 export type ArsCampaign = typeof arsCampaigns.$inferSelect;
 export type InsertArsCampaign = z.infer<typeof insertArsCampaignSchema>;
 export type ArsSendLog = typeof arsSendLogs.$inferSelect;
 export type InsertArsSendLog = z.infer<typeof insertArsSendLogSchema>;
+export type ArsScenario = typeof arsScenarios.$inferSelect;
+export type InsertArsScenario = z.infer<typeof insertArsScenarioSchema>;
 
 // Extended types with relations
 export type CustomerWithUser = Customer & {

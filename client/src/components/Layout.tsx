@@ -30,6 +30,7 @@ export default function Layout({ children }: LayoutProps) {
       '/customers': '고객관리',
       '/data-import': '데이터 관리',
       '/ars-campaigns': 'ARS 캠페인',
+      '/scenario-management': '시나리오 관리',
       '/users': '사용자관리',
       '/settings': '환경설정',
     };
@@ -42,6 +43,7 @@ export default function Layout({ children }: LayoutProps) {
       '/customers': '고객 정보를 관리하고 상담을 진행하세요',
       '/data-import': 'CSV 템플릿 다운로드 및 대량 업로드를 진행하세요',
       '/ars-campaigns': 'ARS 마케팅 캠페인을 관리하고 모니터링하세요',
+      '/scenario-management': 'ARS 시나리오를 생성하고 관리하세요',
       '/users': '시스템 사용자를 관리하세요',
       '/settings': '시스템 환경을 설정하세요',
     };
@@ -140,6 +142,15 @@ export default function Layout({ children }: LayoutProps) {
             }`} data-testid="nav-ars-campaigns">
               <i className="fas fa-phone w-5"></i>
               <span className="ml-3">ARS 캠페인</span>
+            </a>
+          </Link>
+
+          <Link href="/scenario-management">
+            <a className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+              isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            }`} data-testid="nav-scenario-management">
+              <i className="fas fa-comments w-5"></i>
+              <span className="ml-3">시나리오 관리</span>
             </a>
           </Link>
           

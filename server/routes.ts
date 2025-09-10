@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -1297,6 +1297,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: error instanceof Error ? error.message : "캠페인 종료 중 오류가 발생했습니다." 
       });
+    }
+  });
+
+  // ARS 시나리오 관련 API
+  
+  // 시나리오 목록 조회
+  app.get('/api/ars/scenarios', isAuthenticated, async (req, res) => {
+    try {
+      const scenarios = await storage.getArsScenarios();
+      res.json(scenarios);
+    } catch (error) {
+      console.error('Failed to get scenarios:', error);
+      res.status(500).json({ message: 'Failed to get scenarios' });
+    }
+  });
+
+  // 시나리오 생성
+  app.post('/api/ars/scenarios', isAuthenticated, async (req, res) => {
+    try {
+      const validatedData = insertArsScenarioSchema.parse(req.body);
+      validatedData.createdBy = req.user?.username || 'unknown';
+      
+      const scenario = await storage.createArsScenario(validatedData);
+      res.json(scenario);
+    } catch (error) {
+      console.error('Failed to create scenario:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid input data', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Failed to create scenario' });
+    }
+  });
+
+  // 시나리오 수정
+  app.put('/api/ars/scenarios/:id', isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = insertArsScenarioSchema.partial().parse(req.body);
+      
+      const scenario = await storage.updateArsScenario(id, validatedData);
+      if (!scenario) {
+        return res.status(404).json({ message: 'Scenario not found' });
+      }
+      
+      res.json(scenario);
+    } catch (error) {
+      console.error('Failed to update scenario:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid input data', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Failed to update scenario' });
+    }
+  });
+
+  // 시나리오 삭제 (비활성화)
+  app.delete('/api/ars/scenarios/:id', isAuthenticated, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const scenario = await storage.updateArsScenario(id, { isActive: false });
+      if (!scenario) {
+        return res.status(404).json({ message: 'Scenario not found' });
+      }
+      
+      res.json({ message: 'Scenario deleted successfully' });
+    } catch (error) {
+      console.error('Failed to delete scenario:', error);
+      res.status(500).json({ message: 'Failed to delete scenario' });
     }
   });
 

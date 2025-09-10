@@ -7,6 +7,7 @@ import {
   systemSettings,
   arsCampaigns,
   arsSendLogs,
+  arsScenarios,
   type User,
   type UpsertUser,
   type Customer,
@@ -26,6 +27,8 @@ import {
   type InsertArsCampaign,
   type ArsSendLog,
   type InsertArsSendLog,
+  type ArsScenario,
+  type InsertArsScenario,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
@@ -115,6 +118,11 @@ export interface IStorage {
     total: number;
     totalPages: number;
   }>;
+
+  // ARS 시나리오 관련 메서드들
+  getArsScenarios(): Promise<ArsScenario[]>;
+  createArsScenario(scenario: InsertArsScenario): Promise<ArsScenario>;
+  updateArsScenario(id: string, updates: Partial<ArsScenario>): Promise<ArsScenario | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -601,6 +609,35 @@ export class DatabaseStorage implements IStorage {
       total: totalCount,
       totalPages: Math.ceil(totalCount / limit),
     };
+  }
+
+  // ARS 시나리오 관련 메서드들
+  async getArsScenarios(): Promise<ArsScenario[]> {
+    return await db
+      .select()
+      .from(arsScenarios)
+      .where(eq(arsScenarios.isActive, true))
+      .orderBy(asc(arsScenarios.name));
+  }
+
+  async createArsScenario(scenario: InsertArsScenario): Promise<ArsScenario> {
+    const [created] = await db
+      .insert(arsScenarios)
+      .values(scenario)
+      .returning();
+    return created;
+  }
+
+  async updateArsScenario(id: string, updates: Partial<ArsScenario>): Promise<ArsScenario | undefined> {
+    const [updated] = await db
+      .update(arsScenarios)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(arsScenarios.id, id))
+      .returning();
+    return updated;
   }
 }
 

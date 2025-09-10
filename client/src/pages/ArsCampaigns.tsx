@@ -44,6 +44,11 @@ export default function ArsCampaigns() {
     queryKey: ["/api/ars/marketing-targets"],
   });
 
+  // 시나리오 목록 조회
+  const { data: scenarios } = useQuery({
+    queryKey: ["/api/ars/scenarios"],
+  });
+
   // 대량 ARS 발송
   const sendBulkArsMutation = useMutation({
     mutationFn: async (data: {
@@ -223,9 +228,11 @@ export default function ArsCampaigns() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="marketing_consent">마케팅 동의 확인</SelectItem>
-                      <SelectItem value="consultation_reminder">상담 안내</SelectItem>
-                      <SelectItem value="follow_up">후속 연락</SelectItem>
+                      {(scenarios as any)?.map((scenario: any) => (
+                        <SelectItem key={scenario.id} value={scenario.id}>
+                          {scenario.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
