@@ -8,6 +8,8 @@ import {
   arsCampaigns,
   arsSendLogs,
   arsScenarios,
+  customerGroups,
+  customerGroupMappings,
   type User,
   type UpsertUser,
   type Customer,
@@ -29,6 +31,10 @@ import {
   type InsertArsSendLog,
   type ArsScenario,
   type InsertArsScenario,
+  type CustomerGroup,
+  type InsertCustomerGroup,
+  type CustomerGroupMapping,
+  type InsertCustomerGroupMapping,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
@@ -123,6 +129,16 @@ export interface IStorage {
   getArsScenarios(): Promise<ArsScenario[]>;
   createArsScenario(scenario: InsertArsScenario): Promise<ArsScenario>;
   updateArsScenario(id: string, updates: Partial<ArsScenario>): Promise<ArsScenario | undefined>;
+
+  // 고객 그룹 관련 메서드들
+  getCustomerGroups(): Promise<CustomerGroup[]>;
+  createCustomerGroup(group: InsertCustomerGroup): Promise<CustomerGroup>;
+  updateCustomerGroup(id: string, updates: Partial<CustomerGroup>): Promise<CustomerGroup | undefined>;
+  deleteCustomerGroup(id: string): Promise<boolean>;
+  addCustomerToGroup(customerId: string, groupId: string, addedBy: string): Promise<CustomerGroupMapping>;
+  removeCustomerFromGroup(customerId: string, groupId: string): Promise<boolean>;
+  getCustomersInGroup(groupId: string): Promise<CustomerWithUser[]>;
+  getCustomerGroups(customerId: string): Promise<CustomerGroup[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -638,6 +654,142 @@ export class DatabaseStorage implements IStorage {
       .where(eq(arsScenarios.id, id))
       .returning();
     return updated;
+  }
+
+  // 고객 그룹 관련 메서드들
+  async getCustomerGroups(): Promise<CustomerGroup[]> {
+    return await db
+      .select()
+      .from(customerGroups)
+      .where(eq(customerGroups.isActive, true))
+      .orderBy(asc(customerGroups.name));
+  }
+
+  async createCustomerGroup(group: InsertCustomerGroup): Promise<CustomerGroup> {
+    const [created] = await db
+      .insert(customerGroups)
+      .values(group)
+      .returning();
+    return created;
+  }
+
+  async updateCustomerGroup(id: string, updates: Partial<CustomerGroup>): Promise<CustomerGroup | undefined> {
+    const [updated] = await db
+      .update(customerGroups)
+      .set({
+        ...updates,
+        updatedAt: new Date(),
+      })
+      .where(eq(customerGroups.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCustomerGroup(id: string): Promise<boolean> {
+    // 먼저 매핑 테이블에서 관련 데이터 삭제
+    await db
+      .delete(customerGroupMappings)
+      .where(eq(customerGroupMappings.groupId, id));
+
+    // 그룹 삭제
+    const result = await db
+      .delete(customerGroups)
+      .where(eq(customerGroups.id, id));
+
+    return result.rowCount > 0;
+  }
+
+  async addCustomerToGroup(customerId: string, groupId: string, addedBy: string): Promise<CustomerGroupMapping> {
+    const [mapping] = await db
+      .insert(customerGroupMappings)
+      .values({
+        customerId,
+        groupId,
+        addedBy,
+      })
+      .returning();
+    return mapping;
+  }
+
+  async removeCustomerFromGroup(customerId: string, groupId: string): Promise<boolean> {
+    const result = await db
+      .delete(customerGroupMappings)
+      .where(
+        and(
+          eq(customerGroupMappings.customerId, customerId),
+          eq(customerGroupMappings.groupId, groupId)
+        )
+      );
+
+    return result.rowCount > 0;
+  }
+
+  async getCustomersInGroup(groupId: string): Promise<CustomerWithUser[]> {
+    return await db
+      .select({
+        id: customers.id,
+        name: customers.name,
+        phone: customers.phone,
+        secondaryPhone: customers.secondaryPhone,
+        birthDate: customers.birthDate,
+        gender: customers.gender,
+        zipcode: customers.zipcode,
+        address: customers.address,
+        addressDetail: customers.addressDetail,
+        monthlyIncome: customers.monthlyIncome,
+        jobType: customers.jobType,
+        companyName: customers.companyName,
+        consultType: customers.consultType,
+        consultPath: customers.consultPath,
+        status: customers.status,
+        assignedUserId: customers.assignedUserId,
+        secondaryUserId: customers.secondaryUserId,
+        department: customers.department,
+        team: customers.team,
+        source: customers.source,
+        marketingConsent: customers.marketingConsent,
+        marketingConsentDate: customers.marketingConsentDate,
+        marketingConsentMethod: customers.marketingConsentMethod,
+        memo: customers.memo,
+        createdAt: customers.createdAt,
+        updatedAt: customers.updatedAt,
+        assignedUser: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          department: users.department,
+        },
+        secondaryUser: sql`NULL`.as('secondaryUser'),
+      })
+      .from(customerGroupMappings)
+      .innerJoin(customers, eq(customerGroupMappings.customerId, customers.id))
+      .leftJoin(users, eq(customers.assignedUserId, users.id))
+      .where(eq(customerGroupMappings.groupId, groupId))
+      .orderBy(asc(customers.name));
+  }
+
+  async getCustomerGroups(customerId: string): Promise<CustomerGroup[]> {
+    return await db
+      .select({
+        id: customerGroups.id,
+        name: customerGroups.name,
+        description: customerGroups.description,
+        color: customerGroups.color,
+        isActive: customerGroups.isActive,
+        createdBy: customerGroups.createdBy,
+        createdAt: customerGroups.createdAt,
+        updatedAt: customerGroups.updatedAt,
+      })
+      .from(customerGroupMappings)
+      .innerJoin(customerGroups, eq(customerGroupMappings.groupId, customerGroups.id))
+      .where(
+        and(
+          eq(customerGroupMappings.customerId, customerId),
+          eq(customerGroups.isActive, true)
+        )
+      )
+      .orderBy(asc(customerGroups.name));
   }
 }
 

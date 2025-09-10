@@ -188,6 +188,8 @@ export const attachmentsRelations = relations(attachments, ({ one }) => ({
   }),
 }));
 
+
+
 // Schemas
 export const upsertUserSchema = createInsertSchema(users).pick({
   id: true,
@@ -250,11 +252,33 @@ export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
 
+// 고객 그룹 (arsCampaigns 앞에 먼저 정의)
+export const customerGroups = pgTable("customer_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 7 }).default("#3B82F6"),
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// 고객-그룹 매핑
+export const customerGroupMappings = pgTable("customer_group_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  customerId: varchar("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  groupId: varchar("group_id").notNull().references(() => customerGroups.id, { onDelete: "cascade" }),
+  addedBy: varchar("added_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // ARS 캠페인 테이블
 export const arsCampaigns = pgTable("ars_campaigns", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   name: varchar("name", { length: 255 }).notNull(),
   scenarioId: varchar("scenario_id", { length: 50 }).notNull(),
+  targetGroupId: varchar("target_group_id").references(() => customerGroups.id),
   totalCount: integer("total_count").default(0),
   successCount: integer("success_count").default(0),
   failedCount: integer("failed_count").default(0),
@@ -309,6 +333,7 @@ export const arsScenarios = pgTable("ars_scenarios", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+
 // ARS 관련 스키마
 export const insertArsCampaignSchema = createInsertSchema(arsCampaigns).omit({
   id: true,
@@ -326,6 +351,18 @@ export const insertArsScenarioSchema = createInsertSchema(arsScenarios).omit({
   updatedAt: true,
 });
 
+// 고객 그룹 스키마
+export const insertCustomerGroupSchema = createInsertSchema(customerGroups).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCustomerGroupMappingSchema = createInsertSchema(customerGroupMappings).omit({
+  id: true,
+  createdAt: true,
+});
+
 // ARS 타입 정의
 export type ArsCampaign = typeof arsCampaigns.$inferSelect;
 export type InsertArsCampaign = z.infer<typeof insertArsCampaignSchema>;
@@ -333,6 +370,12 @@ export type ArsSendLog = typeof arsSendLogs.$inferSelect;
 export type InsertArsSendLog = z.infer<typeof insertArsSendLogSchema>;
 export type ArsScenario = typeof arsScenarios.$inferSelect;
 export type InsertArsScenario = z.infer<typeof insertArsScenarioSchema>;
+
+// 고객 그룹 타입 정의
+export type CustomerGroup = typeof customerGroups.$inferSelect;
+export type InsertCustomerGroup = z.infer<typeof insertCustomerGroupSchema>;
+export type CustomerGroupMapping = typeof customerGroupMappings.$inferSelect;
+export type InsertCustomerGroupMapping = z.infer<typeof insertCustomerGroupMappingSchema>;
 
 // Extended types with relations
 export type CustomerWithUser = Customer & {
