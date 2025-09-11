@@ -1141,21 +1141,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 대량 ARS 발송 요청 검증 스키마
+  const bulkArsSendSchema = z.object({
+    campaignName: z.string().min(1, '캠페인명은 필수입니다.'),
+    sendNumber: z.string().optional().default('1660-2426'),
+    scenarioId: z.string().optional().default('marketing_consent'),
+    groupId: z.string().optional(),
+    customerIds: z.array(z.string()).optional(),
+  }).refine((data) => {
+    // groupId와 customerIds 중 정확히 하나만 제공되어야 함
+    const hasGroupId = !!data.groupId;
+    const hasCustomerIds = !!(data.customerIds && data.customerIds.length > 0);
+    
+    if (hasGroupId && hasCustomerIds) {
+      return false; // 둘 다 제공되면 오류
+    }
+    
+    if (!hasGroupId && !hasCustomerIds) {
+      return false; // 둘 다 없어도 오류
+    }
+    
+    return true; // 하나만 제공되면 OK
+  }, {
+    message: 'groupId 또는 customerIds 중 정확히 하나만 제공해야 합니다.'
+  });
+
   // 대량 ARS 발송 (캠페인)
   app.post('/api/ars/send-bulk', isAuthenticated, async (req: any, res) => {
     try {
-      const { customerIds, groupId, sendNumber = '1660-2426', campaignName, scenarioId = 'marketing_consent' } = req.body;
-
-      if (!campaignName) {
-        return res.status(400).json({ message: '캠페인명은 필수입니다.' });
-      }
-
-      // 입력 검증: groupId 또는 customerIds 중 하나만 허용 (보안 강화)
-      if (groupId && customerIds && customerIds.length > 0) {
+      // 요청 검증
+      const validation = bulkArsSendSchema.safeParse(req.body);
+      if (!validation.success) {
         return res.status(400).json({ 
-          message: 'groupId와 customerIds를 동시에 제공할 수 없습니다. 하나만 선택해주세요.' 
+          message: validation.error.errors[0]?.message || '요청 데이터가 올바르지 않습니다.' 
         });
       }
+      
+      const { customerIds, groupId, sendNumber, campaignName, scenarioId } = validation.data;
+
 
       let targetCustomerIds: string[] = [];
 
@@ -1169,7 +1192,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // 로깅: 그룹 기반 타겟팅 확인
         console.log(`[ARS] 그룹 기반 발송: 그룹 ${groupId}에서 ${targetCustomerIds.length}명 타겟팅`);
-      } else if (customerIds && Array.isArray(customerIds) && customerIds.length > 0) {
+      } else if (customerIds) {
+        // customerIds만 제공된 경우 (Zod 검증으로 이미 유효성 확인됨)
         targetCustomerIds = customerIds;
         console.log(`[ARS] 직접 선택 발송: ${targetCustomerIds.length}명 타겟팅`);
       }
