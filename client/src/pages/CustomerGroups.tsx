@@ -529,7 +529,7 @@ export default function CustomerGroups() {
                       <TableRow>
                         <TableHead>고객명</TableHead>
                         <TableHead>전화번호</TableHead>
-                        <TableHead>이메일</TableHead>
+                        <TableHead>전화번호2</TableHead>
                         <TableHead>담당자</TableHead>
                         <TableHead className="text-right">작업</TableHead>
                       </TableRow>
@@ -539,8 +539,8 @@ export default function CustomerGroups() {
                         <TableRow key={customer.id}>
                           <TableCell className="font-medium">{customer.name}</TableCell>
                           <TableCell>{customer.phone}</TableCell>
-                          <TableCell>{customer.email || '-'}</TableCell>
-                          <TableCell>{customer.counselor?.name || '-'}</TableCell>
+                          <TableCell>{customer.secondaryPhone || '-'}</TableCell>
+                          <TableCell>{customer.assignedUser?.name || '미배정'}</TableCell>
                           <TableCell className="text-right">
                             <Button
                               variant="outline"
@@ -601,7 +601,7 @@ export default function CustomerGroups() {
                         <TableHead className="w-12">선택</TableHead>
                         <TableHead>고객명</TableHead>
                         <TableHead>전화번호</TableHead>
-                        <TableHead>이메일</TableHead>
+                        <TableHead>전화번호2</TableHead>
                         <TableHead>담당자</TableHead>
                         <TableHead>상태</TableHead>
                       </TableRow>
@@ -618,12 +618,11 @@ export default function CustomerGroups() {
                           </TableCell>
                           <TableCell className="font-medium">{customer.name}</TableCell>
                           <TableCell>{customer.phone}</TableCell>
-                          <TableCell>{customer.email || '-'}</TableCell>
-                          <TableCell>{customer.counselor?.name || '-'}</TableCell>
+                          <TableCell>{customer.secondaryPhone || '-'}</TableCell>
+                          <TableCell>{customer.assignedUser?.name || '미배정'}</TableCell>
                           <TableCell>
                             <Badge variant="outline">
-                              {customer.status === 'active' ? '상담중' : 
-                               customer.status === 'completed' ? '완료' : '대기중'}
+                              {customer.status}
                             </Badge>
                           </TableCell>
                         </TableRow>
