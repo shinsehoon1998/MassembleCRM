@@ -44,7 +44,7 @@ export default function CustomerGroups() {
   // 모든 고객 목록 조회 (그룹에 추가할 때 사용)
   const { data: allCustomersData } = useQuery<{customers: any[]}>({
     queryKey: ["/api/customers"],
-    enabled: isCustomersDialogOpen,
+    // 페이지 로드 시 항상 고객 목록을 가져옴 (그룹 연동을 위해 필요)
   });
   
   const allCustomers = allCustomersData?.customers || [];
