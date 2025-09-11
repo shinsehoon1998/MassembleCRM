@@ -1150,18 +1150,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: '캠페인명은 필수입니다.' });
       }
 
-      let targetCustomerIds = customerIds;
+      // 입력 검증: groupId 또는 customerIds 중 하나만 허용 (보안 강화)
+      if (groupId && customerIds && customerIds.length > 0) {
+        return res.status(400).json({ 
+          message: 'groupId와 customerIds를 동시에 제공할 수 없습니다. 하나만 선택해주세요.' 
+        });
+      }
 
-      // 그룹 ID가 제공된 경우 해당 그룹의 고객들을 가져옴
+      let targetCustomerIds: string[] = [];
+
+      // 그룹 ID가 제공된 경우 엄격하게 해당 그룹의 고객들만 가져옴
       if (groupId) {
         const groupCustomers = await storage.getCustomersInGroup(groupId);
         if (!groupCustomers || groupCustomers.length === 0) {
           return res.status(400).json({ message: '선택된 그룹에 고객이 없습니다.' });
         }
         targetCustomerIds = groupCustomers.map(customer => customer.id);
+        
+        // 로깅: 그룹 기반 타겟팅 확인
+        console.log(`[ARS] 그룹 기반 발송: 그룹 ${groupId}에서 ${targetCustomerIds.length}명 타겟팅`);
+      } else if (customerIds && Array.isArray(customerIds) && customerIds.length > 0) {
+        targetCustomerIds = customerIds;
+        console.log(`[ARS] 직접 선택 발송: ${targetCustomerIds.length}명 타겟팅`);
       }
 
-      if (!targetCustomerIds || !Array.isArray(targetCustomerIds) || targetCustomerIds.length === 0) {
+      if (targetCustomerIds.length === 0) {
         return res.status(400).json({ message: '발송 대상 고객을 선택해주세요.' });
       }
 
@@ -1169,7 +1182,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         targetCustomerIds,
         sendNumber,
         campaignName,
-        scenarioId
+        scenarioId,
+        groupId // 그룹 ID 전달 (그룹 연동을 위해 중요)
       );
 
       // 활동 로그 기록

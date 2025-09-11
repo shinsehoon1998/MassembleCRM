@@ -4,12 +4,12 @@ import { arsCampaigns, arsSendLogs, arsApiLogs, customers } from '@shared/schema
 import type { InsertArsCampaign, InsertArsSendLog } from '@shared/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 
-// 아톡비즈 API 설정
+// 아톡비즈 API 설정 (환경변수에서 로드)
 const ATALK_API_CONFIG = {
   baseUrl: 'http://101.202.45.50:8080/thirdparty/v1',
-  token: 'NjI3OTIz',
-  company: '627923',
-  userId: 'bWI2Mjc5MjM=',
+  token: process.env.ATALK_API_KEY || '',
+  company: process.env.ATALK_SECRET_KEY || '',
+  userId: process.env.ATALK_SENDER_NUMBER || '',
   campaignName: '주식회사마셈블',
   defaultSendNumber: '16602426', // 고정 발신번호 (하이픈 제거)
 };
@@ -189,7 +189,8 @@ export class AtalkArsService {
     customerIds: string[],
     sendNumber: string,
     campaignName: string,
-    scenarioId: string = 'marketing_consent'
+    scenarioId: string = 'marketing_consent',
+    groupId?: string
   ): Promise<{ campaignId: number; historyKeys: string[]; failedCount: number }> {
     // 캠페인 생성
     const [campaign] = await db.insert(arsCampaigns).values({
@@ -198,6 +199,7 @@ export class AtalkArsService {
       totalCount: customerIds.length,
       status: 'processing',
       createdBy: 'system', // TODO: 실제 사용자 ID로 변경
+      targetGroupId: groupId, // 그룹 ID 저장
     }).returning();
 
     const historyKeys: string[] = [];
