@@ -213,6 +213,13 @@ export class AtalkArsService {
       where: inArray(customers.id, customerIds),
     });
 
+    // 디버깅: 조회된 고객 정보 로그
+    console.log(`[ARS DEBUG] customerIds 요청: ${JSON.stringify(customerIds)}`);
+    console.log(`[ARS DEBUG] 조회된 고객 수: ${customerList.length}`);
+    customerList.forEach((customer, index) => {
+      console.log(`[ARS DEBUG] 고객 ${index + 1}: ID=${customer.id}, 이름=${customer.name}, 전화=${customer.phone}`);
+    });
+
     // 각 고객에게 개별 발송
     for (const customer of customerList) {
       try {
@@ -223,6 +230,8 @@ export class AtalkArsService {
 
         const formattedPhone = customer.phone.replace(/[^0-9]/g, '');
 
+        console.log(`[ARS DEBUG] 발송 처리 중: ${customer.name} (${customer.phone} → ${formattedPhone})`);
+
         const callData: CallRequest = {
           text_send_no: ATALK_API_CONFIG.defaultSendNumber, // 고정 발신번호 사용
           company: ATALK_API_CONFIG.company,
@@ -231,6 +240,7 @@ export class AtalkArsService {
           text_page: formattedPhone,
         };
 
+        console.log(`[ARS DEBUG] 아톡 API 호출 데이터: ${JSON.stringify(callData)}`);
         const response = await this.makeApiCall('/calllist/add', callData);
 
         // 성공 로그 저장
