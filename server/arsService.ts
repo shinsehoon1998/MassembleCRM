@@ -11,7 +11,7 @@ const ATALK_API_CONFIG = {
   company: '627923',
   userId: 'bWI2Mjc5MjM=',
   campaignName: '주식회사마셈블',
-  defaultSendNumber: '1660-2426', // 고정 발신번호
+  defaultSendNumber: '16602426', // 고정 발신번호 (하이픈 제거)
 };
 
 export interface AtalkApiResponse {
