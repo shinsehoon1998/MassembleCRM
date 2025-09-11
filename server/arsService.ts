@@ -4,15 +4,18 @@ import { arsCampaigns, arsSendLogs, arsApiLogs, customers } from '@shared/schema
 import type { InsertArsCampaign, InsertArsSendLog } from '@shared/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 
-// 아톡비즈 API 설정 (환경변수에서 로드)
+// 아톡비즈 API 설정 - 올바른 매핑 적용
 const ATALK_API_CONFIG = {
   baseUrl: 'http://101.202.45.50:8080/thirdparty/v1',
-  token: process.env.ATALK_API_KEY || '',
-  company: process.env.ATALK_SECRET_KEY || '',
-  userId: process.env.ATALK_SENDER_NUMBER || '',
+  token: 'NjI3OTIz',      // 원래 토큰 값 (환경변수에 이 값이 설정되어야 함)
+  company: '627923',       // 원래 회사 ID  
+  userId: 'bWI2Mjc5MjM=', // 원래 사용자 ID (base64 인코딩)
   campaignName: '주식회사마셈블',
   defaultSendNumber: '16602426', // 고정 발신번호 (하이픈 제거)
 };
+
+// 디버깅용 로그 (토큰은 로그하지 않음)
+console.log(`[ARS CONFIG] company: ${ATALK_API_CONFIG.company}, userId: ${ATALK_API_CONFIG.userId}, sendNumber: ${ATALK_API_CONFIG.defaultSendNumber}`);
 
 export interface AtalkApiResponse {
   code: string;
