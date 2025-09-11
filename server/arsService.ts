@@ -232,11 +232,14 @@ export class AtalkArsService {
 
         console.log(`[ARS DEBUG] 발송 처리 중: ${customer.name} (${customer.phone} → ${formattedPhone})`);
 
+        // 각 고객마다 고유한 캠페인명 생성 (아톡 시스템에서 덮어쓰기 방지)
+        const uniqueCampaignName = `${ATALK_API_CONFIG.campaignName}_${customer.name}_${Date.now()}`;
+        
         const callData: CallRequest = {
           text_send_no: ATALK_API_CONFIG.defaultSendNumber, // 고정 발신번호 사용
           company: ATALK_API_CONFIG.company,
           user_id: ATALK_API_CONFIG.userId,
-          text_campaign_name: ATALK_API_CONFIG.campaignName,
+          text_campaign_name: uniqueCampaignName, // 고유한 캠페인명 사용
           text_page: formattedPhone,
         };
 
