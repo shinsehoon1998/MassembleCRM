@@ -576,6 +576,15 @@ export class DatabaseStorage implements IStorage {
     return campaigns;
   }
 
+  // ID로 ARS 캠페인 조회
+  async getArsCampaignById(id: number): Promise<ArsCampaign | undefined> {
+    const [campaign] = await db
+      .select()
+      .from(arsCampaigns)
+      .where(eq(arsCampaigns.id, id));
+    return campaign;
+  }
+
   // ARS 발송 로그 조회
   async getArsSendLogs(params: {
     campaignId?: number;

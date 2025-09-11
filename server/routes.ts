@@ -1284,6 +1284,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ARS 캠페인 상세 정보 조회
+  app.get('/api/ars/campaigns/:campaignId/detail', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaignId = parseInt(req.params.campaignId);
+      
+      if (isNaN(campaignId)) {
+        return res.status(400).json({ message: '유효하지 않은 캠페인 ID입니다.' });
+      }
+
+      const campaign = await storage.getArsCampaignById(campaignId);
+      if (!campaign) {
+        return res.status(404).json({ message: '캠페인을 찾을 수 없습니다.' });
+      }
+
+      // 실시간 진행 상황 계산
+      const completedCount = (campaign.successCount || 0) + (campaign.failedCount || 0);
+      const pendingCount = (campaign.totalCount || 0) - completedCount;
+
+      res.json({
+        ...campaign,
+        completedCount,
+        pendingCount,
+      });
+    } catch (error) {
+      console.error("Error getting campaign detail:", error);
+      res.status(500).json({ message: "캠페인 상세 정보 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // ARS 캠페인 발송 기록 조회
+  app.get('/api/ars/campaigns/:campaignId/history', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaignId = parseInt(req.params.campaignId);
+      
+      if (isNaN(campaignId)) {
+        return res.status(400).json({ message: '유효하지 않은 캠페인 ID입니다.' });
+      }
+
+      const logs = await storage.getArsSendLogs({
+        campaignId,
+        page: 1,
+        limit: 1000, // 모든 기록 가져오기
+      });
+
+      // 고객 정보를 포함한 발송 기록 조합
+      const historyWithCustomers = await Promise.all(
+        logs.logs.map(async (log) => {
+          const customer = await storage.getCustomer(log.customerId);
+          return {
+            ...log,
+            customerName: customer?.name || '알 수 없음',
+            phone: customer?.phone || log.phone,
+            result: log.status === 'sent' ? '발송 완료' : 
+                   log.status === 'failed' ? '발송 실패' : 
+                   log.status === 'completed' ? '통화 완료' : '처리 중',
+          };
+        })
+      );
+
+      res.json(historyWithCustomers);
+    } catch (error) {
+      console.error("Error getting campaign history:", error);
+      res.status(500).json({ message: "캠페인 발송 기록 조회 중 오류가 발생했습니다." });
+    }
+  });
+
   // ARS 캠페인 종료
   app.post('/api/ars/campaigns/:campaignId/stop', isAuthenticated, async (req: any, res) => {
     try {

@@ -67,14 +67,31 @@ export default function ArsCampaigns() {
   });
 
   // 선택된 캠페인의 상세 정보 조회
-  const { data: campaignDetail, isLoading: campaignDetailLoading } = useQuery({
+  const { data: campaignDetail, isLoading: campaignDetailLoading } = useQuery<{
+    id: number;
+    name: string;
+    totalCount: number;
+    successCount: number;
+    failedCount: number;
+    completedCount: number;
+    pendingCount: number;
+    status: string;
+  }>({
     queryKey: [`/api/ars/campaigns/${selectedCampaign?.id}/detail`],
     enabled: !!selectedCampaign?.id && showDetailModal,
     refetchInterval: showDetailModal ? 5000 : false, // 5초마다 자동 갱신
   });
 
   // 선택된 캠페인의 통화 기록 조회
-  const { data: campaignHistory } = useQuery({
+  const { data: campaignHistory } = useQuery<Array<{
+    id: number;
+    customerId: string;
+    customerName: string;
+    phone: string;
+    status: string;
+    sentAt: string;
+    result: string;
+  }>>({
     queryKey: [`/api/ars/campaigns/${selectedCampaign?.id}/history`],
     enabled: !!selectedCampaign?.id && showDetailModal,
   });
