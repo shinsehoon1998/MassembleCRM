@@ -208,11 +208,13 @@ export class AtalkArsService {
       };
     } catch (error) {
       // 실패 로그 저장
+      const errorMessage = error instanceof Error ? error.message : 'ARS 발송에 실패했습니다.';
       await db.insert(arsSendLogs).values({
         customerId,
         phone: '',
         scenarioId,
         status: 'failed',
+        errorMessage, // 실패 사유 저장
         sentAt: new Date(),
       });
 
@@ -298,13 +300,15 @@ export class AtalkArsService {
       } catch (error) {
         failedCount++;
         
-        // 실패 로그 저장
+        // 실패 로그 저장 (에러 메시지 포함)
+        const errorMessage = error instanceof Error ? error.message : '발송 중 알 수 없는 오류가 발생했습니다.';
         await db.insert(arsSendLogs).values({
           campaignId: campaign.id,
           customerId: customer.id,
           phone: customer.phone || '',
           scenarioId,
           status: 'failed',
+          errorMessage, // 실패 사유 저장
           sentAt: new Date(),
         });
       }
@@ -381,12 +385,21 @@ export class AtalkArsService {
             status = 'failed';
           }
 
+          // 실패 사유 설정
+          let errorMessage = null;
+          if (status === 'failed') {
+            errorMessage = `통화 실패: ${callData.call_result || callData.call_result_code}`;
+          } else if (status === 'no_answer') {
+            errorMessage = '수신거부 또는 응답없음';
+          }
+
           // 로그 업데이트
           await db.update(arsSendLogs)
             .set({
               status: status as any,
               dtmfInput,
               duration,
+              errorMessage,
               completedAt: new Date(),
             })
             .where(eq(arsSendLogs.id, log.id));

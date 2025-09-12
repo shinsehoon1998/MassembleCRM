@@ -733,8 +733,27 @@ export default function ArsCampaigns() {
                             <TableCell>
                               {record.sentAt ? new Date(record.sentAt).toLocaleString('ko-KR') : '-'}
                             </TableCell>
-                            <TableCell className="text-sm text-gray-600">
-                              {record.result || '-'}
+                            <TableCell className="text-sm">
+                              {record.status === 'failed' || record.status === 'no_answer' ? (
+                                <div className="text-red-600">
+                                  <div className="font-medium">실패</div>
+                                  <div className="text-xs text-red-500 mt-1">
+                                    {record.errorMessage || '상세한 실패 사유를 확인할 수 없습니다'}
+                                  </div>
+                                </div>
+                              ) : record.status === 'success' ? (
+                                <div className="text-green-600">
+                                  <div className="font-medium">성공</div>
+                                  {record.dtmfInput && (
+                                    <div className="text-xs text-green-500 mt-1">
+                                      {record.dtmfInput === '1' ? '마케팅 동의' : 
+                                       record.dtmfInput === '2' ? '마케팅 거부' : '응답 완료'}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-gray-500">{record.result || '-'}</span>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}

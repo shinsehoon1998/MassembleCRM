@@ -306,6 +306,7 @@ export const arsSendLogs = pgTable("ars_send_logs", {
   dtmfInput: varchar("dtmf_input", { length: 10 }),
   duration: integer("duration").default(0),
   recordingUrl: varchar("recording_url", { length: 500 }),
+  errorMessage: text("error_message"), // 실패 사유 저장용
   sentAt: timestamp("sent_at"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow(),
