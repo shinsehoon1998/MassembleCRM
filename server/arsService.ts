@@ -3,28 +3,23 @@ import { arsCampaigns, arsSendLogs, arsApiLogs } from '@shared/schema';
 
 // 🔥 보안 강화: HTTPS 강제 및 환경변수 검증
 function validateAndSecureConfig() {
-  const baseUrl = process.env.ATALK_API_BASE_URL || 'http://101.202.45.50:8080/thirdparty/v1';
-  const token = process.env.ATALK_API_TOKEN || '';
-  const company = process.env.ATALK_COMPANY || '';
-  const userId = process.env.ATALK_USER_ID || '';
+  const baseUrl = process.env.ATALK_API_BASE_URL;
+  const token = process.env.ATALK_API_TOKEN;
+  const company = process.env.ATALK_COMPANY;
+  const userId = process.env.ATALK_USER_ID;
 
-  // 🔥 중요: 필수 환경변수 검증 - fail-fast (프로덕션에서 강제)
-  if (!token || !company || !userId) {
+  // 🔥 중요: 필수 환경변수 검증 - 모든 환경에서 강제
+  if (!baseUrl || !token || !company || !userId) {
     const missing = [];
+    if (!baseUrl) missing.push('ATALK_API_BASE_URL');
     if (!token) missing.push('ATALK_API_TOKEN');
     if (!company) missing.push('ATALK_COMPANY');
     if (!userId) missing.push('ATALK_USER_ID');
     
-    if (process.env.NODE_ENV === 'production') {
-      console.error('🚨 치명적 오류: 필수 ATALK API 환경변수가 설정되지 않았습니다');
-      console.error(`누락된 변수: ${missing.join(', ')}`);
-      throw new Error(`ARS Service 초기화 실패: 필수 환경변수 누락 (${missing.join(', ')})`);
-    } else {
-      console.warn('⚠️  개발 모드: ATALK API 환경변수가 설정되지 않았습니다.');
-      console.warn(`누락된 변수: ${missing.join(', ')}`);
-      console.warn('📝 개발 모드에서는 모의 데이터로 대체합니다.');
-      console.warn('프로덕션 배포 전에 반드시 설정하세요!');
-    }
+    console.error('🚨 치명적 오류: 필수 ATALK API 환경변수가 설정되지 않았습니다');
+    console.error(`누락된 변수: ${missing.join(', ')}`);
+    console.error('서버를 시작하려면 모든 ATALK API 환경변수를 설정해야 합니다.');
+    throw new Error(`ARS Service 초기화 실패: 필수 환경변수 누락 (${missing.join(', ')})`);
   }
 
   // 🔥 보안: HTTPS 강제 (프로덕션)
@@ -50,32 +45,15 @@ function getAtalkConfig() {
   if (!ATALK_API_CONFIG) {
     const secureConfig = validateAndSecureConfig();
     
-    // 🔥 개발 모드에서 환경변수 누락 시 모의 데이터 사용
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    const isMissingEnvVars = !secureConfig.token || !secureConfig.company || !secureConfig.userId;
-    
-    if (isDevelopment && isMissingEnvVars) {
-      console.log('📝 개발 모드: 모의 ATALK API 설정 사용');
-      ATALK_API_CONFIG = {
-        baseUrl: 'http://mock-atalk-api.local',
-        token: 'mock-token-for-development',
-        company: 'mock-company',
-        userId: 'mock-user-id',
-        campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-        page: 'A',
-        mockMode: true
-      };
-    } else {
-      ATALK_API_CONFIG = {
-        baseUrl: secureConfig.baseUrl,
-        token: secureConfig.token,
-        company: secureConfig.company,
-        userId: secureConfig.userId,
-        campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-        page: 'A',
-        mockMode: false
-      };
-    }
+    // 🔥 실제 ATALK API 설정만 사용
+    ATALK_API_CONFIG = {
+      baseUrl: secureConfig.baseUrl,
+      token: secureConfig.token,
+      company: secureConfig.company,
+      userId: secureConfig.userId,
+      campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
+      page: 'A'
+    };
   }
   return ATALK_API_CONFIG;
 }
@@ -241,26 +219,6 @@ export class AtalkArsService {
     try {
       const config = getAtalkConfig();
       
-      // 🔥 개발 모드에서 모의 응답 반환
-      if (config.mockMode) {
-        console.log(`[MOCK] 발송리스트 추가 모의 처리: ${targetPhone}`);
-        
-        // 90% 확률로 성공 시뮬레이션
-        const isSuccess = Math.random() > 0.1;
-        if (isSuccess) {
-          return {
-            success: true,
-            historyKey: `mock-history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            message: '발송리스트에 추가되었습니다. (모의 데이터)',
-          };
-        } else {
-          return {
-            success: false,
-            message: '발송리스트 추가에 실패했습니다. (모의 실패)',
-          };
-        }
-      }
-      
       const callData: AddCallListRequest = {
         text_send_no: sendNumber,
         company: config.company,
@@ -298,27 +256,6 @@ export class AtalkArsService {
   ): Promise<{ success: boolean; message: string; fileName?: string }> {
     try {
       const config = getAtalkConfig();
-      
-      // 🔥 개발 모드에서 모의 응답 반환
-      if (config.mockMode) {
-        console.log(`[MOCK] 음성파일 업로드 모의 처리: ${fileName}`);
-        
-        // 85% 확률로 성공 시뮬레이션
-        const isSuccess = Math.random() > 0.15;
-        if (isSuccess) {
-          return {
-            success: true,
-            message: '음성파일이 성공적으로 업로드되었습니다. (모의 데이터)',
-            fileName
-          };
-        } else {
-          return {
-            success: false,
-            message: '음성파일 업로드에 실패했습니다. (모의 실패)',
-            fileName
-          };
-        }
-      }
       
       const formData = new FormData();
       
@@ -424,25 +361,6 @@ export class AtalkArsService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       const config = getAtalkConfig();
-      
-      // 🔥 개발 모드에서 모의 응답 반환
-      if (config.mockMode) {
-        console.log(`[MOCK] 캠페인 시작 모의 처리: historyKey=${historyKey}`);
-        
-        // 95% 확률로 성공 시뮬레이션
-        const isSuccess = Math.random() > 0.05;
-        if (isSuccess) {
-          return {
-            success: true,
-            message: '캠페인이 성공적으로 시작되었습니다. (모의 데이터)',
-          };
-        } else {
-          return {
-            success: false,
-            message: '캠페인 시작에 실패했습니다. (모의 실패)',
-          };
-        }
-      }
       
       if (!historyKey) {
         console.log('[ARS] historyKey 없이 캠페인 시작 시도');
