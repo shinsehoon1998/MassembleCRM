@@ -47,6 +47,12 @@ export default function ArsCampaigns() {
     queryKey: ["/api/ars/campaigns"],
   });
 
+  // 아톡비즈 캠페인 목록 조회
+  const { data: atalkCampaigns, isLoading: atalkCampaignsLoading, refetch: refetchAtalkCampaigns } = useQuery({
+    queryKey: ["/api/ars/campaigns/list"],
+    retry: 1,
+  });
+
   // 마케팅 대상 고객 조회
   const { data: marketingTargets } = useQuery({
     queryKey: ["/api/ars/marketing-targets"],
@@ -84,6 +90,33 @@ export default function ArsCampaigns() {
     onError: (error: Error) => {
       toast({
         title: "조회 실패",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 아톡비즈 캠페인 목록 조회
+  const atalkCampaignListMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("GET", "/api/ars/campaigns/list");
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "캠페인 목록 조회 완료",
+        description: data.success 
+          ? `${data.campaigns?.length || 0}개 유효한 캠페인 발견: ${data.campaigns?.join(', ')}`
+          : data.message || "조회 완료",
+        variant: data.success ? "default" : "destructive",
+      });
+      if (data.success) {
+        // 성공 시 발송리스트도 동기화
+        sendingListMutation.mutate();
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "캠페인 조회 실패",
         description: error.message,
         variant: "destructive",
       });
@@ -368,6 +401,17 @@ export default function ArsCampaigns() {
             결과 업데이트
           </Button>
           
+          <Button 
+            onClick={() => atalkCampaignListMutation.mutate()}
+            disabled={atalkCampaignListMutation.isPending}
+            variant="outline"
+            className="border-green-500 text-green-600 hover:bg-green-50"
+            data-testid="button-check-atalk-campaigns"
+          >
+            <TrendingUp className={`h-4 w-4 mr-2 ${atalkCampaignListMutation.isPending ? 'animate-spin' : ''}`} />
+            {atalkCampaignListMutation.isPending ? '확인 중...' : '아톡 캠페인 확인'}
+          </Button>
+
           <Button 
             onClick={() => sendingListMutation.mutate()}
             disabled={sendingListMutation.isPending}

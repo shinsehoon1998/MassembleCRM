@@ -1263,8 +1263,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 아톡비즈 캠페인 목록 조회
+  app.get('/api/ars/campaigns/list', isAuthenticated, async (req: any, res) => {
+    try {
+      const result = await atalkArsService.getCampaignList();
+      res.json(result);
+    } catch (error) {
+      console.error("Error getting campaign list:", error);
+      res.status(500).json({
+        success: false,
+        campaigns: [],
+        message: error instanceof Error ? error.message : "캠페인 목록 조회 중 오류가 발생했습니다."
+      });
+    }
+  });
+
   // 아톡비즈 발송리스트 동기화
-  app.get('/api/ars/sending-lists', isAuthenticated, async (req, res) => {
+  app.get('/api/ars/sending-lists', isAuthenticated, async (req: any, res) => {
     try {
       // 아톡비즈 환경변수 확인
       if (!process.env.ATALK_API_KEY || !process.env.ATALK_SECRET_KEY) {
@@ -1275,6 +1290,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const result = await atalkArsService.syncSendingLists();
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_sync_completed", 
+        description: `아톡비즈 발송리스트 동기화 완료: ${result.message}`,
+      });
+
       res.json(result);
     } catch (error) {
       console.error('발송리스트 동기화 실패:', error);
@@ -1566,10 +1590,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // 캠페인 상태를 processing으로 변경
+          // 실제 캠페인 시작 - ATALK 서비스 호출
           await storage.updateArsCampaign(campaignId, { status: 'processing' });
           
-          results.push({ campaignId, success: true, message: '캠페인이 시작되었습니다.' });
+          // 캠페인의 대상 고객들 조회하여 실제 ARS 발송 시작
+          const customerIds = campaign.targetGroupId 
+            ? (await storage.getCustomerGroupCustomers(campaign.targetGroupId)).map(c => c.id)
+            : await storage.getAllMarketingTargetIds();
+          
+          if (customerIds.length === 0) {
+            results.push({ campaignId, success: false, message: '발송 대상 고객이 없습니다.' });
+            continue;
+          }
+          
+          // 실제 대량 ARS 발송 시작
+          const bulkResult = await atalkArsService.sendBulkArs(
+            customerIds,
+            process.env.ATALK_SENDER_NUMBER || '01012345678',
+            campaign.name,
+            campaign.scenarioId,
+            campaign.targetGroupId
+          );
+          
+          results.push({ 
+            campaignId, 
+            success: true, 
+            message: `캠페인이 시작되었습니다. 대상: ${customerIds.length}명, 실패: ${bulkResult.failedCount}명`,
+            targetCount: customerIds.length,
+            failedCount: bulkResult.failedCount
+          });
           successCount++;
         } catch (error) {
           console.error(`Campaign ${campaignId} start failed:`, error);
@@ -1739,15 +1788,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // 테스트 고객 생성 (임시)
-          const testCustomerId = `test_${Date.now()}_${campaignId}`;
+          // 실제 테스트 고객 생성 (임시 DB 레코드)
+          const testCustomer = await storage.createCustomer({
+            name: `테스트발송_${campaignId}`,
+            phone: testPhoneNumber,
+            status: 'interested',
+            assignedUserId: req.user.id,
+            memo: `캠페인 ${campaignId} 테스트 발송`
+          });
           
-          // 테스트 발송 실행
+          // 실제 테스트 발송 실행
           const result = await atalkArsService.sendSingleArs(
-            testCustomerId,
+            testCustomer.id,
             process.env.ATALK_SENDER_NUMBER || '01012345678',
             campaign.scenarioId
           );
+          
+          // 테스트 고객 정리 (선택적 - 로그는 유지)
+          // await storage.deleteCustomer(testCustomer.id);
 
           if (result.success) {
             results.push({ 
