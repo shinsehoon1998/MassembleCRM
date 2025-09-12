@@ -1268,6 +1268,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 아톡비즈 발송리스트 동기화
+  app.get('/api/ars/sending-lists', isAuthenticated, async (req, res) => {
+    try {
+      // 아톡비즈 환경변수 확인
+      if (!process.env.ATALK_API_KEY || !process.env.ATALK_SECRET_KEY) {
+        return res.status(503).json({ 
+          success: false, 
+          message: '아톡비즈 API 설정이 필요합니다. 관리자에게 문의하세요.' 
+        });
+      }
+      
+      const result = await atalkArsService.syncSendingLists();
+      res.json(result);
+    } catch (error) {
+      console.error('발송리스트 동기화 실패:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: '발송리스트 동기화에 실패했습니다.' 
+      });
+    }
+  });
+
   // ARS 발송 결과 업데이트 (배치 작업)
   app.post('/api/ars/update-results', isAuthenticated, async (req: any, res) => {
     try {

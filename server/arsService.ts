@@ -713,6 +713,88 @@ export class AtalkArsService {
       };
     }
   }
+
+  /**
+   * 아톡비즈 발송리스트 조회 및 로컬 DB 동기화
+   */
+  async syncSendingLists() {
+    try {
+      console.log(`[아톡 API] 발송리스트 동기화 시작`);
+      
+      const response = await this.makeApiCall('/calllist/list', {
+        company: ATALK_API_CONFIG.company,
+        user_id: ATALK_API_CONFIG.userId,
+      });
+      
+      // 올바른 응답 구조 사용 (result.data)
+      const sendingLists = response.data || [];
+      console.log(`[아톡 API] 발송리스트 조회 완료: ${sendingLists.length}개`);
+      
+      let syncedCount = 0;
+      let failedCount = 0;
+      
+      // 발송리스트를 로컬 DB와 동기화
+      for (const listItem of sendingLists) {
+        try {
+          // 기존 캠페인 찾기 또는 새로 생성
+          const existingCampaign = await db
+            .select()
+            .from(arsCampaigns)
+            .where(eq(arsCampaigns.name, listItem.text_campaign_name))
+            .limit(1);
+          
+          if (existingCampaign.length === 0) {
+            // 새 캠페인 생성
+            await db.insert(arsCampaigns).values({
+              name: listItem.text_campaign_name || '아톡 동기화 캠페인',
+              scenarioId: 'marketing_consent',
+              status: 'synced',
+              totalCount: 1,
+              successCount: listItem.status === 'completed' ? 1 : 0,
+              failedCount: listItem.status === 'failed' ? 1 : 0,
+              sendNumber: listItem.text_send_no || ATALK_API_CONFIG.defaultSendNumber,
+              createdAt: new Date(),
+            });
+            syncedCount++;
+          } else {
+            // 기존 캠페인 업데이트
+            await db
+              .update(arsCampaigns)
+              .set({
+                status: 'synced',
+                totalCount: (existingCampaign[0].totalCount || 0) + 1,
+                successCount: listItem.status === 'completed' ? 
+                  (existingCampaign[0].successCount || 0) + 1 : existingCampaign[0].successCount,
+                failedCount: listItem.status === 'failed' ? 
+                  (existingCampaign[0].failedCount || 0) + 1 : existingCampaign[0].failedCount,
+              })
+              .where(eq(arsCampaigns.id, existingCampaign[0].id));
+            syncedCount++;
+          }
+        } catch (error) {
+          console.error(`발송리스트 항목 동기화 실패:`, error);
+          failedCount++;
+        }
+      }
+      
+      return {
+        success: true,
+        syncedCount,
+        failedCount,
+        totalCount: sendingLists.length,
+        message: `동기화 완료: ${syncedCount}개 성공, ${failedCount}개 실패`,
+      };
+    } catch (error) {
+      console.error('[아톡 API] 발송리스트 동기화 실패:', error);
+      return {
+        success: false,
+        syncedCount: 0,
+        failedCount: 0,
+        totalCount: 0,
+        message: error instanceof Error ? error.message : '발송리스트 동기화에 실패했습니다.',
+      };
+    }
+  }
 }
 
 export const atalkArsService = new AtalkArsService();

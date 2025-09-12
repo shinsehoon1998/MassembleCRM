@@ -66,6 +66,28 @@ export default function ArsCampaigns() {
     enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
   });
 
+  // 발송리스트 조회
+  const sendingListMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("GET", "/api/ars/sending-lists");
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "발송리스트 동기화 완료",
+        description: `${data.syncedCount || 0}개 동기화, ${data.failedCount || 0}개 실패`,
+      });
+      // 캠페인 목록 새로고침
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "조회 실패",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // 선택된 캠페인의 상세 정보 조회
   const { data: campaignDetail, isLoading: campaignDetailLoading } = useQuery<{
     id: number;
@@ -261,6 +283,18 @@ export default function ArsCampaigns() {
             <RefreshCw className="h-4 w-4 mr-2" />
             결과 업데이트
           </Button>
+          
+          <Button 
+            onClick={() => sendingListMutation.mutate()}
+            disabled={sendingListMutation.isPending}
+            variant="outline"
+            className="border-blue-500 text-blue-600 hover:bg-blue-50"
+            data-testid="button-sync-sending-lists"
+          >
+            <Users className={`h-4 w-4 mr-2 ${sendingListMutation.isPending ? 'animate-spin' : ''}`} />
+            {sendingListMutation.isPending ? '조회 중...' : '발송리스트 조회'}
+          </Button>
+          
           <Dialog open={showBulkModal} onOpenChange={setShowBulkModal}>
             <DialogTrigger asChild>
               <Button data-testid="button-create-campaign">
