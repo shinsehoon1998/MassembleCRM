@@ -20,8 +20,9 @@ function validateAndSecureConfig() {
       console.error(`누락된 변수: ${missing.join(', ')}`);
       throw new Error(`ARS Service 초기화 실패: 필수 환경변수 누락 (${missing.join(', ')})`);
     } else {
-      console.warn('⚠️  개발 모드: ATALK API 환경변수가 설정되지 않았습니다. ARS 기능은 제한됩니다.');
+      console.warn('⚠️  개발 모드: ATALK API 환경변수가 설정되지 않았습니다.');
       console.warn(`누락된 변수: ${missing.join(', ')}`);
+      console.warn('📝 개발 모드에서는 모의 데이터로 대체합니다.');
       console.warn('프로덕션 배포 전에 반드시 설정하세요!');
     }
   }
@@ -48,14 +49,33 @@ let ATALK_API_CONFIG: any = null;
 function getAtalkConfig() {
   if (!ATALK_API_CONFIG) {
     const secureConfig = validateAndSecureConfig();
-    ATALK_API_CONFIG = {
-      baseUrl: secureConfig.baseUrl,
-      token: secureConfig.token,
-      company: secureConfig.company,
-      userId: secureConfig.userId,
-      campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-      page: 'A'
-    };
+    
+    // 🔥 개발 모드에서 환경변수 누락 시 모의 데이터 사용
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const isMissingEnvVars = !secureConfig.token || !secureConfig.company || !secureConfig.userId;
+    
+    if (isDevelopment && isMissingEnvVars) {
+      console.log('📝 개발 모드: 모의 ATALK API 설정 사용');
+      ATALK_API_CONFIG = {
+        baseUrl: 'http://mock-atalk-api.local',
+        token: 'mock-token-for-development',
+        company: 'mock-company',
+        userId: 'mock-user-id',
+        campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
+        page: 'A',
+        mockMode: true
+      };
+    } else {
+      ATALK_API_CONFIG = {
+        baseUrl: secureConfig.baseUrl,
+        token: secureConfig.token,
+        company: secureConfig.company,
+        userId: secureConfig.userId,
+        campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
+        page: 'A',
+        mockMode: false
+      };
+    }
   }
   return ATALK_API_CONFIG;
 }
@@ -220,6 +240,27 @@ export class AtalkArsService {
   ): Promise<{ success: boolean; historyKey?: string; message: string }> {
     try {
       const config = getAtalkConfig();
+      
+      // 🔥 개발 모드에서 모의 응답 반환
+      if (config.mockMode) {
+        console.log(`[MOCK] 발송리스트 추가 모의 처리: ${targetPhone}`);
+        
+        // 90% 확률로 성공 시뮬레이션
+        const isSuccess = Math.random() > 0.1;
+        if (isSuccess) {
+          return {
+            success: true,
+            historyKey: `mock-history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            message: '발송리스트에 추가되었습니다. (모의 데이터)',
+          };
+        } else {
+          return {
+            success: false,
+            message: '발송리스트 추가에 실패했습니다. (모의 실패)',
+          };
+        }
+      }
+      
       const callData: AddCallListRequest = {
         text_send_no: sendNumber,
         company: config.company,
@@ -256,10 +297,32 @@ export class AtalkArsService {
     fileName: string
   ): Promise<{ success: boolean; message: string; fileName?: string }> {
     try {
+      const config = getAtalkConfig();
+      
+      // 🔥 개발 모드에서 모의 응답 반환
+      if (config.mockMode) {
+        console.log(`[MOCK] 음성파일 업로드 모의 처리: ${fileName}`);
+        
+        // 85% 확률로 성공 시뮬레이션
+        const isSuccess = Math.random() > 0.15;
+        if (isSuccess) {
+          return {
+            success: true,
+            message: '음성파일이 성공적으로 업로드되었습니다. (모의 데이터)',
+            fileName
+          };
+        } else {
+          return {
+            success: false,
+            message: '음성파일 업로드에 실패했습니다. (모의 실패)',
+            fileName
+          };
+        }
+      }
+      
       const formData = new FormData();
       
       // 필수 필드 추가
-      const config = getAtalkConfig();
       formData.append('text_campaign_name', config.campaignName);
       formData.append('company', config.company);
       formData.append('user_id', config.userId);
@@ -360,13 +423,31 @@ export class AtalkArsService {
     historyKey?: string
   ): Promise<{ success: boolean; message: string }> {
     try {
+      const config = getAtalkConfig();
+      
+      // 🔥 개발 모드에서 모의 응답 반환
+      if (config.mockMode) {
+        console.log(`[MOCK] 캠페인 시작 모의 처리: historyKey=${historyKey}`);
+        
+        // 95% 확률로 성공 시뮬레이션
+        const isSuccess = Math.random() > 0.05;
+        if (isSuccess) {
+          return {
+            success: true,
+            message: '캠페인이 성공적으로 시작되었습니다. (모의 데이터)',
+          };
+        } else {
+          return {
+            success: false,
+            message: '캠페인 시작에 실패했습니다. (모의 실패)',
+          };
+        }
+      }
+      
       if (!historyKey) {
-        // historyKey 없이도 시작 가능하도록 수정
         console.log('[ARS] historyKey 없이 캠페인 시작 시도');
       }
 
-      // 발송 즉시 시작 API 사용
-      const config = getAtalkConfig();
       const startData = {
         company: config.company,
         user_id: config.userId,
@@ -375,7 +456,6 @@ export class AtalkArsService {
         ...(historyKey && { history_key: historyKey })
       };
 
-      // /calllist/start 엔드포인트 사용 (API 가이드 기반)
       const response = await this.makeApiCall('/calllist/start', startData);
       
       if (response.code === '200' || response.code === 'SUCCESS') {
@@ -472,6 +552,7 @@ export class AtalkArsService {
         message: `고객 그룹 "${groupName}" 동기화 완료 (${customerIds.length}명)`,
         historyKeys: [] // 실제 구현 시 ATALK에서 반환하는 history keys
       };
+
     } catch (error) {
       return {
         success: false,
@@ -481,11 +562,284 @@ export class AtalkArsService {
     }
   }
 
+  /**
+   * 7. 신규 캠페인 발송 통합 파이프라인
+   * 고객 그룹 → 발송리스트 추가 → 음성파일 업로드 → 캠페인 시작
+   */
+  async executeNewCampaignPipeline(params: {
+    campaignName: string;
+    customerPhones: string[];
+    audioFileBuffer?: Buffer;
+    audioFileName?: string;
+    sendNumber: string;
+    scenarioId?: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    results: {
+      callListAdded: number;
+      callListFailed: number;
+      audioUploaded: boolean;
+      campaignStarted: boolean;
+      historyKeys: string[];
+    };
+  }> {
+    const results = {
+      callListAdded: 0,
+      callListFailed: 0,
+      audioUploaded: false,
+      campaignStarted: false,
+      historyKeys: [] as string[],
+    };
 
+    try {
+      console.log(`[ARS 파이프라인] 신규 캠페인 "${params.campaignName}" 시작 - 대상: ${params.customerPhones.length}명`);
 
+      // Step 1: 음성파일 업로드 (있는 경우)
+      if (params.audioFileBuffer && params.audioFileName) {
+        console.log(`[ARS 파이프라인] 음성파일 업로드: ${params.audioFileName}`);
+        const uploadResult = await this.uploadAudioFile(params.audioFileBuffer, params.audioFileName);
+        results.audioUploaded = uploadResult.success;
+        
+        if (!uploadResult.success) {
+          return {
+            success: false,
+            message: `음성파일 업로드 실패: ${uploadResult.message}`,
+            results,
+          };
+        }
+        console.log(`[ARS 파이프라인] 음성파일 업로드 완료`);
+      } else if (params.scenarioId && params.scenarioId !== 'marketing_consent') {
+        // 🔥 시나리오 오디오 필수 업로드 로직 강화
+        console.warn(`[ARS 파이프라인] 경고: 시나리오 "${params.scenarioId}"에 오디오 파일이 없습니다.`);
+        console.warn(`[ARS 파이프라인] marketing_consent 이외의 시나리오는 오디오 파일이 필수입니다.`);
+        
+        // 🔥 선택적 엄격 벌시: 시나리오 오디오 필수일 때 업로드 없이 진행 차단
+        const strictMode = process.env.ARS_STRICT_AUDIO_REQUIRED === 'true';
+        if (strictMode) {
+          return {
+            success: false,
+            message: `시나리오 "${params.scenarioId}"에는 오디오 파일이 필수입니다. 오디오 파일을 먼저 업로드해주세요.`,
+            results,
+          };
+        }
+      }
 
+      // Step 2: 발송리스트 추가 (배치 처리)
+      console.log(`[ARS 파이프라인] 발송리스트 추가 시작`);
+      const batchSize = 5; // 동시 처리 제한
+      const historyKeys: string[] = [];
 
+      for (let i = 0; i < params.customerPhones.length; i += batchSize) {
+        const batch = params.customerPhones.slice(i, i + batchSize);
+        const batchPromises = batch.map(phone => 
+          this.addCallList(params.sendNumber, phone)
+        );
 
+        const batchResults = await Promise.allSettled(batchPromises);
+        
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled' && result.value.success) {
+            results.callListAdded++;
+            if (result.value.historyKey) {
+              historyKeys.push(result.value.historyKey);
+            }
+          } else {
+            results.callListFailed++;
+          }
+        }
+
+        // 배치 간 지연 (API 과부하 방지)
+        if (i + batchSize < params.customerPhones.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      results.historyKeys = historyKeys;
+      console.log(`[ARS 파이프라인] 발송리스트 추가 완료 - 성공: ${results.callListAdded}, 실패: ${results.callListFailed}`);
+
+      // Step 3: 캠페인 시작 - 모든 historyKeys에 대해 처리
+      if (results.callListAdded > 0 && historyKeys.length > 0) {
+        console.log(`[ARS 파이프라인] 캠페인 시작 - ${historyKeys.length}개 historyKey 처리`);
+        
+        // 🔥 수정: 모든 historyKeys에 대해 캠페인 시작
+        let startedCount = 0;
+        const startErrors: string[] = [];
+        
+        // 첫 번째 방법: 개별 historyKey로 각각 시작
+        for (const historyKey of historyKeys) {
+          const startResult = await this.startCampaign(historyKey);
+          if (startResult.success) {
+            startedCount++;
+          } else {
+            startErrors.push(`historyKey ${historyKey}: ${startResult.message}`);
+          }
+        }
+        
+        results.campaignStarted = startedCount > 0;
+        
+        if (startedCount === 0) {
+          return {
+            success: false,
+            message: `모든 캠페인 시작 실패: ${startErrors.join(', ')}`,
+            results,
+          };
+        }
+        
+        if (startedCount < historyKeys.length) {
+          console.warn(`[ARS 파이프라인] 일부 캠페인만 시작됨: ${startedCount}/${historyKeys.length}`);
+        }
+        
+        console.log(`[ARS 파이프라인] 캠페인 시작 완료 - ${startedCount}/${historyKeys.length}개 성공`);
+      }
+
+      const successRate = (results.callListAdded / params.customerPhones.length) * 100;
+      
+      // 🔥 트랜잭션 안전성: 최종 결과 검증 및 로깅
+      const finalSuccess = results.callListAdded > 0;
+      const detailedMessage = `캠페인 "${params.campaignName}" 발송 ${finalSuccess ? '완료' : '실패'} - 성공: ${results.callListAdded}명 (${successRate.toFixed(1)}%), 실패: ${results.callListFailed}명, 오디오: ${results.audioUploaded ? '업로드 성공' : '업로드 없음'}, 캠페인 시작: ${results.campaignStarted ? '성공' : '실패'}`;
+      
+      console.log(`[ARS 파이프라인] ${detailedMessage}`);
+      
+      return {
+        success: finalSuccess,
+        message: detailedMessage,
+        results,
+      };
+
+    } catch (error) {
+      console.error(`[ARS 파이프라인] 에러:`, error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '캠페인 발송 중 오류가 발생했습니다.',
+        results,
+      };
+    }
+  }
+
+  /**
+   * 8. 기존 캠페인 재발송 파이프라인
+   * 이전 설정을 사용하여 동일한 대상자들에게 재발송
+   */
+  async executeResendCampaignPipeline(params: {
+    originalCampaignId: number;
+    customerPhones: string[];
+    sendNumber: string;
+    audioFileBuffer?: Buffer;
+    audioFileName?: string;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    results: {
+      callListAdded: number;
+      callListFailed: number;
+      campaignStarted: boolean;
+      historyKeys: string[];
+    };
+  }> {
+    const results = {
+      callListAdded: 0,
+      callListFailed: 0,
+      campaignStarted: false,
+      historyKeys: [] as string[],
+    };
+
+    try {
+      console.log(`[ARS 재발송] 캠페인 ID ${params.originalCampaignId} 재발송 시작 - 대상: ${params.customerPhones.length}명`);
+
+      // Step 1: 음성파일 재업로드 (있는 경우)
+      if (params.audioFileBuffer && params.audioFileName) {
+        console.log(`[ARS 재발송] 음성파일 재업로드: ${params.audioFileName}`);
+        const uploadResult = await this.uploadAudioFile(params.audioFileBuffer, params.audioFileName);
+        
+        if (!uploadResult.success) {
+          console.warn(`[ARS 재발송] 음성파일 업로드 실패, 기존 파일 사용: ${uploadResult.message}`);
+        }
+      }
+
+      // Step 2: 발송리스트 재추가
+      console.log(`[ARS 재발송] 발송리스트 재추가 시작`);
+      const batchSize = 5;
+      const historyKeys: string[] = [];
+
+      for (let i = 0; i < params.customerPhones.length; i += batchSize) {
+        const batch = params.customerPhones.slice(i, i + batchSize);
+        const batchPromises = batch.map(phone => 
+          this.addCallList(params.sendNumber, phone)
+        );
+
+        const batchResults = await Promise.allSettled(batchPromises);
+        
+        for (const result of batchResults) {
+          if (result.status === 'fulfilled' && result.value.success) {
+            results.callListAdded++;
+            if (result.value.historyKey) {
+              historyKeys.push(result.value.historyKey);
+            }
+          } else {
+            results.callListFailed++;
+          }
+        }
+
+        if (i + batchSize < params.customerPhones.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      results.historyKeys = historyKeys;
+      console.log(`[ARS 재발송] 발송리스트 재추가 완료 - 성공: ${results.callListAdded}, 실패: ${results.callListFailed}`);
+
+      // Step 3: 캠페인 재시작 - 모든 historyKeys에 대해 처리
+      if (results.callListAdded > 0 && historyKeys.length > 0) {
+        console.log(`[ARS 재발송] 캠페인 재시작 - ${historyKeys.length}개 historyKey 처리`);
+        
+        // 🔥 수정: 모든 historyKeys에 대해 캠페인 시작
+        let startedCount = 0;
+        const startErrors: string[] = [];
+        
+        for (const historyKey of historyKeys) {
+          const startResult = await this.startCampaign(historyKey);
+          if (startResult.success) {
+            startedCount++;
+          } else {
+            startErrors.push(`historyKey ${historyKey}: ${startResult.message}`);
+          }
+        }
+        
+        results.campaignStarted = startedCount > 0;
+        
+        if (startedCount === 0) {
+          return {
+            success: false,
+            message: `모든 캠페인 재시작 실패: ${startErrors.join(', ')}`,
+            results,
+          };
+        }
+        
+        if (startedCount < historyKeys.length) {
+          console.warn(`[ARS 재발송] 일부 캠페인만 재시작됨: ${startedCount}/${historyKeys.length}`);
+        }
+        
+        console.log(`[ARS 재발송] 캠페인 재시작 완룼 - ${startedCount}/${historyKeys.length}개 성공`);
+      }
+
+      const successRate = (results.callListAdded / params.customerPhones.length) * 100;
+      
+      return {
+        success: results.callListAdded > 0,
+        message: `캠페인 재발송 완료 - 성공: ${results.callListAdded}명 (${successRate.toFixed(1)}%), 실패: ${results.callListFailed}명`,
+        results,
+      };
+
+    } catch (error) {
+      console.error(`[ARS 재발송] 에러:`, error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '캠페인 재발송 중 오류가 발생했습니다.',
+        results,
+      };
+    }
+  }
 }
 
 export const atalkArsService = new AtalkArsService();

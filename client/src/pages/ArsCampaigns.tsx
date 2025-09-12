@@ -110,17 +110,42 @@ export default function ArsCampaigns() {
     }) => {
       return apiRequest("POST", "/api/ars/send-bulk", data);
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
+      const successCount = response.successCount || 0;
+      const totalTargets = response.totalTargets || 0;
+      const campaignStarted = response.campaignStarted || false;
+      const audioUploaded = response.audioUploaded || false;
+      
+      let description = `총 ${totalTargets}명 중 ${successCount}명 발송 성공`;
+      if (audioUploaded) {
+        description += ", 음성파일 업로드 완료";
+      }
+      if (campaignStarted) {
+        description += ", 캠페인 시작 완료";
+      }
+      
       toast({
-        title: "성공",
-        description: "대량 ARS 발송이 시작되었습니다.",
+        title: response.success ? "발송 성공" : "발송 실패",
+        description: response.message || description,
+        variant: response.success ? "default" : "destructive",
       });
-      setShowBulkModal(false);
+      
+      if (response.success) {
+        setShowBulkModal(false);
+        setBulkCampaignData({
+          campaignName: "",
+          scenarioId: "marketing_consent",
+          targetType: "all",
+          groupId: "",
+          targetCount: 0,
+        });
+      }
+      
       queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
     },
     onError: (error: Error) => {
       toast({
-        title: "오류",
+        title: "발송 오류",
         description: error.message,
         variant: "destructive",
       });
@@ -283,17 +308,21 @@ export default function ArsCampaigns() {
     mutationFn: async (campaignIds: number[]) => {
       return apiRequest("POST", "/api/ars/campaigns/resend-multiple", { campaignIds });
     },
-    onSuccess: () => {
+    onSuccess: (response: any) => {
+      const successCount = response.successCount || 0;
+      const totalResendCount = response.totalResendCount || 0;
+      
       toast({
-        title: "성공",
-        description: `${selectedCampaignIds.length}개 캠페인 재발송이 시작되었습니다.`,
+        title: "재발송 완료",
+        description: `${successCount}개 캠페인 재발송 완료, 총 ${totalResendCount}명에게 전송되었습니다.`,
+        variant: response.success ? "default" : "destructive",
       });
       setSelectedCampaignIds([]);
       queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
     },
     onError: (error: Error) => {
       toast({
-        title: "오류",
+        title: "재발송 실패",
         description: error.message,
         variant: "destructive",
       });
@@ -403,11 +432,59 @@ export default function ArsCampaigns() {
                     <SelectContent>
                       {(scenarios as any)?.map((scenario: any) => (
                         <SelectItem key={scenario.id} value={scenario.id}>
-                          {scenario.name}
+                          <div className="flex flex-col space-y-1">
+                            <span className="font-medium">{scenario.name}</span>
+                            {scenario.description && (
+                              <span className="text-xs text-gray-500">{scenario.description}</span>
+                            )}
+                            {scenario.audioFileUrl && (
+                              <span className="text-xs text-blue-600 flex items-center">
+                                <Phone className="h-3 w-3 mr-1" />
+                                음성파일 연결됨
+                              </span>
+                            )}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  
+                  {/* 선택된 시나리오 정보 표시 */}
+                  {bulkCampaignData.scenarioId && (scenarios as any)?.find((s: any) => s.id === bulkCampaignData.scenarioId) && (
+                    <div className="mt-2 p-3 bg-green-50 rounded-md border border-green-200">
+                      {(() => {
+                        const selectedScenario = (scenarios as any).find((s: any) => s.id === bulkCampaignData.scenarioId);
+                        return (
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <span className="text-sm font-medium text-green-800">
+                                  {selectedScenario.name}
+                                </span>
+                              </div>
+                              {selectedScenario.audioFileUrl && (
+                                <Badge variant="outline" className="text-green-700 border-green-300">
+                                  <Phone className="h-3 w-3 mr-1" />
+                                  음성 연동
+                                </Badge>
+                              )}
+                            </div>
+                            {selectedScenario.description && (
+                              <p className="text-xs text-green-600 mt-1">
+                                {selectedScenario.description}
+                              </p>
+                            )}
+                            {selectedScenario.audioFileUrl && (
+                              <p className="text-xs text-green-600 mt-1">
+                                음성파일이 자동으로 업로드됩니다.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

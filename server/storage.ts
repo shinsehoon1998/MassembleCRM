@@ -620,6 +620,15 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // ARS 발송 로그 생성
+  async createArsSendLog(sendLog: InsertArsSendLog): Promise<ArsSendLog> {
+    const [created] = await db
+      .insert(arsSendLogs)
+      .values(sendLog)
+      .returning();
+    return created;
+  }
+
   // ARS 발송 로그 조회
   async getArsSendLogs(params: {
     campaignId?: number;

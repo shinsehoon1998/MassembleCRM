@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -1287,7 +1287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     message: 'groupId 또는 customerIds 중 정확히 하나만 제공해야 합니다.'
   });
 
-  // 대량 ARS 발송 (캠페인)
+  // 대량 ARS 발송 (캠페인) - 통합 파이프라인 사용
   app.post('/api/ars/send-bulk', isAuthenticated, async (req: any, res) => {
     try {
       // 요청 검증
@@ -1300,57 +1300,177 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const { customerIds, groupId, sendNumber, campaignName, scenarioId } = validation.data;
 
-
       let targetCustomerIds: string[] = [];
+      let customerPhones: string[] = [];
 
-      // 그룹 ID가 제공된 경우 엄격하게 해당 그룹의 고객들만 가져옴
+      // Step 1: 고객 데이터 수집
       if (groupId) {
         const groupCustomers = await storage.getCustomersInGroup(groupId);
         if (!groupCustomers || groupCustomers.length === 0) {
           return res.status(400).json({ message: '선택된 그룹에 고객이 없습니다.' });
         }
         targetCustomerIds = groupCustomers.map(customer => customer.id);
+        customerPhones = groupCustomers
+          .filter(c => c.phone && c.phone.trim() !== '')
+          .map(c => c.phone!);
         
-        // 로깅: 그룹 기반 타겟팅 확인
-        console.log(`[ARS] 그룹 기반 발송: 그룹 ${groupId}에서 ${targetCustomerIds.length}명 타겟팅`);
+        console.log(`[ARS] 그룹 기반 발송: 그룹 ${groupId}에서 ${targetCustomerIds.length}명 타겟팅, 유효 전화번호 ${customerPhones.length}개`);
       } else if (customerIds) {
-        // customerIds만 제공된 경우 (Zod 검증으로 이미 유효성 확인됨)
         targetCustomerIds = customerIds;
-        console.log(`[ARS] 직접 선택 발송: ${targetCustomerIds.length}명 타겟팅`);
+        
+        // 개별 고객 ID로부터 전화번호 추출
+        const customers = await Promise.all(
+          customerIds.map(id => storage.getCustomer(id))
+        );
+        
+        customerPhones = customers
+          .filter(customer => customer && customer.phone && customer.phone.trim() !== '')
+          .map(customer => customer!.phone!);
+        
+        console.log(`[ARS] 직접 선택 발송: ${targetCustomerIds.length}명 타겟팅, 유효 전화번호 ${customerPhones.length}개`);
       }
 
-      if (targetCustomerIds.length === 0) {
-        return res.status(400).json({ message: '발송 대상 고객을 선택해주세요.' });
+      if (customerPhones.length === 0) {
+        return res.status(400).json({ message: '유효한 전화번호를 가진 고객이 없습니다.' });
       }
 
-      // 단순화된 대량 발송 - 실제 API 호출 없이 성공 응답
-      const result = {
-        campaignId: Date.now(), // 임시 캠페인 ID
-        historyKeys: [`hist_${Date.now()}`], // 임시 history key
-        failedCount: 0
-      };
+      // Step 2: 시나리오 기반 음성파일 준비 (필수)
+      let audioFileBuffer: Buffer | undefined;
+      let audioFileName: string | undefined;
+      
+      if (scenarioId && scenarioId !== 'marketing_consent') {
+        // 시나리오에 연결된 오디오 파일 조회
+        const audioFiles = await storage.getAudioFiles();
+        const scenarioAudioFile = audioFiles.find(af => af.scenarioId === scenarioId && af.atalkStatus === 'uploaded');
+        
+        if (scenarioAudioFile && scenarioAudioFile.storageUrl) {
+          try {
+            console.log(`[ARS] 시나리오 '${scenarioId}'의 음성파일 다운로드: ${scenarioAudioFile.originalName}`);
+            
+            // ObjectStorage에서 파일 다운로드
+            const objectStorageService = new ObjectStorageService();
+            const file = await objectStorageService.getObjectEntityFile(scenarioAudioFile.storageUrl);
+            
+            // 파일을 Buffer로 읽기
+            const chunks: Buffer[] = [];
+            const stream = file.createReadStream();
+            
+            for await (const chunk of stream) {
+              chunks.push(chunk);
+            }
+            
+            audioFileBuffer = Buffer.concat(chunks);
+            audioFileName = scenarioAudioFile.originalName;
+            
+            console.log(`[ARS] 시나리오 음성파일 준비 완료: ${audioFileName} (${audioFileBuffer.length} bytes)`);
+          } catch (error) {
+            console.error(`[ARS] 시나리오 음성파일 다운로드 실패: ${error}`);
+            return res.status(400).json({ 
+              success: false,
+              message: `시나리오 '${scenarioId}'의 음성파일 다운로드에 실패했습니다: ${error instanceof Error ? error.message : 'Unknown error'}` 
+            });
+          }
+        } else {
+          console.warn(`[ARS] 시나리오 '${scenarioId}'에 업로드된 음성파일이 없습니다.`);
+          return res.status(400).json({ 
+            success: false,
+            message: `시나리오 '${scenarioId}'에 업로드된 음성파일이 없습니다. 먼저 음성파일을 업로드해주세요.` 
+          });
+        }
+      }
 
-      // 활동 로그 기록
+      // Step 3: 통합 파이프라인 실행
+      console.log(`[ARS] 신규 캠페인 '${campaignName}' 시작 - 대상: ${customerPhones.length}명`);
+      
+      const pipelineResult = await atalkArsService.executeNewCampaignPipeline({
+        campaignName,
+        customerPhones,
+        sendNumber: sendNumber || '1660-2426',
+        scenarioId,
+        audioFileBuffer,
+        audioFileName,
+      });
+
+      // Step 4: 데이터베이스에 캠페인 정보 저장 (필수)
+      let campaignId: number;
+      try {
+        const newCampaign = await storage.createArsCampaign({
+          name: campaignName,
+          scenarioId: scenarioId || 'marketing_consent',
+          targetGroupId: groupId || null,
+          totalCount: customerPhones.length,
+          successCount: pipelineResult.results.callListAdded,
+          failedCount: pipelineResult.results.callListFailed,
+          status: pipelineResult.success ? 'active' : 'failed',
+          historyKey: pipelineResult.results.historyKeys[0] || null,
+          startedAt: pipelineResult.success ? new Date() : null,
+          createdBy: req.user.id,
+        });
+        campaignId = newCampaign.id;
+        console.log(`[ARS] 캠페인 DB 저장 완료 - ID: ${campaignId}`);
+      } catch (dbError) {
+        console.error('[ARS] 캠페인 DB 저장 실패:', dbError);
+        return res.status(500).json({ 
+          success: false,
+          message: '캠페인 정보 저장에 실패했습니다.' 
+        });
+      }
+
+      // Step 5: ARS 발송 로그 저장 (필수)
+      try {
+        const sendLogPromises = targetCustomerIds.map(async (customerId, index) => {
+          const phone = customerPhones[index];
+          if (phone) {
+            const historyKey = pipelineResult.results.historyKeys[index] || null;
+            const status = pipelineResult.results.callListAdded > index ? 'sent' : 'failed';
+            
+            return storage.createArsSendLog({
+              campaignId,
+              customerId,
+              phone,
+              scenarioId: scenarioId || 'marketing_consent',
+              historyKey,
+              status,
+              sentAt: pipelineResult.success ? new Date() : null,
+              errorMessage: status === 'failed' ? 'Call list addition failed' : null,
+            });
+          }
+        });
+
+        await Promise.all(sendLogPromises.filter(p => p));
+        console.log(`[ARS] 발송 로그 저장 완료 - ${sendLogPromises.length}건`);
+      } catch (logError) {
+        console.error('[ARS] 발송 로그 저장 실패:', logError);
+        // 로그 저장 실패는 치명적이지 않으므로 계속 진행
+      }
+
+      // Step 6: 활동 로그 기록
       const logDescription = groupId 
-        ? `ARS 캠페인 "${campaignName}" 생성 - 그룹 대상: ${targetCustomerIds.length}명`
-        : `ARS 캠페인 "${campaignName}" 생성 - 전체 대상: ${targetCustomerIds.length}명`;
+        ? `ARS 캠페인 "${campaignName}" (ID: ${campaignId}) - 그룹 대상: ${customerPhones.length}명`
+        : `ARS 캠페인 "${campaignName}" (ID: ${campaignId}) - 개별 선택: ${customerPhones.length}명`;
 
       await storage.createActivityLog({
         userId: req.user.id,
         customerId: null,
-        action: "ars_campaign_created",
-        description: logDescription,
+        action: pipelineResult.success ? "ars_campaign_success" : "ars_campaign_failed",
+        description: `${logDescription} - 결과: ${pipelineResult.message}`,
       });
 
+      // Step 7: 응답
       res.json({
-        success: true,
-        message: `${targetCustomerIds.length}명에게 ARS 발송을 시작했습니다.`,
-        campaignId: result.campaignId,
-        successCount: result.historyKeys.length,
-        failedCount: result.failedCount,
+        success: pipelineResult.success,
+        message: pipelineResult.message,
+        campaignId,
+        totalTargets: customerPhones.length,
+        successCount: pipelineResult.results.callListAdded,
+        failedCount: pipelineResult.results.callListFailed,
+        audioUploaded: pipelineResult.results.audioUploaded,
+        campaignStarted: pipelineResult.results.campaignStarted,
+        details: pipelineResult.results,
       });
+      
     } catch (error) {
-      console.error("Error sending bulk ARS:", error);
+      console.error("[ARS] 대량 발송 에러:", error);
       res.status(500).json({ 
         success: false, 
         message: error instanceof Error ? error.message : '대량 ARS 발송 중 오류가 발생했습니다.' 
@@ -1823,18 +1943,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // 실패한 고객들에게 재발송
+          // 통합 파이프라인으로 재발송 실행
           let resendCount = 0;
-          for (const log of failedLogs.logs) {
-            try {
-              // 단순화된 재발송 - 실제 API 호출 없이 성공으로 처리
-              const result = { success: true };
-              if (result.success) {
-                resendCount++;
+          try {
+            // 실패한 고객들의 전화번호 추출 및 재발송 로직 개선
+            const customerIds = failedLogs.logs.map(log => log.customerId).filter(id => id !== null);
+            if (customerIds.length > 0) {
+              const customers = await Promise.all(customerIds.map(id => storage.getCustomer(id)));
+              const validCustomers = customers.filter(customer => customer && customer.phone && customer.phone.trim() !== '');
+              
+              if (validCustomers.length > 0) {
+                const customerPhones = validCustomers.map(customer => customer!.phone!);
+                
+                // 시나리오 오디오 파일 준비 (재발송용)
+                let audioFileBuffer: Buffer | undefined;
+                let audioFileName: string | undefined;
+                
+                if (campaign.scenarioId && campaign.scenarioId !== 'marketing_consent') {
+                  try {
+                    const audioFiles = await storage.getAudioFiles();
+                    const scenarioAudioFile = audioFiles.find(af => af.scenarioId === campaign.scenarioId && af.atalkStatus === 'uploaded');
+                    
+                    if (scenarioAudioFile && scenarioAudioFile.storageUrl) {
+                      const objectStorageService = new ObjectStorageService();
+                      const file = await objectStorageService.getObjectEntityFile(scenarioAudioFile.storageUrl);
+                      
+                      const chunks: Buffer[] = [];
+                      const stream = file.createReadStream();
+                      
+                      for await (const chunk of stream) {
+                        chunks.push(chunk);
+                      }
+                      
+                      audioFileBuffer = Buffer.concat(chunks);
+                      audioFileName = scenarioAudioFile.originalName;
+                      console.log(`[ARS 재발송] 시나리오 오디오 파일 준비 완료: ${audioFileName}`);
+                    }
+                  } catch (audioError) {
+                    console.warn(`[ARS 재발송] 오디오 파일 준비 실패, 기존 설정 사용: ${audioError}`);
+                  }
+                }
+                
+                // 통합 재발송 파이프라인 실행
+                const resendResult = await atalkArsService.executeResendCampaignPipeline({
+                  originalCampaignId: campaignId,
+                  customerPhones,
+                  sendNumber: '1660-2426',
+                  audioFileBuffer,
+                  audioFileName,
+                });
+                
+                resendCount = resendResult.results.callListAdded;
+                console.log(`[ARS 재발송] 캠페인 ${campaignId}: ${resendResult.message}`);
               }
-            } catch (resendError) {
-              console.error(`Resend failed for customer ${log.customerId}:`, resendError);
             }
+          } catch (resendError) {
+            console.error(`Campaign ${campaignId} resend pipeline failed:`, resendError);
           }
 
           // 캠페인 상태 업데이트
