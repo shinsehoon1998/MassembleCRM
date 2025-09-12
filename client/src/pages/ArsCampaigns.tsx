@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +35,7 @@ export default function ArsCampaigns() {
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<number[]>([]);
   const [bulkCampaignData, setBulkCampaignData] = useState({
     campaignName: "",
-    scenarioId: "marketing_consent",
+    scenarioId: "", // 동적으로 첫 번째 시나리오로 설정
     targetType: "all", // "all" 또는 "group"
     groupId: "",
     targetCount: 0,
@@ -67,6 +67,16 @@ export default function ArsCampaigns() {
     queryKey: [`/api/customer-groups/${bulkCampaignData.groupId}/customers`],
     enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
   });
+
+  // 시나리오 로드 완료 시 첫 번째 시나리오로 자동 설정
+  useEffect(() => {
+    if (scenarios && (scenarios as any).length > 0 && !bulkCampaignData.scenarioId) {
+      setBulkCampaignData(prev => ({
+        ...prev,
+        scenarioId: (scenarios as any)[0].id
+      }));
+    }
+  }, [scenarios, bulkCampaignData.scenarioId]);
 
 
 
@@ -134,7 +144,7 @@ export default function ArsCampaigns() {
         setShowBulkModal(false);
         setBulkCampaignData({
           campaignName: "",
-          scenarioId: "marketing_consent",
+          scenarioId: scenarios && (scenarios as any).length > 0 ? (scenarios as any)[0].id : "", // 동적 첫 번째 시나리오
           targetType: "all",
           groupId: "",
           targetCount: 0,

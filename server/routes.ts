@@ -1834,8 +1834,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       if (!pipelineResult.success) {
-        // 🔥 실패시 422 상태코드로 반환하여 프론트엔드에서 에러 토스트 표시
-        return res.status(422).json(responseData);
+        // 🔥 환경변수 누락 등 서버 설정 문제는 500, 기타 요청 문제는 400으로 반환
+        const statusCode = pipelineResult.message?.includes('환경변수') || pipelineResult.message?.includes('API 설정') ? 500 : 400;
+        return res.status(statusCode).json(responseData);
       }
       
       res.json(responseData);
@@ -2266,9 +2267,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalCount: validCampaignIds.length
       };
 
-      // 🔥 모든 캠페인이 실패한 경우 422 상태코드로 반환
+      // 🔥 모든 캠페인이 실패한 경우 400 상태코드로 반환
       if (successCount === 0) {
-        return res.status(422).json(responseData);
+        return res.status(400).json(responseData);
       }
       
       res.json(responseData);
@@ -2415,9 +2416,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalCount: validCampaignIds.length
       };
 
-      // 🔥 모든 재발송이 실패한 경우 422 상태코드로 반환
+      // 🔥 모든 재발송이 실패한 경우 400 상태코드로 반환
       if (successCount === 0) {
-        return res.status(422).json(responseData);
+        return res.status(400).json(responseData);
       }
       
       res.json(responseData);

@@ -32,11 +32,18 @@ function validateAndSecureConfig() {
     if (!company) missing.push('ATALK_COMPANY');
     if (!userId) missing.push('ATALK_USER_ID');
     
+    // 개발 모드에서 더 친화적인 메시지 제공
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const friendlyMessage = isDevelopment 
+      ? `🛠️ ARS 기능을 사용하려면 다음 환경변수를 설정해주세요:\n\n현재 누락된 환경변수:\n${missing.map(m => `- ${m}`).join('\n')}\n\n예시 설정:\n- ATALK_API_BASE_URL=https://api.example.com\n- ATALK_API_TOKEN=your_token_here\n- ATALK_COMPANY=your_company\n- ATALK_USER_ID=your_user_id\n\n관리자에게 문의하여 정확한 값을 받으세요.`
+      : `ARS 서비스 설정 오류: 관리자에게 문의하세요 (환경변수 누락: ${missing.join(', ')})`;
+    
     secureLog(LogLevel.ERROR, 'CONFIG', '치명적 오류: 필수 ATALK API 환경변수가 설정되지 않았습니다', {
       missing: missing.join(', '),
-      message: '서버를 시작하려면 모든 ATALK API 환경변수를 설정해야 합니다.'
+      message: '서버를 시작하려면 모든 ATALK API 환경변수를 설정해야 합니다.',
+      development: isDevelopment
     });
-    throw new Error(`ARS Service 초기화 실패: 필수 환경변수 누락 (${missing.join(', ')})`);
+    throw new Error(friendlyMessage);
   }
 
   // 🔥 보안: HTTPS 강제 (프로덕션)
@@ -306,6 +313,8 @@ export class AtalkArsService {
     sendNumber: string,
     targetPhone: string
   ): Promise<{ success: boolean; historyKey?: string; message: string }> {
+    const requestId = generateRequestId();
+    
     try {
       // 🔥 Rate Limiting 체크 (PHP 패턴)
       const clientId = `ars_${targetPhone.slice(-4)}`; // 전화번호 뒷자리로 구분
@@ -403,8 +412,6 @@ export class AtalkArsService {
         text_page: sanitizeInput(config.page),
         callee: cleanPhone
       };
-
-      const requestId = generateRequestId();
       
       secureLog(LogLevel.INFO, 'ARS', '발송리스트 추가 시도', {
         originalPhone: maskPhoneNumber(targetPhone),
@@ -836,6 +843,7 @@ export class AtalkArsService {
       historyKeys: string[];
     };
   }> {
+    const requestId = generateRequestId();
     const results = {
       callListAdded: 0,
       callListFailed: 0,
@@ -845,7 +853,6 @@ export class AtalkArsService {
     };
 
     try {
-      const requestId = generateRequestId();
       
       secureLog(LogLevel.INFO, 'ARS_PIPELINE', '신규 캠페인 시작', {
         campaignName: params.campaignName,
