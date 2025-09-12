@@ -144,16 +144,16 @@ export function isValidPhoneNumber(phone: string): boolean {
   
   const cleanPhone = phone.replace(/[^0-9]/g, '');
   
-  // Length check (9-11 digits for Korean numbers)
-  if (cleanPhone.length < 9 || cleanPhone.length > 11) return false;
+  // Length check (9-12 digits for Korean numbers, including longer internet phone formats)
+  if (cleanPhone.length < 9 || cleanPhone.length > 12) return false;
   
   // Korean phone number patterns
   const validPatterns = [
     /^02[0-9]{7,8}$/,      // Seoul landline: 02-xxxx-xxxx
     /^0[3-6][0-9]{8,9}$/,  // Regional landline: 031-xxx-xxxx
     /^01[0-9]{8,9}$/,      // Mobile: 010-xxxx-xxxx
-    /^050[0-9]{7,8}$/,     // Internet phone: 050-xxxx-xxxx
-    /^070[0-9]{7,8}$/      // Internet phone: 070-xxxx-xxxx
+    /^050[0-9]{7,9}$/,     // Internet phone: 050-xxx-xxxx (10-12 digits)
+    /^070[0-9]{7,9}$/      // Internet phone: 070-xxx-xxxx (10-12 digits)
   ];
   
   return validPatterns.some(pattern => pattern.test(cleanPhone));
@@ -197,8 +197,8 @@ export function isValidApiKey(key: string): boolean {
   // Allow various API key formats:
   // - Alphanumeric (original)
   // - With special characters (common in JWT, OAuth tokens, etc.)
-  // - Minimum length 16 characters (more flexible)
-  const minLength = process.env.API_KEY_MIN_LENGTH ? parseInt(process.env.API_KEY_MIN_LENGTH) : 16;
+  // - Minimum length 6 characters (flexible for ATALK API)
+  const minLength = process.env.API_KEY_MIN_LENGTH ? parseInt(process.env.API_KEY_MIN_LENGTH) : 6;
   
   if (key.length < minLength) return false;
   
