@@ -9,10 +9,83 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
 import multer from "multer";
 import { atalkArsService } from "./arsService";
+import {
+  maskPhoneNumber,
+  maskName,
+  maskApiData,
+  checkRateLimit,
+  generateRequestId,
+  getHttpStatusFromServiceResponse,
+  secureLog,
+  LogLevel
+} from "./securityUtils";
+
+// ============================================
+// CSRF Protection Middleware
+// ============================================
+
+/**
+ * Basic CSRF protection using Origin/Referer validation
+ * For session-based authentication routes
+ */
+function csrfProtection(req: any, res: any, next: any) {
+  // Skip CSRF for GET/HEAD/OPTIONS requests
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+
+  const origin = req.get('Origin');
+  const referer = req.get('Referer');
+  const host = req.get('Host');
+  
+  // Development mode: Allow all origins
+  if (process.env.NODE_ENV === 'development') {
+    return next();
+  }
+
+  // Production mode: Strict validation
+  const allowedOrigins = [
+    `https://${host}`,
+    `http://${host}`, // For local development
+    process.env.ALLOWED_ORIGIN
+  ].filter(Boolean);
+
+  const isValidOrigin = origin && allowedOrigins.some(allowed => origin === allowed);
+  const isValidReferer = referer && allowedOrigins.some(allowed => referer.startsWith(allowed));
+
+  if (!isValidOrigin && !isValidReferer) {
+    try {
+      // Safer logging with direct masking to prevent any potential errors
+      secureLog(LogLevel.WARNING, 'CSRF', 'CSRF protection triggered', {
+        method: req.method || 'unknown',
+        origin: origin || 'none',
+        referer: referer || 'none', 
+        host: host || 'none',
+        userAgent: req.get('User-Agent') || 'none'
+      });
+    } catch (logError) {
+      // Fallback logging if masking fails
+      console.error('CSRF logging error:', logError);
+    }
+    
+    return res.status(403).json({ 
+      message: 'Invalid request origin. CSRF protection activated.' 
+    });
+  }
+
+  next();
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
+
+  // Apply CSRF protection to sensitive routes
+  app.use('/api/auth/login', csrfProtection);
+  app.use('/api/register', csrfProtection);
+  app.use('/api/customers', csrfProtection);
+  app.use('/api/users', csrfProtection);
+  app.use('/api/ars', csrfProtection);
 
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
@@ -20,7 +93,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user;
       res.json(user);
     } catch (error) {
-      console.error("Error fetching user:", error);
+      secureLog(LogLevel.ERROR, 'AUTH', 'Error fetching user', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
@@ -35,23 +110,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const user = await storage.getUserByUsername(username);
-      console.log(`Auth login attempt for username: ${username}, user found: ${!!user}`);
+      const requestId = generateRequestId();
+      
+      secureLog(LogLevel.INFO, 'AUTH', 'Login attempt', {
+        username: maskName(username),
+        userFound: !!user
+      }, requestId);
       
       if (!user) {
-        console.log(`Auth User not found: ${username}`);
+        secureLog(LogLevel.WARNING, 'AUTH', 'User not found', {
+          username: maskName(username)
+        }, requestId);
         return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.password || '');
-      console.log(`Auth Password validation for ${username}: ${isValidPassword}`);
       
       if (!isValidPassword) {
-        console.log(`Auth Invalid password for user: ${username}`);
+        secureLog(LogLevel.WARNING, 'AUTH', 'Invalid password', {
+          username: maskName(username)
+        }, requestId);
         return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
       }
 
       // Store user in session
-      console.log(`Auth Setting session for user: ${user.id}`);
+      secureLog(LogLevel.INFO, 'AUTH', 'Setting session', {
+        userId: user.id
+      }, requestId);
+      
       (req.session as any).userId = user.id;
       (req.session as any).user = {
         id: user.id,
@@ -65,11 +151,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Save session explicitly and wait for completion
       req.session.save((err) => {
         if (err) {
-          console.error('Auth Session save error:', err);
+          secureLog(LogLevel.ERROR, 'AUTH', 'Session save error', {
+            error: err.message
+          }, requestId);
           return res.status(500).json({ message: "세션 저장 중 오류가 발생했습니다." });
         }
         
-        console.log('Auth Session saved successfully');
+        secureLog(LogLevel.INFO, 'AUTH', 'Session saved successfully', {
+          userId: user.id
+        }, requestId);
+        
         res.json({ 
           message: "로그인 성공",
           user: {
@@ -83,7 +174,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       });
     } catch (error) {
-      console.error("Auth Login error:", error);
+      secureLog(LogLevel.ERROR, 'AUTH', 'Login error', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "로그인 중 오류가 발생했습니다." });
     }
   });
@@ -133,7 +226,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         user: userResponse
       });
     } catch (error) {
-      console.error('Registration error:', error);
+      secureLog(LogLevel.ERROR, 'AUTH', 'Registration error', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: '회원가입 중 오류가 발생했습니다.' });
     }
   });
@@ -144,7 +239,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getDashboardStats();
       res.json(stats);
     } catch (error) {
-      console.error("Error fetching dashboard stats:", error);
+      secureLog(LogLevel.ERROR, 'DASHBOARD', 'Error fetching dashboard stats', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch dashboard statistics" });
     }
   });
@@ -155,7 +252,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customers = await storage.getRecentCustomers(limit);
       res.json(customers);
     } catch (error) {
-      console.error("Error fetching recent customers:", error);
+      secureLog(LogLevel.ERROR, 'DASHBOARD', 'Error fetching recent customers', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch recent customers" });
     }
   });
@@ -183,7 +282,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(result);
     } catch (error) {
-      console.error("Error fetching customers:", error);
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error fetching customers', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch customers" });
     }
   });
@@ -262,7 +363,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.send(csvWithBOM);
 
     } catch (error) {
-      console.error("Error exporting customers to CSV:", error);
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error exporting customers to CSV', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "고객 데이터 내보내기에 실패했습니다." });
     }
   });
@@ -275,7 +378,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(customer);
     } catch (error) {
-      console.error("Error fetching customer:", error);
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error fetching customer', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch customer" });
     }
   });
@@ -298,7 +403,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
       }
-      console.error("Error creating customer:", error);
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error creating customer', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to create customer" });
     }
   });
@@ -333,7 +440,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
           });
         } catch (error) {
-          console.error(`Error updating customer ${customerId}:`, error);
+          secureLog(LogLevel.ERROR, 'CUSTOMER', `Error updating customer ${maskPhoneNumber(customerId)}`, {
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
           // 개별 고객 업데이트 실패는 전체 작업을 중단하지 않음
           results.push({ id: customerId, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
         }
@@ -346,7 +455,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customers: results 
       });
     } catch (error) {
-      console.error("Error batch updating customers:", error);
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error batch updating customers', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to batch update customers" });
     }
   });
@@ -369,7 +480,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
       }
-      console.error("Error updating customer:", error);
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error updating customer', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to update customer" });
     }
   });
@@ -710,7 +823,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const users = await storage.getUsers();
       res.json(users);
     } catch (error) {
-      console.error("Error fetching users:", error);
+      secureLog(LogLevel.ERROR, 'USER', 'Error fetching users', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
@@ -720,7 +835,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const counselors = await storage.getCounselors();
       res.json(counselors);
     } catch (error) {
-      console.error("Error fetching counselors:", error);
+      secureLog(LogLevel.ERROR, 'USER', 'Error fetching counselors', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to fetch counselors" });
     }
   });
@@ -752,7 +869,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.status(201).json(newUser);
     } catch (error) {
-      console.error("Error creating user:", error);
+      secureLog(LogLevel.ERROR, 'USER', 'Error creating user', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       res.status(500).json({ message: "Failed to create user" });
     }
   });
@@ -1172,48 +1291,170 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 새로운 단순화된 ARS API 3가지 핵심 기능
   // ============================================
 
-  // 1. 발송리스트 추가
+  // 1. 발송리스트 추가 (🔥 PHP 보안 패턴 적용)
   app.post('/api/ars/add-calllist', isAuthenticated, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
     try {
       const { sendNumber, targetPhone } = req.body;
-
-      if (!sendNumber || !targetPhone) {
-        return res.status(400).json({ message: '발신번호와 수신번호는 필수입니다.' });
+      
+      // 🔥 Rate Limiting 체크
+      const clientId = req.ip || 'unknown';
+      const rateLimitResult = checkRateLimit(clientId, 30, 60); // 분당 30회 제한
+      
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', 'Rate limit exceeded for add-calllist', {
+          clientId,
+          requestId,
+          remaining: rateLimitResult.remaining
+        });
+        
+        return res.status(429).json({ 
+          success: false,
+          message: '⚠️ 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+          retryAfter: rateLimitResult.resetTime
+        });
       }
 
+      // 🔥 필수 필드 검증
+      if (!sendNumber || !targetPhone) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '필수 필드 누락', {
+          requestId,
+          hasSendNumber: !!sendNumber,
+          hasTargetPhone: !!targetPhone
+        });
+        
+        return res.status(400).json({ 
+          success: false,
+          message: '발신번호와 수신번호는 필수입니다.' 
+        });
+      }
+
+      secureLog(LogLevel.INFO, 'ARS_ROUTE', '발송리스트 추가 요청', {
+        requestId,
+        sendNumber: maskPhoneNumber(sendNumber),
+        targetPhone: maskPhoneNumber(targetPhone),
+        userId: req.user?.id
+      });
+
       const result = await atalkArsService.addCallList(sendNumber, targetPhone);
+      
+      // 🔥 PHP 패턴: success 상태에 따른 HTTP 상태 코드 설정
+      const httpStatus = getHttpStatusFromServiceResponse(result);
 
       if (result.success) {
-        // 활동 로그 기록
+        // 활동 로그 기록 (🔥 PII 보호)
         await storage.createActivityLog({
           userId: req.user.id,
           customerId: null,
           action: "ars_calllist_added",
-          description: `발송리스트 추가 완료 (발신번호: ${sendNumber})`,
+          description: `발송리스트 추가 완료 (발신번호: ${maskPhoneNumber(sendNumber)})`,
+        });
+        
+        secureLog(LogLevel.INFO, 'ARS_ROUTE', '발송리스트 추가 성공', {
+          requestId,
+          historyKey: result.historyKey
+        });
+      } else {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '발송리스트 추가 실패', {
+          requestId,
+          message: result.message
         });
       }
 
-      res.json(result);
+      return res.status(httpStatus).json({
+        ...result,
+        requestId
+      });
+      
     } catch (error) {
-      console.error("Error adding call list:", error);
-      res.status(500).json({ 
+      secureLog(LogLevel.ERROR, 'ARS_ROUTE', '발송리스트 추가 예외', {
+        requestId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      return res.status(500).json({ 
         success: false, 
-        message: error instanceof Error ? error.message : '발송리스트 추가 중 오류가 발생했습니다.' 
+        message: error instanceof Error ? error.message : '발송리스트 추가 중 오류가 발생했습니다.',
+        requestId
       });
     }
   });
 
-  // 2. 음성파일 업로드
+  // 2. 음성파일 업로드 (🔥 PHP 보안 패턴 적용)
   app.post('/api/ars/upload-audio', isAuthenticated, upload.single('audioFile'), async (req: any, res) => {
+    const requestId = generateRequestId();
+    
     try {
-      if (!req.file) {
-        return res.status(400).json({ message: '음성파일을 선택해주세요.' });
+      // 🔥 Rate Limiting 체크 (파일 업로드는 더 제한적으로)
+      const clientId = req.ip || 'unknown';
+      const rateLimitResult = checkRateLimit(`upload_${clientId}`, 5, 60); // 분당 5회 제한
+      
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', 'Rate limit exceeded for audio upload', {
+          clientId,
+          requestId
+        });
+        
+        return res.status(429).json({ 
+          success: false,
+          message: '⚠️ 파일 업로드 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+          retryAfter: rateLimitResult.resetTime
+        });
       }
+      
+      // 🔥 파일 검증
+      if (!req.file) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '음성파일 없음', { requestId });
+        return res.status(400).json({ 
+          success: false,
+          message: '음성파일을 선택해주세요.' 
+        });
+      }
+      
+      // 🔥 파일 크기 및 형식 검증
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (req.file.size > maxSize) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '파일 크기 초과', {
+          requestId,
+          fileSize: req.file.size,
+          maxSize
+        });
+        
+        return res.status(400).json({ 
+          success: false,
+          message: '파일 크기가 너무 큽니다. 10MB 이하의 파일을 업로드해주세요.' 
+        });
+      }
+      
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/mp3'];
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '지원하지 않는 파일 형식', {
+          requestId,
+          mimetype: req.file.mimetype
+        });
+        
+        return res.status(400).json({ 
+          success: false,
+          message: '지원하지 않는 파일 형식입니다. WAV 또는 MP3 파일을 업로드해주세요.' 
+        });
+      }
+
+      secureLog(LogLevel.INFO, 'ARS_ROUTE', '음성파일 업로드 시작', {
+        requestId,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        mimetype: req.file.mimetype,
+        userId: req.user?.id
+      });
 
       const result = await atalkArsService.uploadAudioFile(
         req.file.buffer,
         req.file.originalname
       );
+      
+      // 🔥 PHP 패턴: success 상태에 따른 HTTP 상태 코드 설정
+      const httpStatus = getHttpStatusFromServiceResponse(result);
 
       if (result.success) {
         // 활동 로그 기록
@@ -1223,24 +1464,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
           action: "ars_audio_uploaded",
           description: `음성파일 업로드 완료: ${req.file.originalname}`,
         });
+        
+        secureLog(LogLevel.INFO, 'ARS_ROUTE', '음성파일 업로드 성공', {
+          requestId,
+          fileName: req.file.originalname
+        });
+      } else {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '음성파일 업로드 실패', {
+          requestId,
+          fileName: req.file.originalname,
+          message: result.message
+        });
       }
 
-      res.json(result);
+      return res.status(httpStatus).json({
+        ...result,
+        requestId,
+        fileName: req.file.originalname,
+        fileSize: req.file.size
+      });
+      
     } catch (error) {
-      console.error("Error uploading audio:", error);
-      res.status(500).json({ 
+      secureLog(LogLevel.ERROR, 'ARS_ROUTE', '음성파일 업로드 예외', {
+        requestId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      return res.status(500).json({ 
         success: false, 
-        message: error instanceof Error ? error.message : '음성파일 업로드 중 오류가 발생했습니다.' 
+        message: error instanceof Error ? error.message : '음성파일 업로드 중 오류가 발생했습니다.',
+        requestId
       });
     }
   });
 
-  // 3. 캠페인 시작
+  // 3. 캠페인 시작 (🔥 PHP 보안 패턴 적용)
   app.post('/api/ars/start-campaign', isAuthenticated, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
     try {
+      // 🔥 Rate Limiting 체크
+      const clientId = req.ip || 'unknown';
+      const rateLimitResult = checkRateLimit(`campaign_${clientId}`, 10, 60); // 분당 10회 제한
+      
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', 'Rate limit exceeded for campaign start', {
+          clientId,
+          requestId
+        });
+        
+        return res.status(429).json({ 
+          success: false,
+          message: '⚠️ 캠페인 시작 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+          retryAfter: rateLimitResult.resetTime
+        });
+      }
+      
       const { historyKey } = req.body;
+      
+      // 🔥 필수 필드 검증
+      if (!historyKey) {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', 'historyKey 누락', { requestId });
+        return res.status(400).json({ 
+          success: false,
+          message: 'historyKey는 필수입니다.' 
+        });
+      }
+      
+      secureLog(LogLevel.INFO, 'ARS_ROUTE', '캠페인 시작 요청', {
+        requestId,
+        historyKey,
+        userId: req.user?.id
+      });
 
       const result = await atalkArsService.startCampaign(historyKey);
+      
+      // 🔥 PHP 패턴: success 상태에 따른 HTTP 상태 코드 설정
+      const httpStatus = getHttpStatusFromServiceResponse(result);
+      
+      if (result.success) {
+        secureLog(LogLevel.INFO, 'ARS_ROUTE', '캠페인 시작 성공', {
+          requestId,
+          historyKey
+        });
+      } else {
+        secureLog(LogLevel.WARNING, 'ARS_ROUTE', '캠페인 시작 실패', {
+          requestId,
+          historyKey,
+          message: result.message
+        });
+      }
+      
+      return res.status(httpStatus).json({
+        ...result,
+        requestId
+      });
 
       if (result.success) {
         // 활동 로그 기록
