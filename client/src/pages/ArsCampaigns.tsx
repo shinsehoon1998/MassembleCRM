@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Phone, Users, Calendar, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Phone, Users, Calendar, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock, Play, RotateCcw, TestTube, StopCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ export default function ArsCampaigns() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
+  const [selectedCampaignIds, setSelectedCampaignIds] = useState<number[]>([]);
   const [bulkCampaignData, setBulkCampaignData] = useState({
     campaignName: "",
     scenarioId: "marketing_consent",
@@ -254,6 +256,88 @@ export default function ArsCampaigns() {
       default: return "알 수 없음";
     }
   };
+
+  // 캠페인 선택 관련 핸들러
+  const handleSelectCampaign = (campaignId: number, checked: boolean) => {
+    if (checked) {
+      setSelectedCampaignIds(prev => [...prev, campaignId]);
+    } else {
+      setSelectedCampaignIds(prev => prev.filter(id => id !== campaignId));
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedCampaignIds((campaigns as any[])?.map(c => c.id) || []);
+    } else {
+      setSelectedCampaignIds([]);
+    }
+  };
+
+  const isAllSelected = selectedCampaignIds.length > 0 && selectedCampaignIds.length === (campaigns as any[])?.length;
+  const isIndeterminate = selectedCampaignIds.length > 0 && selectedCampaignIds.length < ((campaigns as any[])?.length || 0);
+
+  // 선택된 캠페인 액션 뮤테이션들
+  const startSelectedCampaignsMutation = useMutation({
+    mutationFn: async (campaignIds: number[]) => {
+      return apiRequest("POST", "/api/ars/campaigns/start-multiple", { campaignIds });
+    },
+    onSuccess: () => {
+      toast({
+        title: "성공",
+        description: `${selectedCampaignIds.length}개 캠페인이 시작되었습니다.`,
+      });
+      setSelectedCampaignIds([]);
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resendSelectedCampaignsMutation = useMutation({
+    mutationFn: async (campaignIds: number[]) => {
+      return apiRequest("POST", "/api/ars/campaigns/resend-multiple", { campaignIds });
+    },
+    onSuccess: () => {
+      toast({
+        title: "성공",
+        description: `${selectedCampaignIds.length}개 캠페인 재발송이 시작되었습니다.`,
+      });
+      setSelectedCampaignIds([]);
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const testSendMutation = useMutation({
+    mutationFn: async (campaignIds: number[]) => {
+      return apiRequest("POST", "/api/ars/campaigns/test-send", { campaignIds });
+    },
+    onSuccess: () => {
+      toast({
+        title: "성공",
+        description: "테스트 발송이 완료되었습니다.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "오류",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   if (campaignsLoading) {
     return (
@@ -495,83 +579,468 @@ export default function ArsCampaigns() {
         </Card>
       </div>
 
-      {/* 캠페인 목록 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>최근 캠페인</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!(campaigns as any[])?.length ? (
-            <div className="text-center py-8">
-              <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600">아직 생성된 캠페인이 없습니다.</p>
-              <p className="text-sm text-gray-500 mt-1">신규 캠페인 버튼을 클릭하여 첫 캠페인을 만들어보세요.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {(campaigns as any[])?.map((campaign: any) => (
-                <div key={campaign.id} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg" data-testid={`text-campaign-name-${campaign.id}`}>
-                        {campaign.name}
-                      </h3>
-                      <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                        <span data-testid={`text-campaign-date-${campaign.id}`}>
-                          <Calendar className="h-4 w-4 inline mr-1" />
-                          {new Date(campaign.createdAt).toLocaleDateString('ko-KR')}
-                        </span>
-                        <span data-testid={`text-campaign-targets-${campaign.id}`}>
-                          <Users className="h-4 w-4 inline mr-1" />
-                          대상: {campaign.targetCount}명
-                        </span>
-                        <span data-testid={`text-campaign-phone-${campaign.id}`}>
-                          <Phone className="h-4 w-4 inline mr-1" />
-                          {campaign.sendNumber}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge 
-                        variant={campaign.status === 'completed' ? 'default' : campaign.status === 'stopped' ? 'destructive' : 'secondary'} 
-                        data-testid={`badge-campaign-status-${campaign.id}`}
-                      >
-                        {campaign.status === 'completed' ? '완료' : 
-                         campaign.status === 'stopped' ? '중단됨' : 
-                         campaign.status === 'sent' ? '발송중' : '진행중'}
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleViewCampaignDetail(campaign)}
-                        data-testid={`button-view-campaign-${campaign.id}`}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        상세보기
-                      </Button>
-                      {(campaign.status === 'sent' || campaign.status === 'pending') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (confirm(`캠페인 "${campaign.name}"을(를) 종료하시겠습니까?\n진행 중인 발송이 중단됩니다.`)) {
-                              stopCampaignMutation.mutate(campaign.id);
-                            }
-                          }}
-                          disabled={stopCampaignMutation.isPending}
-                          className="text-red-600 hover:text-red-700 hover:border-red-300"
-                          data-testid={`button-stop-campaign-${campaign.id}`}
+      {/* 캠페인 목록 테이블 */}
+      <div className="grid grid-cols-12 gap-6">
+        {/* 캠페인 목록 (왼쪽 8컬럼) */}
+        <div className="col-span-8">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-lg">캠페인 목록</CardTitle>
+                <div className="text-sm text-gray-500">
+                  {selectedCampaignIds.length > 0 && (
+                    <span className="mr-4" data-testid="text-selected-count">
+                      선택됨: {selectedCampaignIds.length}개
+                    </span>
+                  )}
+                  총 {(campaigns as any[])?.length || 0}개
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {!(campaigns as any[])?.length ? (
+                <div className="text-center py-12">
+                  <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-600">아직 생성된 캠페인이 없습니다.</p>
+                  <p className="text-sm text-gray-500 mt-1">신규 캠페인 버튼을 클릭하여 첫 캠페인을 만들어보세요.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-100 border-b-2 border-gray-200">
+                      <TableHead className="w-12 h-10 font-semibold text-gray-700 text-center">
+                        <Checkbox
+                          checked={isAllSelected}
+                          onCheckedChange={handleSelectAll}
+                          data-testid="checkbox-select-all"
+                          className="data-[state=indeterminate]:bg-blue-600 data-[state=indeterminate]:text-white"
+                          {...(isIndeterminate ? { 'data-state': 'indeterminate' } : {})}
+                        />
+                      </TableHead>
+                      <TableHead className="min-w-[200px] h-10 font-semibold text-gray-700">캠페인이름</TableHead>
+                      <TableHead className="w-[100px] h-10 font-semibold text-gray-700 text-center">상태</TableHead>
+                      <TableHead className="w-[100px] h-10 font-semibold text-gray-700 text-center">전화수(건)</TableHead>
+                      <TableHead className="w-[80px] h-10 font-semibold text-gray-700 text-center">발송</TableHead>
+                      <TableHead className="w-[120px] h-10 font-semibold text-gray-700 text-center">진행율</TableHead>
+                      <TableHead className="w-[100px] h-10 font-semibold text-gray-700 text-center">작업</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(campaigns as any[])?.map((campaign: any) => {
+                      const isSelected = selectedCampaignIds.includes(campaign.id);
+                      const completionRate = campaign.totalCount > 0 ? 
+                        ((campaign.completedCount || 0) / campaign.totalCount) * 100 : 0;
+                      
+                      return (
+                        <TableRow 
+                          key={campaign.id} 
+                          className={`hover:bg-gray-50/50 border-b border-gray-100 h-12 ${isSelected ? 'bg-blue-50/50 border-blue-200' : ''}`}
+                          data-testid={`row-campaign-${campaign.id}`}
                         >
-                          <i className="fas fa-stop mr-1"></i>
-                          {stopCampaignMutation.isPending ? '종료 중...' : '종료'}
-                        </Button>
-                      )}
+                          <TableCell>
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={(checked) => handleSelectCampaign(campaign.id, checked as boolean)}
+                              data-testid={`checkbox-campaign-${campaign.id}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium text-gray-900" data-testid={`text-campaign-name-${campaign.id}`}>
+                                {campaign.name}
+                              </div>
+                              <div className="text-xs text-gray-500" data-testid={`text-campaign-date-${campaign.id}`}>
+                                {new Date(campaign.createdAt).toLocaleDateString('ko-KR')} 생성
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={campaign.status === 'completed' ? 'default' : 
+                                      campaign.status === 'stopped' ? 'destructive' : 
+                                      campaign.status === 'sent' ? 'secondary' : 'outline'} 
+                              data-testid={`badge-campaign-status-${campaign.id}`}
+                              className="text-xs"
+                            >
+                              {campaign.status === 'completed' ? '완료' : 
+                               campaign.status === 'stopped' ? '중단됨' : 
+                               campaign.status === 'sent' ? '발송중' : '대기'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center" data-testid={`text-campaign-targets-${campaign.id}`}>
+                            <div className="font-medium">{campaign.targetCount}</div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="text-sm font-medium text-gray-600">
+                              {campaign.sentCount || 0}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <Progress 
+                                value={completionRate} 
+                                className="h-2"
+                                data-testid={`progress-campaign-${campaign.id}`}
+                              />
+                              <div className="text-xs text-center text-gray-600">
+                                {Math.round(completionRate)}%
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleViewCampaignDetail(campaign)}
+                                data-testid={`button-view-campaign-${campaign.id}`}
+                                className="h-7 px-2 text-xs"
+                              >
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                              {(campaign.status === 'sent' || campaign.status === 'pending') && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (confirm(`캠페인 "${campaign.name}"을(를) 종료하시겠습니까?`)) {
+                                      stopCampaignMutation.mutate(campaign.id);
+                                    }
+                                  }}
+                                  disabled={stopCampaignMutation.isPending}
+                                  className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  data-testid={`button-stop-campaign-${campaign.id}`}
+                                >
+                                  <StopCircle className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 캠페인 설정 패널 (우쪽 4컬럼) */}
+        <div className="col-span-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">캠페인인원보정</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div>
+                  <Label htmlFor="campaign-type" className="text-sm font-medium">
+                    회차명 <span className="text-red-500">*</span>
+                  </Label>
+                  <Select>
+                    <SelectTrigger className="mt-1" data-testid="select-campaign-type">
+                      <SelectValue placeholder="우선순위를선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="high">높음</SelectItem>
+                      <SelectItem value="medium">보통</SelectItem>
+                      <SelectItem value="low">낮음</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="campaign-name" className="text-sm font-medium">
+                    캠페인명 <span className="text-red-500">*</span>
+                  </Label>
+                  <Select>
+                    <SelectTrigger className="mt-1" data-testid="select-campaign-name">
+                      <SelectValue placeholder="우선순위를선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="marketing">마케팅</SelectItem>
+                      <SelectItem value="notice">공지</SelectItem>
+                      <SelectItem value="survey">설문</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">
+                    방식 <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex gap-4 mt-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="digital" data-testid="checkbox-digital" />
+                      <Label htmlFor="digital" className="text-sm">Digital 사용</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="ivr" data-testid="checkbox-ivr" />
+                      <Label htmlFor="ivr" className="text-sm">IVR 연결</Label>
                     </div>
                   </div>
                 </div>
-              ))}
+
+                <div>
+                  <Label htmlFor="retry-time" className="text-sm font-medium">
+                    무응답 시간 <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input 
+                      id="retry-time" 
+                      placeholder="40" 
+                      className="w-20" 
+                      data-testid="input-retry-time"
+                    />
+                    <span className="text-sm text-gray-600">(초)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="retry-count" className="text-sm font-medium">
+                    최대 응시 호수 <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Input 
+                      id="retry-count" 
+                      placeholder="1" 
+                      className="w-20" 
+                      data-testid="input-retry-count"
+                    />
+                    <span className="text-sm text-gray-600">최대 : 1</span>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">
+                    발송리스트 <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="flex gap-2 mt-1">
+                    <Select>
+                      <SelectTrigger className="flex-1" data-testid="select-send-list">
+                        <SelectValue placeholder="선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">전체</SelectItem>
+                        <SelectItem value="group">그룹별</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button variant="outline" size="sm" data-testid="button-refresh-list">
+                      업로드
+                    </Button>
+                    <Button variant="outline" size="sm" data-testid="button-upload-list">
+                      추가업로드
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">발송번호</Label>
+                  <Button 
+                    variant="outline" 
+                    className="w-full mt-1 justify-start" 
+                    data-testid="button-send-number"
+                  >
+                    발송번호관리
+                  </Button>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">
+                    발송일자 <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <Input 
+                      placeholder="2025-09-04" 
+                      data-testid="input-send-date-start"
+                    />
+                    <Input 
+                      placeholder="2030-12-31" 
+                      data-testid="input-send-date-end"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">발송시간</Label>
+                  <div className="grid grid-cols-4 gap-2 mt-1">
+                    <Input placeholder="00" data-testid="input-send-hour" />
+                    <Input placeholder="00" data-testid="input-send-minute" />
+                    <Input placeholder="23" data-testid="input-send-hour-end" />
+                    <Input placeholder="59" data-testid="input-send-minute-end" />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">수신거부 설정</Label>
+                  <Select>
+                    <SelectTrigger className="mt-1" data-testid="select-reject-setting">
+                      <SelectValue placeholder="사용안함" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">사용안함</SelectItem>
+                      <SelectItem value="use">사용함</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">음성설정</Label>
+                  <div className="flex gap-2 mt-1">
+                    <Select>
+                      <SelectTrigger className="flex-1" data-testid="select-voice-setting">
+                        <SelectValue placeholder="사용안함" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">사용안함</SelectItem>
+                        <SelectItem value="use">사용함</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button variant="outline" size="sm" data-testid="button-preview">
+                      미리듣기
+                    </Button>
+                    <Button variant="outline" size="sm" data-testid="button-upload-voice">
+                      음성업로드
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">최대재시도 <span className="text-blue-500">ⓘ</span></Label>
+                  <Input 
+                    placeholder="5" 
+                    className="mt-1" 
+                    data-testid="input-max-retry"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">재발신설정 <span className="text-blue-500">ⓘ</span></Label>
+                  <div className="bg-gray-50 rounded-md p-3 mt-1">
+                    <div className="grid grid-cols-5 gap-2 text-xs">
+                      <div className="font-medium">항목</div>
+                      <div className="font-medium">재발송 주기(분)</div>
+                      <div className="font-medium">재발송 횟수</div>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2 mt-2 text-xs">
+                      <div>무응답</div>
+                      <div>0</div>
+                      <div>0</div>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2 mt-1 text-xs">
+                      <div>통화중</div>
+                      <div>0</div>
+                      <div>0</div>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2 mt-1 text-xs">
+                      <div>사서함</div>
+                      <div>0</div>
+                      <div>0</div>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2 mt-1 text-xs">
+                      <div>일반실패</div>
+                      <div>0</div>
+                      <div>0</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* 하단 액션 버튼 그룹 */}
+      <Card className="mt-6">
+        <CardContent className="py-4">
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              {selectedCampaignIds.length > 0 ? (
+                <span data-testid="text-action-info">
+                  {selectedCampaignIds.length}개 캠페인이 선택되었습니다.
+                </span>
+              ) : (
+                <span>캠페인을 선택하여 일괄 작업을 수행하세요.</span>
+              )}
             </div>
-          )}
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (selectedCampaignIds.length === 0) {
+                    toast({
+                      title: "선택 필요",
+                      description: "테스트 발송할 캠페인을 선택해주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  testSendMutation.mutate(selectedCampaignIds);
+                }}
+                disabled={testSendMutation.isPending}
+                data-testid="button-test-send"
+              >
+                <TestTube className="h-4 w-4 mr-2" />
+                {testSendMutation.isPending ? "테스트 중..." : "테스트발송"}
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedCampaignIds.length === 0) {
+                    toast({
+                      title: "선택 필요",
+                      description: "시작할 캠페인을 선택해주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  if (confirm(`선택된 ${selectedCampaignIds.length}개 캠페인을 시작하시겠습니까?`)) {
+                    startSelectedCampaignsMutation.mutate(selectedCampaignIds);
+                  }
+                }}
+                disabled={startSelectedCampaignsMutation.isPending}
+                data-testid="button-start-campaigns"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {startSelectedCampaignsMutation.isPending ? "시작 중..." : "캠페인시작"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (selectedCampaignIds.length === 0) {
+                    toast({
+                      title: "선택 필요",
+                      description: "재발송할 캠페인을 선택해주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  if (confirm(`선택된 ${selectedCampaignIds.length}개 캠페인을 재발송하시겠습니까?`)) {
+                    resendSelectedCampaignsMutation.mutate(selectedCampaignIds);
+                  }
+                }}
+                disabled={resendSelectedCampaignsMutation.isPending}
+                data-testid="button-resend-campaigns"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {resendSelectedCampaignsMutation.isPending ? "재발송 중..." : "재발송"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // 선택 해제
+                  setSelectedCampaignIds([]);
+                  toast({
+                    title: "선택 해제",
+                    description: "모든 캠페인 선택이 해제되었습니다.",
+                  });
+                }}
+                data-testid="button-clear-selection"
+              >
+                선택해제
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

@@ -117,6 +117,7 @@ export interface IStorage {
   // ARS operations
   getArsCampaigns(): Promise<ArsCampaign[]>;
   createArsCampaign(campaign: InsertArsCampaign): Promise<ArsCampaign>;
+  updateArsCampaign(id: number, updates: Partial<InsertArsCampaign>): Promise<ArsCampaign | undefined>;
   getArsSendLogs(params: {
     campaignId?: number;
     customerId?: string;
@@ -604,6 +605,16 @@ export class DatabaseStorage implements IStorage {
       .from(arsCampaigns)
       .where(eq(arsCampaigns.id, id));
     return campaign;
+  }
+
+  // ARS 캠페인 업데이트
+  async updateArsCampaign(id: number, updates: Partial<InsertArsCampaign>): Promise<ArsCampaign | undefined> {
+    const [updated] = await db
+      .update(arsCampaigns)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(arsCampaigns.id, id))
+      .returning();
+    return updated;
   }
 
   // ARS 발송 로그 조회

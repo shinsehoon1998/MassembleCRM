@@ -172,11 +172,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customer.phone || '',
         customer.secondaryPhone || '',
         customer.birthDate || '',
-        customer.gender === 'male' ? '남성' : customer.gender === 'female' ? '여성' : '',
+        customer.gender === 'M' ? '남성' : customer.gender === 'F' ? '여성' : '',
         customer.monthlyIncome ? customer.monthlyIncome.toString() : '',
         customer.status || '',
         customer.assignedUser?.name || '',
-        customer.sharedUser?.name || '',
+        customer.secondaryUser?.name || '',
         customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ko-KR') : '',
         customer.memo || ''
       ]);
@@ -185,9 +185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const csvData = [csvHeaders, ...csvRows];
       
       // CSV 형식으로 변환
-      const csv = Papa.unparse(csvData, {
-        encoding: 'utf8'
-      });
+      const csv = Papa.unparse(csvData);
 
       // UTF-8 BOM 추가 (Excel에서 한글 깨짐 방지)
       const csvWithBOM = '\uFEFF' + csv;
@@ -968,9 +966,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // CSV 형식으로 변환
       const csvData = [csvHeaders, sampleData];
-      const csv = Papa.unparse(csvData, {
-        encoding: 'utf8'
-      });
+      const csv = Papa.unparse(csvData);
 
       // UTF-8 BOM 추가 (Excel에서 한글 깨짐 방지)
       const csvWithBOM = '\uFEFF' + csv;
@@ -991,7 +987,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
         cb(null, true);
       } else {
-        cb(new Error('CSV 파일만 업로드 가능합니다.'), false);
+        cb(new Error('CSV 파일만 업로드 가능합니다.') as any, false);
       }
     },
     limits: {
@@ -1011,8 +1007,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const csvData = req.file.buffer.toString('utf8');
       const parsed = Papa.parse(csvData, {
         header: true,
-        skipEmptyLines: true,
-        encoding: 'utf8'
+        skipEmptyLines: true
       });
 
       if (parsed.errors.length > 0) {
@@ -1048,11 +1043,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // 성별 변환
           let gender = row['성별'];
           if (gender === '남성' || gender === '남' || gender === 'M' || gender === 'male') {
-            gender = 'male';
+            gender = 'M';
           } else if (gender === '여성' || gender === '여' || gender === 'F' || gender === 'female') {
-            gender = 'female';
+            gender = 'F';
           } else {
-            gender = null;
+            gender = 'N';
           }
 
           // 상태 변환
@@ -1069,7 +1064,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             secondaryPhone: row['보조연락처'] || null,
             birthDate: row['생년월일'] || null,
             gender: gender,
-            monthlyIncome: row['월소득'] ? parseInt(row['월소득'].toString().replace(/[^0-9]/g, '')) : null,
+            monthlyIncome: row['월소득'] ? row['월소득'].toString().replace(/[^0-9]/g, '') : null,
             status: status,
             memo: row['메모'] || null
           };
@@ -1315,28 +1310,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ARS 캠페인 생성
-  app.post('/api/ars/campaigns', isAuthenticated, async (req: any, res) => {
+  // ARS 캠페인 동기화 (아톡비즈에서 가져오기)
+  app.get('/api/ars/campaigns/sync', isAuthenticated, async (req: any, res) => {
     try {
-      const campaignData = insertArsCampaignSchema.parse(req.body);
-      const newCampaign = await storage.createArsCampaign(campaignData);
+      console.log(`[ARS 동기화] 사용자 ${req.user.name}(${req.user.id})가 캠페인 동기화를 요청했습니다.`);
+      
+      const syncResult = await atalkArsService.syncSendingLists();
       
       // 활동 로그 기록
       await storage.createActivityLog({
         userId: req.user.id,
         customerId: null,
-        action: "ars_campaign_created",
-        description: `ARS 캠페인 "${newCampaign.name}" 생성`,
+        action: "ars_campaigns_synced",
+        description: `아톡비즈 캠페인 동기화 - ${syncResult.message}`,
       });
       
-      res.status(201).json(newCampaign);
+      res.json(syncResult);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid data", errors: error.errors });
-      }
-      console.error("Error creating ARS campaign:", error);
+      console.error("Error syncing ARS campaigns:", error);
+      
+      // 에러 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaigns_sync_failed",
+        description: `아톡비즈 캠페인 동기화 실패: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
+      
       res.status(500).json({ 
-        message: error instanceof Error ? error.message : "ARS 캠페인 생성 중 오류가 발생했습니다." 
+        success: false,
+        message: error instanceof Error ? error.message : "캠페인 동기화 중 오류가 발생했습니다.",
+        syncedCount: 0,
+        failedCount: 0,
+        totalCount: 0
+      });
+    }
+  });
+
+  // 수동 캠페인명 설정 (동기화 대안책)
+  app.post('/api/ars/campaigns/manual', isAuthenticated, async (req: any, res) => {
+    try {
+      const { campaignName, scenarioId = 'marketing_consent' } = req.body;
+      
+      if (!campaignName || typeof campaignName !== 'string' || campaignName.trim().length === 0) {
+        return res.status(400).json({ 
+          success: false,
+          message: '캠페인명을 입력해주세요.' 
+        });
+      }
+
+      const trimmedName = campaignName.trim();
+      
+      // 기존 캠페인 확인
+      const existingCampaigns = await storage.getArsCampaigns();
+      const existingCampaign = existingCampaigns.find(c => c.name === trimmedName);
+      
+      if (existingCampaign) {
+        return res.status(400).json({ 
+          success: false,
+          message: '동일한 이름의 캠페인이 이미 존재합니다.' 
+        });
+      }
+
+      // 수동 캠페인 생성
+      const newCampaign = await storage.createArsCampaign({
+        name: trimmedName,
+        scenarioId,
+        status: 'manual',
+        totalCount: 0,
+        successCount: 0,
+        failedCount: 0,
+        createdBy: req.user.id,
+      });
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaign_created_manual",
+        description: `수동 ARS 캠페인 "${newCampaign.name}" 생성`,
+      });
+      
+      res.status(201).json({
+        success: true,
+        message: '수동 캠페인이 생성되었습니다.',
+        campaign: newCampaign
+      });
+    } catch (error) {
+      console.error("Error creating manual ARS campaign:", error);
+      
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaign_manual_failed",
+        description: `수동 ARS 캠페인 생성 실패: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
+      
+      res.status(500).json({ 
+        success: false,
+        message: error instanceof Error ? error.message : "수동 캠페인 생성 중 오류가 발생했습니다." 
       });
     }
   });
@@ -1467,6 +1539,266 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 다중 캠페인 시작
+  app.post('/api/ars/campaigns/start-multiple', isAuthenticated, async (req: any, res) => {
+    try {
+      const { campaignIds } = req.body;
+
+      // 입력 검증
+      if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
+        return res.status(400).json({ message: '캠페인을 선택해주세요.' });
+      }
+
+      const validCampaignIds = campaignIds.filter(id => Number.isInteger(id) && id > 0);
+      if (validCampaignIds.length === 0) {
+        return res.status(400).json({ message: '유효한 캠페인 ID가 없습니다.' });
+      }
+
+      const results = [];
+      let successCount = 0;
+
+      for (const campaignId of validCampaignIds) {
+        try {
+          // 캠페인 정보 조회
+          const campaign = await storage.getArsCampaignById(campaignId);
+          if (!campaign) {
+            results.push({ campaignId, success: false, message: '캠페인을 찾을 수 없습니다.' });
+            continue;
+          }
+
+          // 캠페인 상태를 processing으로 변경
+          await storage.updateArsCampaign(campaignId, { status: 'processing' });
+          
+          results.push({ campaignId, success: true, message: '캠페인이 시작되었습니다.' });
+          successCount++;
+        } catch (error) {
+          console.error(`Campaign ${campaignId} start failed:`, error);
+          results.push({ 
+            campaignId, 
+            success: false, 
+            message: error instanceof Error ? error.message : '캠페인 시작에 실패했습니다.'
+          });
+        }
+      }
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaigns_started",
+        description: `${successCount}개 캠페인 일괄 시작`,
+      });
+
+      res.json({
+        success: successCount > 0,
+        message: `${successCount}개 캠페인이 시작되었습니다.`,
+        results,
+        successCount,
+        totalCount: validCampaignIds.length
+      });
+    } catch (error) {
+      console.error("Error starting multiple campaigns:", error);
+      res.status(500).json({ 
+        success: false,
+        message: error instanceof Error ? error.message : "캠페인 일괄 시작 중 오류가 발생했습니다."
+      });
+    }
+  });
+
+  // 다중 캠페인 재발송
+  app.post('/api/ars/campaigns/resend-multiple', isAuthenticated, async (req: any, res) => {
+    try {
+      const { campaignIds } = req.body;
+
+      // 입력 검증
+      if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
+        return res.status(400).json({ message: '캠페인을 선택해주세요.' });
+      }
+
+      const validCampaignIds = campaignIds.filter(id => Number.isInteger(id) && id > 0);
+      if (validCampaignIds.length === 0) {
+        return res.status(400).json({ message: '유효한 캠페인 ID가 없습니다.' });
+      }
+
+      const results = [];
+      let successCount = 0;
+
+      for (const campaignId of validCampaignIds) {
+        try {
+          // 캠페인 정보 조회
+          const campaign = await storage.getArsCampaignById(campaignId);
+          if (!campaign) {
+            results.push({ campaignId, success: false, message: '캠페인을 찾을 수 없습니다.' });
+            continue;
+          }
+
+          // 실패한 발송 로그들 조회
+          const failedLogs = await storage.getArsSendLogs({
+            campaignId,
+            status: 'failed',
+            page: 1,
+            limit: 1000
+          });
+
+          if (failedLogs.logs.length === 0) {
+            results.push({ campaignId, success: false, message: '재발송할 실패 기록이 없습니다.' });
+            continue;
+          }
+
+          // 실패한 고객들에게 재발송
+          let resendCount = 0;
+          for (const log of failedLogs.logs) {
+            try {
+              const result = await atalkArsService.sendSingleArs(
+                log.customerId,
+                process.env.ATALK_SENDER_NUMBER || '01012345678',
+                campaign.scenarioId
+              );
+              if (result.success) {
+                resendCount++;
+              }
+            } catch (resendError) {
+              console.error(`Resend failed for customer ${log.customerId}:`, resendError);
+            }
+          }
+
+          // 캠페인 상태 업데이트
+          await storage.updateArsCampaign(campaignId, { status: 'processing' });
+
+          results.push({ 
+            campaignId, 
+            success: true, 
+            message: `${resendCount}개 실패 건 재발송 시작`,
+            resendCount 
+          });
+          successCount++;
+        } catch (error) {
+          console.error(`Campaign ${campaignId} resend failed:`, error);
+          results.push({ 
+            campaignId, 
+            success: false, 
+            message: error instanceof Error ? error.message : '캠페인 재발송에 실패했습니다.'
+          });
+        }
+      }
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaigns_resent",
+        description: `${successCount}개 캠페인 일괄 재발송`,
+      });
+
+      res.json({
+        success: successCount > 0,
+        message: `${successCount}개 캠페인 재발송이 시작되었습니다.`,
+        results,
+        successCount,
+        totalCount: validCampaignIds.length
+      });
+    } catch (error) {
+      console.error("Error resending multiple campaigns:", error);
+      res.status(500).json({ 
+        success: false,
+        message: error instanceof Error ? error.message : "캠페인 일괄 재발송 중 오류가 발생했습니다."
+      });
+    }
+  });
+
+  // 다중 캠페인 테스트 발송
+  app.post('/api/ars/campaigns/test-send', isAuthenticated, async (req: any, res) => {
+    try {
+      const { campaignIds } = req.body;
+
+      // 입력 검증
+      if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
+        return res.status(400).json({ message: '캠페인을 선택해주세요.' });
+      }
+
+      const validCampaignIds = campaignIds.filter(id => Number.isInteger(id) && id > 0);
+      if (validCampaignIds.length === 0) {
+        return res.status(400).json({ message: '유효한 캠페인 ID가 없습니다.' });
+      }
+
+      // 테스트 발송 대상 번호 (관리자 번호 등)
+      const testPhoneNumber = process.env.TEST_PHONE_NUMBER || req.user.phone;
+      if (!testPhoneNumber) {
+        return res.status(400).json({ message: '테스트 발송 번호가 설정되지 않았습니다.' });
+      }
+
+      const results = [];
+      let successCount = 0;
+
+      for (const campaignId of validCampaignIds) {
+        try {
+          // 캠페인 정보 조회
+          const campaign = await storage.getArsCampaignById(campaignId);
+          if (!campaign) {
+            results.push({ campaignId, success: false, message: '캠페인을 찾을 수 없습니다.' });
+            continue;
+          }
+
+          // 테스트 고객 생성 (임시)
+          const testCustomerId = `test_${Date.now()}_${campaignId}`;
+          
+          // 테스트 발송 실행
+          const result = await atalkArsService.sendSingleArs(
+            testCustomerId,
+            process.env.ATALK_SENDER_NUMBER || '01012345678',
+            campaign.scenarioId
+          );
+
+          if (result.success) {
+            results.push({ 
+              campaignId, 
+              success: true, 
+              message: `테스트 발송 완료 (${testPhoneNumber})`,
+              historyKey: result.historyKey
+            });
+            successCount++;
+          } else {
+            results.push({ 
+              campaignId, 
+              success: false, 
+              message: result.message
+            });
+          }
+        } catch (error) {
+          console.error(`Campaign ${campaignId} test send failed:`, error);
+          results.push({ 
+            campaignId, 
+            success: false, 
+            message: error instanceof Error ? error.message : '테스트 발송에 실패했습니다.'
+          });
+        }
+      }
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_test_send",
+        description: `${successCount}개 캠페인 테스트 발송 (${testPhoneNumber})`,
+      });
+
+      res.json({
+        success: successCount > 0,
+        message: `${successCount}개 캠페인 테스트 발송이 완료되었습니다.`,
+        results,
+        successCount,
+        totalCount: validCampaignIds.length,
+        testPhoneNumber
+      });
+    } catch (error) {
+      console.error("Error test sending multiple campaigns:", error);
+      res.status(500).json({ 
+        success: false,
+        message: error instanceof Error ? error.message : "캠페인 테스트 발송 중 오류가 발생했습니다."
+      });
+    }
+  });
+
   // ARS 시나리오 관련 API
   
   // 시나리오 목록 조회
@@ -1484,7 +1816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/ars/scenarios', isAuthenticated, async (req, res) => {
     try {
       const validatedData = insertArsScenarioSchema.parse(req.body);
-      validatedData.createdBy = req.user?.username || 'unknown';
+      validatedData.createdBy = (req as any).user?.name || 'unknown';
       
       const scenario = await storage.createArsScenario(validatedData);
       res.json(scenario);
@@ -1543,7 +1875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('WAV 또는 MP3 파일만 업로드 가능합니다.'), false);
+        cb(new Error('WAV 또는 MP3 파일만 업로드 가능합니다.') as any, false);
       }
     },
     limits: {
@@ -1586,12 +1918,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 2. 아톡 음원 업로드 (옵션)
       if (uploadToAtalk === 'true') {
         try {
-          atalkResult = await atalkArsService.uploadAudioFile({
-            fileName: audioFile.originalname,
-            campaignName: scenario.name,
-            audioType: 'ars',
-            mimeType: audioFile.mimetype
-          }, audioFile.buffer);
+          atalkResult = await atalkArsService.uploadAudioFile(
+            audioFile.buffer,
+            audioFile.originalname,
+            scenario.name,
+            'ars',
+            audioFile.mimetype
+          );
 
           console.log(`[음원 업로드] 아톡비즈 연동 성공: ${atalkResult.fileName}`);
         } catch (atalkError) {
@@ -1636,8 +1969,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     } catch (error) {
       console.error('Failed to create scenario with audio:', error);
-      if (error.message?.includes('WAV 또는 MP3')) {
-        return res.status(400).json({ message: error.message });
+      if ((error as Error).message?.includes('WAV 또는 MP3')) {
+        return res.status(400).json({ message: (error as Error).message });
       }
       res.status(500).json({ message: '시나리오 생성 중 오류가 발생했습니다.' });
     }
@@ -1831,7 +2164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           results.push({ customerId, success: true, mapping });
         } catch (error) {
           console.error(`Failed to add customer ${customerId} to group:`, error);
-          results.push({ customerId, success: false, error: error.message });
+          results.push({ customerId, success: false, error: (error as Error).message });
         }
       }
 

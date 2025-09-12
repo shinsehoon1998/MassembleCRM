@@ -741,54 +741,124 @@ export class AtalkArsService {
     try {
       console.log(`[아톡 API] 발송리스트 동기화 시작`);
       
+      // API 환경 설정 검증
+      if (!ATALK_API_CONFIG.company || !ATALK_API_CONFIG.userId) {
+        throw new Error('아톡 API 설정이 올바르지 않습니다. ATALK_COMPANY_ID와 ATALK_USER_ID를 확인하세요.');
+      }
+      
       const response = await this.makeApiCall('/calllist/list', {
         company: ATALK_API_CONFIG.company,
         user_id: ATALK_API_CONFIG.userId,
       });
       
+      // 응답 데이터 검증
+      if (!response || typeof response !== 'object') {
+        throw new Error('아톡 API에서 올바르지 않은 응답을 받았습니다.');
+      }
+      
       // 올바른 응답 구조 사용 (result.data)
-      const sendingLists = response.data || [];
+      const sendingLists = Array.isArray(response.data) ? response.data : [];
       console.log(`[아톡 API] 발송리스트 조회 완료: ${sendingLists.length}개`);
+      
+      if (sendingLists.length === 0) {
+        console.log(`[아톡 API] 동기화할 발송리스트가 없습니다.`);
+        return {
+          success: true,
+          syncedCount: 0,
+          failedCount: 0,
+          totalCount: 0,
+          message: '동기화할 발송리스트가 없습니다.',
+        };
+      }
       
       let syncedCount = 0;
       let failedCount = 0;
+      const processedCampaigns = new Set<string>(); // 중복 처리 방지
       
       // 발송리스트를 로컬 DB와 동기화
       for (const listItem of sendingLists) {
         try {
+          // 데이터 검증
+          if (!listItem || typeof listItem !== 'object') {
+            console.warn(`[동기화] 잘못된 리스트 아이템:`, listItem);
+            failedCount++;
+            continue;
+          }
+          
+          const campaignName = listItem.text_campaign_name;
+          if (!campaignName || typeof campaignName !== 'string' || campaignName.trim().length === 0) {
+            console.warn(`[동기화] 캠페인명이 없는 리스트 아이템:`, listItem);
+            failedCount++;
+            continue;
+          }
+          
+          const trimmedCampaignName = campaignName.trim();
+          
+          // 중복 처리 방지
+          if (processedCampaigns.has(trimmedCampaignName)) {
+            console.log(`[동기화] 이미 처리된 캠페인 건너뜀: ${trimmedCampaignName}`);
+            continue;
+          }
+          processedCampaigns.add(trimmedCampaignName);
+          
           // 기존 캠페인 찾기 또는 새로 생성
           const existingCampaign = await db
             .select()
             .from(arsCampaigns)
-            .where(eq(arsCampaigns.name, listItem.text_campaign_name))
+            .where(eq(arsCampaigns.name, trimmedCampaignName))
             .limit(1);
           
           if (existingCampaign.length === 0) {
             // 새 캠페인 생성
             const payload = {
-              name: listItem.text_campaign_name || '아톡 동기화 캠페인',
+              name: trimmedCampaignName,
               scenarioId: 'marketing_consent',
               status: 'synced' as const,
-              totalCount: 1,
-              successCount: listItem.status === 'completed' ? 1 : 0,
-              failedCount: listItem.status === 'failed' ? 1 : 0,
-              createdBy: 'system'
+              totalCount: listItem.total_count || 1,
+              successCount: listItem.success_count || (listItem.status === 'completed' ? 1 : 0),
+              failedCount: listItem.failed_count || (listItem.status === 'failed' ? 1 : 0),
+              historyKey: listItem.history_key,
+              createdBy: 'system',
+              startedAt: listItem.started_at ? new Date(listItem.started_at) : null,
+              completedAt: listItem.completed_at ? new Date(listItem.completed_at) : null,
             } satisfies typeof arsCampaigns.$inferInsert;
+            
             await db.insert(arsCampaigns).values(payload);
+            console.log(`[동기화] 새 캠페인 생성: ${trimmedCampaignName}`);
             syncedCount++;
           } else {
             // 기존 캠페인 업데이트
+            const updates: Partial<typeof arsCampaigns.$inferInsert> = {
+              status: 'synced',
+              historyKey: listItem.history_key || existingCampaign[0].historyKey,
+              updatedAt: new Date(),
+            };
+            
+            // 카운트 업데이트 (더 정확한 데이터가 있으면 사용)
+            if (listItem.total_count && listItem.total_count > (existingCampaign[0].totalCount || 0)) {
+              updates.totalCount = listItem.total_count;
+            }
+            if (listItem.success_count && listItem.success_count > (existingCampaign[0].successCount || 0)) {
+              updates.successCount = listItem.success_count;
+            }
+            if (listItem.failed_count && listItem.failed_count > (existingCampaign[0].failedCount || 0)) {
+              updates.failedCount = listItem.failed_count;
+            }
+            
+            // 시간 정보 업데이트
+            if (listItem.started_at && !existingCampaign[0].startedAt) {
+              updates.startedAt = new Date(listItem.started_at);
+            }
+            if (listItem.completed_at && !existingCampaign[0].completedAt) {
+              updates.completedAt = new Date(listItem.completed_at);
+            }
+            
             await db
               .update(arsCampaigns)
-              .set({
-                status: 'synced',
-                totalCount: (existingCampaign[0].totalCount || 0) + 1,
-                successCount: listItem.status === 'completed' ? 
-                  (existingCampaign[0].successCount || 0) + 1 : existingCampaign[0].successCount,
-                failedCount: listItem.status === 'failed' ? 
-                  (existingCampaign[0].failedCount || 0) + 1 : existingCampaign[0].failedCount,
-              })
+              .set(updates)
               .where(eq(arsCampaigns.id, existingCampaign[0].id));
+              
+            console.log(`[동기화] 기존 캠페인 업데이트: ${trimmedCampaignName}`);
             syncedCount++;
           }
         } catch (error) {
