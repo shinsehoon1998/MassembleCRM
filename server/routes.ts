@@ -1574,18 +1574,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 3. 로컬 음원 파일 정보 저장
+      // 3. 로컬 음원 파일 정보 저장 (실제 스키마 필드명에 정확히 맞춤)
       const audioRecord = await storage.createAudioFile({
         id: `audio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         scenarioId: scenario.id,
-        fileName: audioFile.originalname,
-        originalName: audioFile.originalname,
+        fileName: audioFile.originalname, // DB 컬럼: filename
+        originalName: audioFile.originalname, // DB 컬럼: original_filename
         fileSize: audioFile.size,
         mimeType: audioFile.mimetype,
         description: description.trim(),
-        atalkSynced: !!atalkResult,
-        atalkFileName: atalkResult?.fileName || null,
-        createdBy: req.user?.name || 'unknown'
+        storageUrl: `/uploads/audio/${audioFile.originalname}`, // DB 컬럼: storage_path
+        atalkStatus: !!atalkResult ? 'synced' : 'pending', // DB 컬럼: atalk_status
+        atalkResponse: atalkResult ? JSON.stringify(atalkResult) : null, // DB 컬럼: atalk_response
+        uploadedBy: req.user?.name || 'unknown' // DB 컬럼: uploaded_by
       });
 
       // 활동 로그 기록
