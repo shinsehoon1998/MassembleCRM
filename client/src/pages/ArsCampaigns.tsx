@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,12 +27,35 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+// 사용자 제안 솔루션에 따른 ARS 상태 타입 정의
+interface ArsState {
+  callListAdded: boolean;
+  campaignId: string | null;
+  totalTargets: number;
+  successCount: number;
+  audioUploaded: boolean;
+  campaignStarted: boolean;
+  errorMessage: string | null;
+}
+
 export default function ArsCampaigns() {
   const { toast } = useToast();
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<number[]>([]);
+  
+  // 사용자 제안에 따른 ARS 상태 관리 통합
+  const [arsState, setArsState] = useState<ArsState>({
+    callListAdded: false,
+    campaignId: null,
+    totalTargets: 0,
+    successCount: 0,
+    audioUploaded: false,
+    campaignStarted: false,
+    errorMessage: null,
+  });
+  
   const [bulkCampaignData, setBulkCampaignData] = useState({
     campaignName: "",
     scenarioId: "", // 동적으로 첫 번째 시나리오로 설정
@@ -68,6 +91,24 @@ export default function ArsCampaigns() {
     enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
   });
 
+  // 사용자 제안 솔루션에 따른 상태 초기화 함수
+  const initArsVariables = useCallback(() => {
+    setArsState({
+      callListAdded: false,
+      campaignId: null,
+      totalTargets: 0,
+      successCount: 0,
+      audioUploaded: false,
+      campaignStarted: false,
+      errorMessage: null,
+    });
+  }, []);
+  
+  // ARS 상태 업데이트를 위한 안전한 함수
+  const updateArsState = useCallback((updates: Partial<ArsState>) => {
+    setArsState(prev => ({ ...prev, ...updates }));
+  }, []);
+  
   // 시나리오 로드 완료 시 첫 번째 시나리오로 자동 설정
   useEffect(() => {
     if (scenarios && (scenarios as any).length > 0 && !bulkCampaignData.scenarioId) {
@@ -110,7 +151,7 @@ export default function ArsCampaigns() {
     enabled: !!selectedCampaign?.id && showDetailModal,
   });
 
-  // 대량 ARS 발송
+  // 사용자 제안 솔루션에 따른 대량 ARS 발송 개선
   const sendBulkArsMutation = useMutation({
     mutationFn: async (data: {
       customerIds?: string[];
@@ -118,13 +159,45 @@ export default function ArsCampaigns() {
       campaignName: string;
       scenarioId: string;
     }) => {
-      return apiRequest("POST", "/api/ars/send-bulk", data);
+      // 발송 시작 시 상태 초기화
+      initArsVariables();
+      
+      try {
+        const rawResponse = await apiRequest("POST", "/api/ars/send-bulk", data);
+        
+        // Response 객체를 JSON으로 파싱
+        const response = rawResponse?.json ? await rawResponse.json() : rawResponse;
+        
+        // API 응답에서 안전하게 데이터 추출 (옵셔널 체이닝)
+        const campaignId = response?.campaignId || null;
+        const totalTargets = response?.totalTargets || 0;
+        const successCount = response?.successCount || 0;
+        const audioUploaded = response?.audioUploaded || false;
+        const campaignStarted = response?.campaignStarted || false;
+        
+        // 사용자 제안에 따른 변수 업데이트
+        updateArsState({
+          campaignId,
+          totalTargets,
+          successCount,
+          audioUploaded,
+          campaignStarted,
+          callListAdded: true,
+          errorMessage: null,
+        });
+        
+        return response;
+      } catch (error) {
+        // 에러 발생 시 상태 업데이트
+        updateArsState({
+          errorMessage: error instanceof Error ? error.message : '알 수 없는 오류',
+        });
+        throw error;
+      }
     },
     onSuccess: (response: any) => {
-      const successCount = response.successCount || 0;
-      const totalTargets = response.totalTargets || 0;
-      const campaignStarted = response.campaignStarted || false;
-      const audioUploaded = response.audioUploaded || false;
+      // ARS 상태에서 안전하게 값 가져오기
+      const { totalTargets, successCount, audioUploaded, campaignStarted } = arsState;
       
       let description = `총 ${totalTargets}명 중 ${successCount}명 발송 성공`;
       if (audioUploaded) {
@@ -135,28 +208,38 @@ export default function ArsCampaigns() {
       }
       
       toast({
-        title: response.success ? "발송 성공" : "발송 실패",
-        description: response.message || description,
-        variant: response.success ? "default" : "destructive",
+        title: response?.success ? "발송 성공" : "발송 실패",
+        description: response?.message || description,
+        variant: response?.success ? "default" : "destructive",
       });
       
-      if (response.success) {
+      if (response?.success) {
         setShowBulkModal(false);
+        // 폼 데이터 초기화 시 안전한 시나리오 설정
         setBulkCampaignData({
           campaignName: "",
-          scenarioId: scenarios && (scenarios as any).length > 0 ? (scenarios as any)[0].id : "", // 동적 첫 번째 시나리오
+          scenarioId: scenarios && (scenarios as any)?.length > 0 ? (scenarios as any)[0]?.id || "" : "",
           targetType: "all",
           groupId: "",
           targetCount: 0,
         });
+        // 캠페인 성공 후 ARS 상태 초기화
+        initArsVariables();
       }
       
       queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
     },
     onError: (error: Error) => {
+      // 에러 발생 시 상태 복원 및 사용자 알림
+      updateArsState({
+        errorMessage: error.message,
+        callListAdded: false,
+        campaignStarted: false,
+      });
+      
       toast({
         title: "발송 오류",
-        description: error.message,
+        description: `ARS 발송 중 오류가 발생했습니다: ${error.message}`,
         variant: "destructive",
       });
     },
@@ -207,7 +290,13 @@ export default function ArsCampaigns() {
   });
 
   const handleBulkSend = () => {
-    if (!bulkCampaignData.campaignName) {
+    // 사용자 제안 솔루션에 따른 안전한 입력 검증
+    const campaignName = bulkCampaignData?.campaignName?.trim();
+    const scenarioId = bulkCampaignData?.scenarioId?.trim();
+    const targetType = bulkCampaignData?.targetType;
+    const groupId = bulkCampaignData?.groupId?.trim();
+    
+    if (!campaignName) {
       toast({
         title: "입력 오류",
         description: "캠페인명을 입력해주세요.",
@@ -215,8 +304,17 @@ export default function ArsCampaigns() {
       });
       return;
     }
+    
+    if (!scenarioId) {
+      toast({
+        title: "시나리오 선택 필요",
+        description: "ARS 시나리오를 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    if (bulkCampaignData.targetType === "group" && !bulkCampaignData.groupId) {
+    if (targetType === "group" && !groupId) {
       toast({
         title: "그룹 선택 필요",
         description: "발송할 고객 그룹을 선택해주세요.",
@@ -225,26 +323,26 @@ export default function ArsCampaigns() {
       return;
     }
 
-    // 발송 데이터 준비 - 기본 필드만 포함
+    // 사용자 제안 솔루션에 따른 안전한 데이터 준비
     const sendData: {
       campaignName: string;
       scenarioId: string;
       groupId?: string;
       customerIds?: string[];
     } = {
-      campaignName: bulkCampaignData.campaignName,
-      scenarioId: bulkCampaignData.scenarioId,
+      campaignName,
+      scenarioId,
     };
 
-    // targetType에 따라 정확히 하나의 필드만 설정
-    if (bulkCampaignData.targetType === "group" && bulkCampaignData.groupId) {
+    // targetType에 따라 정확히 하나의 필드만 설정 (옵셔널 체이닝 적용)
+    if (targetType === "group" && groupId) {
       // 그룹 기반 발송 - groupId만 설정
-      sendData.groupId = bulkCampaignData.groupId;
-      console.log(`[ARS] 그룹 기반 발송: ${bulkCampaignData.groupId}`, sendData);
-    } else if (bulkCampaignData.targetType === "all") {
-      // 전체 마케팅 동의 고객 - customerIds만 설정
-      const targets = (marketingTargets as any)?.targets || [];
-      if (!targets.length) {
+      sendData.groupId = groupId;
+      console.log(`[ARS] 그룹 기반 발송: ${groupId}`, sendData);
+    } else if (targetType === "all") {
+      // 전체 마케팅 동의 고객 - customerIds만 설정 (안전한 배열 처리)
+      const targets = (marketingTargets as any)?.targets;
+      if (!Array.isArray(targets) || targets.length === 0) {
         toast({
           title: "대상 없음",
           description: "마케팅 동의한 고객이 없습니다.",
@@ -252,7 +350,20 @@ export default function ArsCampaigns() {
         });
         return;
       }
-      const customerIds = targets.map((customer: any) => customer.id);
+      // 안전한 customer ID 추출
+      const customerIds = targets
+        .map((customer: any) => customer?.id)
+        .filter(Boolean); // null/undefined 제거
+        
+      if (customerIds.length === 0) {
+        toast({
+          title: "대상 데이터 오류",
+          description: "유효한 고객 ID가 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       sendData.customerIds = customerIds;
       console.log(`[ARS] 전체 고객 발송: ${customerIds.length}명`, sendData);
     } else {
@@ -264,9 +375,14 @@ export default function ArsCampaigns() {
       return;
     }
 
+    // 사용자 제안에 따른 강화된 검증 로직
+    const hasGroupId = Boolean(sendData.groupId);
+    const hasCustomerIds = Boolean(sendData.customerIds && sendData.customerIds.length > 0);
+    
     // 검증: groupId와 customerIds가 동시에 설정되지 않았는지 확인
-    if (sendData.groupId && sendData.customerIds) {
+    if (hasGroupId && hasCustomerIds) {
       console.error("[ARS] 오류: groupId와 customerIds가 동시에 설정됨", sendData);
+      updateArsState({ errorMessage: "그룹 ID와 고객 ID가 동시에 설정됨" });
       toast({
         title: "설정 오류",
         description: "시스템 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.",
@@ -276,7 +392,8 @@ export default function ArsCampaigns() {
     }
 
     // 검증: 최소 하나는 설정되어야 함
-    if (!sendData.groupId && (!sendData.customerIds || sendData.customerIds.length === 0)) {
+    if (!hasGroupId && !hasCustomerIds) {
+      updateArsState({ errorMessage: "발송 대상이 선택되지 않음" });
       toast({
         title: "대상 선택 오류",
         description: "발송 대상을 선택해주세요.",
@@ -285,7 +402,25 @@ export default function ArsCampaigns() {
       return;
     }
     
-    sendBulkArsMutation.mutate(sendData);
+    // 발송 실행 전 상태 로깅 (디버깅용)
+    console.log(`[ARS] 발송 데이터 검증 완료:`, {
+      campaignName,
+      scenarioId,
+      targetType,
+      targetCount: hasGroupId ? 
+        (groupCustomers as any)?.length || 0 : 
+        (marketingTargets as any)?.count || 0
+    });
+    
+    // 안전한 발송 실행
+    try {
+      sendBulkArsMutation.mutate(sendData);
+    } catch (error) {
+      console.error('[ARS] 발송 실행 중 예외 발생:', error);
+      updateArsState({ 
+        errorMessage: error instanceof Error ? error.message : '발송 실행 실패'
+      });
+    }
   };
 
   const handleViewCampaignDetail = (campaign: any) => {
@@ -355,24 +490,62 @@ export default function ArsCampaigns() {
 
   const resendSelectedCampaignsMutation = useMutation({
     mutationFn: async (campaignIds: number[]) => {
-      return apiRequest("POST", "/api/ars/campaigns/resend-multiple", { campaignIds });
+      try {
+        // 안전한 배열 검증
+        if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
+          throw new Error('재발송할 캠페인이 선택되지 않았습니다');
+        }
+        
+        // 유효한 ID만 필터링
+        const validIds = campaignIds.filter(id => id && id > 0);
+        if (validIds.length === 0) {
+          throw new Error('유효한 캠페인 ID가 없습니다');
+        }
+        
+        const rawResponse = await apiRequest("POST", "/api/ars/campaigns/resend-multiple", { 
+          campaignIds: validIds 
+        });
+        
+        // Response 객체를 JSON으로 파싱
+        const response = rawResponse?.json ? await rawResponse.json() : rawResponse;
+        
+        // 재발송 성공 시 상태 업데이트
+        if (response?.success) {
+          updateArsState({
+            errorMessage: null,
+            successCount: (response.successCount || 0) + (arsState.successCount || 0), // 기존 성공수에 추가
+            totalTargets: response.totalResendCount || arsState.totalTargets,
+          });
+        }
+        
+        return response;
+      } catch (error) {
+        updateArsState({
+          errorMessage: error instanceof Error ? error.message : '캠페인 재발송 실패',
+        });
+        throw error;
+      }
     },
     onSuccess: (response: any) => {
-      const successCount = response.successCount || 0;
-      const totalResendCount = response.totalResendCount || 0;
+      const successCount = response?.successCount || 0;
+      const totalResendCount = response?.totalResendCount || 0;
+      const isSuccess = response?.success !== false;
       
       toast({
-        title: "재발송 완료",
-        description: `${successCount}개 캠페인 재발송 완료, 총 ${totalResendCount}명에게 전송되었습니다.`,
-        variant: response.success ? "default" : "destructive",
+        title: isSuccess ? "재발송 완료" : "재발송 부분 실패",
+        description: isSuccess ? 
+          `${successCount}개 캠페인 재발송 완료, 총 ${totalResendCount}명에게 전송되었습니다.` :
+          `재발송 중 일부 실패: ${response?.message || '알 수 없는 오류'}`,
+        variant: isSuccess ? "default" : "destructive",
       });
       setSelectedCampaignIds([]);
       queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
     },
     onError: (error: Error) => {
+      const errorMessage = error?.message || '알 수 없는 오류';
       toast({
         title: "재발송 실패",
-        description: error.message,
+        description: `캠페인 재발송 중 문제가 발생했습니다: ${errorMessage}`,
         variant: "destructive",
       });
     },
@@ -380,18 +553,52 @@ export default function ArsCampaigns() {
 
   const testSendMutation = useMutation({
     mutationFn: async (campaignIds: number[]) => {
-      return apiRequest("POST", "/api/ars/campaigns/test-send", { campaignIds });
+      try {
+        // 안전한 배열 검증
+        if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
+          throw new Error('테스트할 캠페인이 선택되지 않았습니다');
+        }
+        
+        // 유효한 ID만 필터링
+        const validIds = campaignIds.filter(id => id && id > 0);
+        if (validIds.length === 0) {
+          throw new Error('유효한 캠페인 ID가 없습니다');
+        }
+        
+        const rawResponse = await apiRequest("POST", "/api/ars/campaigns/test-send", { 
+          campaignIds: validIds 
+        });
+        
+        // Response 객체를 JSON으로 파싱
+        const response = rawResponse?.json ? await rawResponse.json() : rawResponse;
+        
+        // 테스트 성공 시 상태 업데이트
+        if (response?.success) {
+          updateArsState({ 
+            errorMessage: null 
+          });
+        }
+        
+        return response;
+      } catch (error) {
+        updateArsState({
+          errorMessage: error instanceof Error ? error.message : '테스트 발송 실패',
+        });
+        throw error;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
+      const message = response?.message || "테스트 발송이 완료되었습니다.";
       toast({
-        title: "성공",
-        description: "테스트 발송이 완료되었습니다.",
+        title: "테스트 성공",
+        description: message,
       });
     },
     onError: (error: Error) => {
+      const errorMessage = error?.message || '알 수 없는 오류';
       toast({
-        title: "오류",
-        description: error.message,
+        title: "테스트 발송 오류",
+        description: `테스트 발송 중 문제가 발생했습니다: ${errorMessage}`,
         variant: "destructive",
       });
     },
