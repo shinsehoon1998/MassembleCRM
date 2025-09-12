@@ -404,8 +404,11 @@ export class AtalkArsService {
       }
       
       // 🔥 입력값 정제 (PHP 패턴)
+      // 발신번호는 숫자만 허용 (아톡비즈 API 요구사항)
+      const cleanSendNumber = sendNumber.replace(/[^0-9]/g, '');
+      
       const callData: AddCallListRequest = {
-        text_send_no: sanitizeInput(sendNumber),
+        text_send_no: cleanSendNumber,
         company: sanitizeInput(config.company),
         user_id: sanitizeInput(config.userId),
         text_campaign_name: sanitizeInput(config.campaignName),
@@ -416,6 +419,8 @@ export class AtalkArsService {
       secureLog(LogLevel.INFO, 'ARS', '발송리스트 추가 시도', {
         originalPhone: maskPhoneNumber(targetPhone),
         cleanPhone: maskPhoneNumber(cleanPhone),
+        originalSendNumber: sendNumber,
+        cleanSendNumber: cleanSendNumber,
         requestData: maskApiData(callData)
       }, requestId);
       
