@@ -41,8 +41,23 @@ function validateAndSecureConfig() {
 // 환경변수 설정을 lazy하게 처리
 let ATALK_API_CONFIG: any = null;
 
+// 🔥 환경변수 검증 상태 캐시 (중복 체크 방지)
+let ENV_VALIDATION_RESULT: { success: boolean; error?: string; config?: any } | null = null;
+
 function getAtalkConfig() {
-  if (!ATALK_API_CONFIG) {
+  // 이미 검증된 결과가 있으면 재사용
+  if (ENV_VALIDATION_RESULT) {
+    if (!ENV_VALIDATION_RESULT.success) {
+      throw new Error(ENV_VALIDATION_RESULT.error);
+    }
+    if (!ATALK_API_CONFIG) {
+      ATALK_API_CONFIG = ENV_VALIDATION_RESULT.config;
+    }
+    return ATALK_API_CONFIG;
+  }
+
+  // 🔥 첫 번째 호출시에만 검증 수행
+  try {
     const secureConfig = validateAndSecureConfig();
     
     // 🔥 실제 ATALK API 설정만 사용
@@ -54,11 +69,60 @@ function getAtalkConfig() {
       campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
       page: 'A'
     };
+    
+    // 검증 성공 결과 캐시
+    ENV_VALIDATION_RESULT = {
+      success: true,
+      config: ATALK_API_CONFIG
+    };
+    
+    return ATALK_API_CONFIG;
+  } catch (error) {
+    // 🔥 검증 실패 결과 캐시하여 반복적인 에러 방지
+    const errorMessage = error instanceof Error ? error.message : 'Unknown configuration error';
+    ENV_VALIDATION_RESULT = {
+      success: false,
+      error: errorMessage
+    };
+    throw error;
   }
-  return ATALK_API_CONFIG;
 }
 
-console.log('✅ ARS API 보안 설정 완료 - 환경변수 검증 및 HTTPS 보안 적용');
+// 🔥 PII 보호 유틸리티 함수
+function maskPhoneNumber(phone: string): string {
+  if (!phone || phone.length < 8) return '***';
+  
+  const cleaned = phone.replace(/[^0-9]/g, '');
+  if (cleaned.length <= 6) return '***';
+  
+  // 010-1234-5678 형태를 010****5678로 마스킹
+  if (cleaned.length >= 10) {
+    return `${cleaned.slice(0, 3)}****${cleaned.slice(-4)}`;
+  } else {
+    return `${cleaned.slice(0, 2)}****${cleaned.slice(-2)}`;
+  }
+}
+
+// 🔥 API 데이터 마스킹 함수
+function maskApiData(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  
+  const masked = { ...data };
+  
+  // 전화번호 관련 필드들 마스킹
+  if (masked.callee) masked.callee = maskPhoneNumber(masked.callee);
+  if (masked.phone) masked.phone = maskPhoneNumber(masked.phone);
+  if (masked.targetPhone) masked.targetPhone = maskPhoneNumber(masked.targetPhone);
+  if (masked.phoneNumber) masked.phoneNumber = maskPhoneNumber(masked.phoneNumber);
+  
+  // 기존 보안 마스킹 유지
+  if (masked.user_id) masked.user_id = '***';
+  if (masked.company) masked.company = '***';
+  
+  return masked;
+}
+
+console.log('✅ ARS API 보안 설정 완료 - 환경변수 검증, HTTPS 보안, PII 보호 적용');
 
 // API 응답 인터페이스
 export interface AtalkApiResponse {
@@ -111,10 +175,8 @@ export class AtalkArsService {
       body: JSON.stringify(data),
     };
 
-    // 로그에서 민감정보 마스킹
-    const maskedData = { ...data };
-    if (maskedData.user_id) maskedData.user_id = '***';
-    if (maskedData.company) maskedData.company = '***';
+    // 🔥 로그에서 민감정보 마스킹 (전화번호 포함)
+    const maskedData = maskApiData(data);
     
     console.log(`[ATALK API] ${method} ${endpoint}`, {
       endpoint,
@@ -217,9 +279,44 @@ export class AtalkArsService {
     targetPhone: string
   ): Promise<{ success: boolean; historyKey?: string; message: string }> {
     try {
-      const config = getAtalkConfig();
+      // 🔥 환경변수 검증을 먼저 수행하여 명확한 에러 메시지 제공
+      let config;
+      try {
+        config = getAtalkConfig();
+      } catch (configError) {
+        // 🔥 환경변수 문제일 때 구체적인 에러 메시지 제공
+        const errorMessage = configError instanceof Error ? configError.message : 'ATALK API 설정 오류';
+        console.error(`[ARS] 🚨 환경변수 설정 오류 - ${maskPhoneNumber(targetPhone)}:`, errorMessage);
+        
+        // 사용자에게 구체적인 해결 방법 안내
+        if (errorMessage.includes('필수 환경변수 누락')) {
+          return {
+            success: false,
+            message: '⚠️ ATALK API 설정이 완료되지 않았습니다. 관리자에게 문의하세요. (환경변수 누락)',
+          };
+        } else if (errorMessage.includes('HTTPS가 필수')) {
+          return {
+            success: false,
+            message: '🔒 보안 오류: 프로덕션 환경에서는 HTTPS 설정이 필요합니다.',
+          };
+        } else {
+          return {
+            success: false,
+            message: `🔧 ATALK API 설정 오류: ${errorMessage}`,
+          };
+        }
+      }
       
+      // 🔥 전화번호 형식 검증 강화
       const cleanPhone = targetPhone.replace(/[^0-9]/g, ''); // 숫자만
+      if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+        console.warn(`[ARS] ❌ 잘못된 전화번호 형식: ${maskPhoneNumber(targetPhone)} -> ${maskPhoneNumber(cleanPhone)} (길이: ${cleanPhone.length})`);
+        return {
+          success: false,
+          message: `❌ 잘못된 전화번호 형식: ${targetPhone} (10-11자리 숫자여야 함)`,
+        };
+      }
+      
       const callData: AddCallListRequest = {
         text_send_no: sendNumber,
         company: config.company,
@@ -229,15 +326,25 @@ export class AtalkArsService {
         callee: cleanPhone
       };
 
-      console.log(`[ARS] 발송리스트 추가: ${targetPhone} -> ${cleanPhone}`);
+      console.log(`[ARS] 📞 발송리스트 추가 시도: ${targetPhone} -> ${cleanPhone}`);
+      console.log(`[ARS] 🔧 요청 파라미터:`, {
+        text_send_no: sendNumber,
+        company: config.company.substring(0, 3) + '***', // 보안상 일부만 표시
+        user_id: config.userId.substring(0, 3) + '***',
+        text_campaign_name: config.campaignName,
+        text_page: config.page,
+        callee: cleanPhone
+      });
+      
       const response = await this.makeApiCall('/calllist/add', callData);
 
       // 🔥 수정: 더 정교한 성공/실패 판단 로직
-      console.log(`[ARS] 발송리스트 추가 응답:`, {
+      console.log(`[ARS] 📋 발송리스트 추가 응답 상세:`, {
         code: response.code,
         result: response.result,
         historyKey: response.history_key,
-        phone: cleanPhone
+        phone: cleanPhone,
+        fullResponse: JSON.stringify(response)
       });
 
       const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
@@ -248,25 +355,62 @@ export class AtalkArsService {
                               response.result.toLowerCase().includes('success');
 
       if (isSuccessCode && isSuccessResult) {
-        console.log(`[ARS] 발송리스트 추가 성공: ${cleanPhone}, historyKey: ${response.history_key}`);
+        console.log(`[ARS] ✅ 발송리스트 추가 성공: ${cleanPhone}, historyKey: ${response.history_key}`);
         return {
           success: true,
           historyKey: response.history_key,
-          message: '발송리스트에 추가되었습니다.',
+          message: '✅ 발송리스트에 추가되었습니다.',
         };
       } else {
-        const errorMessage = response.result || 
-                            response.data?.error || 
-                            response.data?.message ||
-                            `발송리스트 추가 실패 (코드: ${response.code})`;
-        console.warn(`[ARS] 발송리스트 추가 실패: ${cleanPhone} - ${errorMessage}`);
+        // 🔥 더 구체적인 에러 메시지 생성
+        let errorMessage = '❌ 발송리스트 추가 실패';
+        
+        if (response.result) {
+          errorMessage = `❌ ${response.result}`;
+        } else if (response.data?.error) {
+          errorMessage = `❌ API 오류: ${response.data.error}`;
+        } else if (response.data?.message) {
+          errorMessage = `❌ ${response.data.message}`;
+        } else {
+          errorMessage = `❌ 발송리스트 추가 실패 (응답코드: ${response.code})`;
+        }
+        
+        console.warn(`[ARS] ❌ 발송리스트 추가 실패: ${cleanPhone} - ${errorMessage}`);
+        console.warn(`[ARS] 🔍 실패 상세 정보:`, {
+          httpStatus: 'OK', // makeApiCall에서 HTTP 에러는 이미 처리됨
+          responseCode: response.code,
+          result: response.result,
+          data: response.data
+        });
+        
         throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error(`[ARS] 발송리스트 추가 예외: ${targetPhone}`, error);
+      console.error(`[ARS] ❌ 발송리스트 추가 예외: ${targetPhone}`, error);
+      
+      // 🔥 네트워크 에러와 API 에러 구분
+      if (error instanceof Error) {
+        if (error.message.includes('fetch')) {
+          return {
+            success: false,
+            message: '🌐 네트워크 연결 오류: ATALK API 서버에 접속할 수 없습니다.',
+          };
+        } else if (error.message.includes('HTTP')) {
+          return {
+            success: false,
+            message: `🚫 API 호출 실패: ${error.message}`,
+          };
+        } else {
+          return {
+            success: false,
+            message: error.message.startsWith('❌') ? error.message : `❌ ${error.message}`,
+          };
+        }
+      }
+      
       return {
         success: false,
-        message: error instanceof Error ? error.message : '발송리스트 추가에 실패했습니다.',
+        message: '❌ 발송리스트 추가 중 알 수 없는 오류가 발생했습니다.',
       };
     }
   }

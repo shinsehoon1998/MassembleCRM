@@ -1,0 +1,641 @@
+<?php
+/**
+ * 아톡비즈 API 통합 - 보안 강화 및 오류 수정 버전
+ * 
+ * 주요 수정사항:
+ * 1. PII 마스킹 처리
+ * 2. 인증 토큰 검증 강화
+ * 3. 캠페인 데이터 검증
+ * 4. 에러 핸들링 개선
+ */
+
+// ============================================
+// config/secure_config.php - 보안 설정
+// ============================================
+
+// 환경 변수에서 읽기 (하드코딩 금지)
+define('ATALK_API_BASE_URL', $_ENV['ATALK_API_URL'] ?? 'http://localhost');
+define('ATALK_API_KEY', $_ENV['ATALK_API_KEY'] ?? '');
+define('ATALK_SECRET_KEY', $_ENV['ATALK_SECRET'] ?? '');
+define('ATALK_COMPANY_CODE', $_ENV['ATALK_COMPANY'] ?? '');
+
+// 로깅 레벨 설정
+define('LOG_LEVEL', $_ENV['LOG_LEVEL'] ?? 'ERROR');
+define('MASK_PII', true); // PII 마스킹 활성화
+
+// ============================================
+// classes/SecureAtalkAPI.php - 보안 강화된 API 클래스
+// ============================================
+
+class SecureAtalkAPI {
+    private $apiKey;
+    private $secretKey;
+    private $baseUrl;
+    private $db;
+    private $logger;
+    
+    public function __construct() {
+        $this->validateConfiguration();
+        $this->apiKey = ATALK_API_KEY;
+        $this->secretKey = ATALK_SECRET_KEY;
+        $this->baseUrl = ATALK_API_BASE_URL;
+        $this->db = new DBHelper();
+        $this->logger = new SecureLogger();
+    }
+    
+    /**
+     * 설정 검증
+     */
+    private function validateConfiguration() {
+        $required = ['ATALK_API_KEY', 'ATALK_SECRET_KEY', 'ATALK_COMPANY_CODE'];
+        
+        foreach ($required as $config) {
+            if (empty(constant($config))) {
+                throw new Exception("필수 설정이 누락되었습니다: {$config}");
+            }
+        }
+        
+        // API 키 형식 검증
+        if (!$this->isValidApiKey(ATALK_API_KEY)) {
+            throw new Exception("유효하지 않은 API 키 형식입니다.");
+        }
+    }
+    
+    /**
+     * API 키 검증
+     */
+    private function isValidApiKey($key) {
+        // API 키 형식 검증 (예: 32자 이상의 영숫자)
+        return preg_match('/^[a-zA-Z0-9]{32,}$/', $key);
+    }
+    
+    /**
+     * Bearer 토큰 생성 (수정됨)
+     */
+    private function generateBearerToken() {
+        // 올바른 Bearer 토큰 생성
+        $timestamp = time();
+        $nonce = bin2hex(random_bytes(16));
+        
+        // 서명 생성
+        $signatureData = $this->apiKey . $timestamp . $nonce . $this->secretKey;
+        $signature = hash('sha256', $signatureData);
+        
+        // Bearer 토큰 구성
+        $tokenData = [
+            'api_key' => $this->apiKey,
+            'timestamp' => $timestamp,
+            'nonce' => $nonce,
+            'signature' => $signature
+        ];
+        
+        return base64_encode(json_encode($tokenData));
+    }
+    
+    /**
+     * HTTP 요청 실행 (보안 강화)
+     */
+    private function executeRequest($endpoint, $data, $method = 'POST') {
+        $url = $this->baseUrl . $endpoint;
+        
+        // 데이터 검증
+        $this->validateRequestData($data);
+        
+        // 요청 로깅 (PII 마스킹)
+        $this->logger->logRequest($endpoint, $this->maskPII($data));
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        
+        // Bearer 토큰 설정
+        $headers = [
+            'Authorization: Bearer ' . $this->generateBearerToken(),
+            'Content-Type: application/json',
+            'X-Request-ID: ' . uniqid('req_')
+        ];
+        
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        }
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        // 응답 로깅 (PII 마스킹)
+        $this->logger->logResponse($endpoint, $httpCode, $this->maskPII($response));
+        
+        if ($error) {
+            throw new Exception("cURL 오류: " . $error);
+        }
+        
+        return $this->handleResponse($response, $httpCode);
+    }
+    
+    /**
+     * 요청 데이터 검증
+     */
+    private function validateRequestData($data) {
+        // 필수 필드 검증
+        if (isset($data['text_send_no'])) {
+            if (!$this->isValidPhoneNumber($data['text_send_no'])) {
+                throw new InvalidArgumentException("유효하지 않은 전화번호 형식");
+            }
+        }
+        
+        if (isset($data['text_campaign_name'])) {
+            if (!$this->isValidCampaignName($data['text_campaign_name'])) {
+                throw new InvalidArgumentException("유효하지 않은 캠페인명");
+            }
+        }
+        
+        // SQL Injection 방지
+        foreach ($data as $key => $value) {
+            if (is_string($value)) {
+                $data[$key] = $this->sanitizeInput($value);
+            }
+        }
+        
+        return $data;
+    }
+    
+    /**
+     * 전화번호 검증
+     */
+    private function isValidPhoneNumber($phone) {
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+        return preg_match('/^(01[0-9]{8,9}|0[2-6][0-9]{7,8}|050[0-9]{7,8}|070[0-9]{7,8})$/', $phone);
+    }
+    
+    /**
+     * 캠페인명 검증
+     */
+    private function isValidCampaignName($name) {
+        // 100자 이내, 특수문자 제한
+        return strlen($name) <= 100 && preg_match('/^[a-zA-Z0-9가-힣\s\-_]+$/', $name);
+    }
+    
+    /**
+     * 입력값 정제
+     */
+    private function sanitizeInput($input) {
+        return htmlspecialchars(strip_tags(trim($input)), ENT_QUOTES, 'UTF-8');
+    }
+    
+    /**
+     * PII 마스킹
+     */
+    private function maskPII($data) {
+        if (!MASK_PII) {
+            return $data;
+        }
+        
+        if (is_string($data)) {
+            $data = json_decode($data, true) ?: $data;
+        }
+        
+        if (is_array($data)) {
+            // 전화번호 마스킹
+            if (isset($data['phone']) || isset($data['text_send_no'])) {
+                $phone = $data['phone'] ?? $data['text_send_no'] ?? '';
+                $data['phone_masked'] = $this->maskPhone($phone);
+                unset($data['phone'], $data['text_send_no']);
+            }
+            
+            // 이름 마스킹
+            if (isset($data['name'])) {
+                $data['name_masked'] = $this->maskName($data['name']);
+                unset($data['name']);
+            }
+            
+            // 재귀적으로 하위 배열 처리
+            foreach ($data as $key => $value) {
+                if (is_array($value)) {
+                    $data[$key] = $this->maskPII($value);
+                }
+            }
+        }
+        
+        return $data;
+    }
+    
+    /**
+     * 전화번호 마스킹
+     */
+    private function maskPhone($phone) {
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+        if (strlen($phone) >= 8) {
+            return substr($phone, 0, 3) . '****' . substr($phone, -4);
+        }
+        return '****';
+    }
+    
+    /**
+     * 이름 마스킹
+     */
+    private function maskName($name) {
+        if (mb_strlen($name) >= 2) {
+            return mb_substr($name, 0, 1) . str_repeat('*', mb_strlen($name) - 1);
+        }
+        return '*';
+    }
+    
+    /**
+     * 응답 처리
+     */
+    private function handleResponse($response, $httpCode) {
+        $data = json_decode($response, true);
+        
+        if ($httpCode === 401) {
+            throw new Exception("인증 실패: API 키를 확인하세요");
+        }
+        
+        if ($httpCode === 400) {
+            $message = $data['message'] ?? '잘못된 요청입니다';
+            throw new Exception("요청 오류: " . $message);
+        }
+        
+        if ($httpCode === 500) {
+            throw new Exception("서버 오류가 발생했습니다");
+        }
+        
+        if ($httpCode !== 200) {
+            throw new Exception("예상치 못한 응답: HTTP {$httpCode}");
+        }
+        
+        return [
+            'success' => true,
+            'data' => $data,
+            'http_code' => $httpCode
+        ];
+    }
+    
+    /**
+     * 캠페인 생성 (검증 강화)
+     */
+    public function createCampaign($campaignData) {
+        // 필수 필드 검증
+        $required = ['name', 'company', 'scenario_id'];
+        foreach ($required as $field) {
+            if (empty($campaignData[$field])) {
+                throw new InvalidArgumentException("필수 필드가 누락되었습니다: {$field}");
+            }
+        }
+        
+        // 캠페인 데이터 구성
+        $data = [
+            'text_campaign_name' => $this->sanitizeInput($campaignData['name']),
+            'company' => ATALK_COMPANY_CODE,
+            'user_id' => base64_encode($campaignData['user_id'] ?? 'system'),
+            'scenario_id' => $campaignData['scenario_id'],
+            'text_page' => $campaignData['page'] ?? 'A'
+        ];
+        
+        try {
+            $response = $this->executeRequest('/thirdparty/v1/campaign/create', $data);
+            
+            // 캠페인 ID 저장
+            if ($response['success'] && isset($response['data']['campaign_id'])) {
+                $this->saveCampaignToDatabase($campaignData, $response['data']['campaign_id']);
+            }
+            
+            return $response;
+        } catch (Exception $e) {
+            $this->logger->logError('캠페인 생성 실패', $e->getMessage());
+            throw $e;
+        }
+    }
+    
+    /**
+     * 캠페인 DB 저장
+     */
+    private function saveCampaignToDatabase($campaignData, $campaignId) {
+        $this->db->insert('ars_campaigns', [
+            'api_campaign_id' => $campaignId,
+            'name' => $campaignData['name'],
+            'scenario_id' => $campaignData['scenario_id'],
+            'status' => 'ready',
+            'created_by' => $_SESSION['user_id'] ?? 0,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+    
+    /**
+     * 발송 리스트 추가 (보안 강화)
+     */
+    public function addCallList($phoneNumbers, $campaignId) {
+        if (!is_array($phoneNumbers)) {
+            $phoneNumbers = [$phoneNumbers];
+        }
+        
+        $results = [];
+        $batch = [];
+        
+        foreach ($phoneNumbers as $phone) {
+            // 전화번호 검증
+            if (!$this->isValidPhoneNumber($phone)) {
+                $results[] = [
+                    'phone' => $this->maskPhone($phone),
+                    'success' => false,
+                    'error' => '유효하지 않은 전화번호'
+                ];
+                continue;
+            }
+            
+            $batch[] = preg_replace('/[^0-9]/', '', $phone);
+            
+            // 배치 크기 제한 (100개)
+            if (count($batch) >= 100) {
+                $this->processBatch($batch, $campaignId, $results);
+                $batch = [];
+            }
+        }
+        
+        // 남은 배치 처리
+        if (!empty($batch)) {
+            $this->processBatch($batch, $campaignId, $results);
+        }
+        
+        return [
+            'success' => true,
+            'total' => count($phoneNumbers),
+            'results' => $results
+        ];
+    }
+    
+    /**
+     * 배치 처리
+     */
+    private function processBatch($batch, $campaignId, &$results) {
+        foreach ($batch as $phone) {
+            try {
+                $data = [
+                    'text_send_no' => $phone,
+                    'campaign_id' => $campaignId,
+                    'company' => ATALK_COMPANY_CODE,
+                    'user_id' => base64_encode($_SESSION['user_id'] ?? 'system'),
+                    'text_page' => 'A'
+                ];
+                
+                $response = $this->executeRequest('/thirdparty/v1/calllist/add', $data);
+                
+                $results[] = [
+                    'phone' => $this->maskPhone($phone),
+                    'success' => true,
+                    'history_key' => $response['data']['history_key'] ?? null
+                ];
+                
+                // Rate limiting
+                usleep(100000); // 0.1초 대기
+                
+            } catch (Exception $e) {
+                $results[] = [
+                    'phone' => $this->maskPhone($phone),
+                    'success' => false,
+                    'error' => $e->getMessage()
+                ];
+            }
+        }
+    }
+}
+
+// ============================================
+// classes/SecureLogger.php - 보안 로깅 클래스
+// ============================================
+
+class SecureLogger {
+    private $logPath;
+    private $logLevel;
+    
+    public function __construct() {
+        $this->logPath = '../logs/';
+        $this->logLevel = LOG_LEVEL;
+        $this->ensureLogDirectory();
+    }
+    
+    /**
+     * 로그 디렉토리 확인
+     */
+    private function ensureLogDirectory() {
+        if (!is_dir($this->logPath)) {
+            mkdir($this->logPath, 0755, true);
+        }
+        
+        // .htaccess로 외부 접근 차단
+        $htaccess = $this->logPath . '.htaccess';
+        if (!file_exists($htaccess)) {
+            file_put_contents($htaccess, "Deny from all");
+        }
+    }
+    
+    /**
+     * 요청 로깅
+     */
+    public function logRequest($endpoint, $data) {
+        if ($this->shouldLog('DEBUG')) {
+            $this->writeLog('request', [
+                'endpoint' => $endpoint,
+                'data' => $data,
+                'timestamp' => date('Y-m-d H:i:s'),
+                'request_id' => uniqid('req_')
+            ]);
+        }
+    }
+    
+    /**
+     * 응답 로깅
+     */
+    public function logResponse($endpoint, $httpCode, $data) {
+        if ($this->shouldLog('DEBUG')) {
+            $this->writeLog('response', [
+                'endpoint' => $endpoint,
+                'http_code' => $httpCode,
+                'data' => $data,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]);
+        }
+    }
+    
+    /**
+     * 에러 로깅
+     */
+    public function logError($context, $error) {
+        if ($this->shouldLog('ERROR')) {
+            $this->writeLog('error', [
+                'context' => $context,
+                'error' => $error,
+                'timestamp' => date('Y-m-d H:i:s'),
+                'trace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 5)
+            ]);
+        }
+    }
+    
+    /**
+     * 로그 레벨 확인
+     */
+    private function shouldLog($level) {
+        $levels = ['DEBUG' => 0, 'INFO' => 1, 'WARNING' => 2, 'ERROR' => 3];
+        return $levels[$level] >= $levels[$this->logLevel];
+    }
+    
+    /**
+     * 로그 파일 작성
+     */
+    private function writeLog($type, $data) {
+        $filename = $this->logPath . date('Y-m-d') . '-' . $type . '.log';
+        $logEntry = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n";
+        
+        // 파일 잠금으로 동시 쓰기 방지
+        file_put_contents($filename, $logEntry, FILE_APPEND | LOCK_EX);
+        
+        // 로그 파일 크기 제한 (10MB)
+        if (filesize($filename) > 10485760) {
+            $this->rotateLog($filename);
+        }
+    }
+    
+    /**
+     * 로그 로테이션
+     */
+    private function rotateLog($filename) {
+        $rotated = $filename . '.' . time();
+        rename($filename, $rotated);
+        
+        // 오래된 로그 삭제 (30일)
+        $this->cleanOldLogs();
+    }
+    
+    /**
+     * 오래된 로그 정리
+     */
+    private function cleanOldLogs() {
+        $files = glob($this->logPath . '*.log*');
+        $threshold = time() - (30 * 24 * 60 * 60); // 30일
+        
+        foreach ($files as $file) {
+            if (filemtime($file) < $threshold) {
+                unlink($file);
+            }
+        }
+    }
+}
+
+// ============================================
+// api/secure_atalk.php - 보안 API 엔드포인트
+// ============================================
+
+session_start();
+require_once '../config/secure_config.php';
+require_once '../classes/SecureAtalkAPI.php';
+require_once '../classes/SecureLogger.php';
+
+// CORS 설정
+header('Content-Type: application/json');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('X-XSS-Protection: 1; mode=block');
+
+// Rate limiting
+$rateLimiter = new RateLimiter($_SERVER['REMOTE_ADDR']);
+if (!$rateLimiter->isAllowed()) {
+    http_response_code(429);
+    echo json_encode(['error' => 'Too many requests']);
+    exit;
+}
+
+try {
+    $api = new SecureAtalkAPI();
+    $action = $_GET['action'] ?? '';
+    
+    // CSRF 토큰 검증
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            throw new Exception('CSRF 토큰 검증 실패');
+        }
+    }
+    
+    switch ($action) {
+        case 'create_campaign':
+            $campaignData = [
+                'name' => $_POST['name'] ?? '',
+                'company' => ATALK_COMPANY_CODE,
+                'scenario_id' => $_POST['scenario_id'] ?? '',
+                'user_id' => $_SESSION['user_id'] ?? 'system'
+            ];
+            
+            $result = $api->createCampaign($campaignData);
+            echo json_encode($result);
+            break;
+            
+        case 'send_calls':
+            $phones = json_decode($_POST['phones'] ?? '[]', true);
+            $campaignId = $_POST['campaign_id'] ?? '';
+            
+            if (empty($phones) || empty($campaignId)) {
+                throw new InvalidArgumentException('전화번호와 캠페인 ID가 필요합니다');
+            }
+            
+            $result = $api->addCallList($phones, $campaignId);
+            echo json_encode($result);
+            break;
+            
+        default:
+            throw new Exception('잘못된 액션입니다');
+    }
+    
+} catch (Exception $e) {
+    http_response_code(400);
+    echo json_encode([
+        'success' => false,
+        'error' => $e->getMessage()
+    ]);
+}
+
+// ============================================
+// classes/RateLimiter.php - Rate Limiting
+// ============================================
+
+class RateLimiter {
+    private $ip;
+    private $maxRequests = 100; // 분당 최대 요청
+    private $window = 60; // 시간 창 (초)
+    
+    public function __construct($ip) {
+        $this->ip = $ip;
+    }
+    
+    public function isAllowed() {
+        $key = 'rate_limit:' . $this->ip;
+        $current = time();
+        
+        // 파일 기반 간단한 구현 (실제로는 Redis 추천)
+        $file = sys_get_temp_dir() . '/' . md5($key) . '.tmp';
+        
+        if (file_exists($file)) {
+            $data = json_decode(file_get_contents($file), true);
+            
+            if ($current - $data['start'] > $this->window) {
+                // 시간 창 리셋
+                $data = ['start' => $current, 'count' => 1];
+            } else {
+                $data['count']++;
+                
+                if ($data['count'] > $this->maxRequests) {
+                    return false;
+                }
+            }
+        } else {
+            $data = ['start' => $current, 'count' => 1];
+        }
+        
+        file_put_contents($file, json_encode($data), LOCK_EX);
+        return true;
+    }
+}

@@ -1463,8 +1463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: `${logDescription} - 결과: ${pipelineResult.message}`,
       });
 
-      // Step 7: 응답
-      res.json({
+      // Step 7: 응답 - 🔥 HTTP 상태코드 처리 추가
+      const responseData = {
         success: pipelineResult.success,
         message: pipelineResult.message,
         campaignId,
@@ -1474,7 +1474,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         audioUploaded: pipelineResult.results.audioUploaded,
         campaignStarted: pipelineResult.results.campaignStarted,
         details: pipelineResult.results,
-      });
+      };
+
+      if (!pipelineResult.success) {
+        // 🔥 실패시 422 상태코드로 반환하여 프론트엔드에서 에러 토스트 표시
+        return res.status(422).json(responseData);
+      }
+      
+      res.json(responseData);
       
     } catch (error) {
       console.error("[ARS] 대량 발송 에러:", error);
@@ -1894,13 +1901,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: `${successCount}개 캠페인 일괄 시작`,
       });
 
-      res.json({
+      const responseData = {
         success: successCount > 0,
         message: `${successCount}개 캠페인이 시작되었습니다.`,
         results,
         successCount,
         totalCount: validCampaignIds.length
-      });
+      };
+
+      // 🔥 모든 캠페인이 실패한 경우 422 상태코드로 반환
+      if (successCount === 0) {
+        return res.status(422).json(responseData);
+      }
+      
+      res.json(responseData);
     } catch (error) {
       console.error("Error starting multiple campaigns:", error);
       res.status(500).json({ 
@@ -2036,13 +2050,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: `${successCount}개 캠페인 일괄 재발송`,
       });
 
-      res.json({
+      const responseData = {
         success: successCount > 0,
         message: `${successCount}개 캠페인 재발송이 시작되었습니다.`,
         results,
         successCount,
         totalCount: validCampaignIds.length
-      });
+      };
+
+      // 🔥 모든 재발송이 실패한 경우 422 상태코드로 반환
+      if (successCount === 0) {
+        return res.status(422).json(responseData);
+      }
+      
+      res.json(responseData);
     } catch (error) {
       console.error("Error resending multiple campaigns:", error);
       res.status(500).json({ 
