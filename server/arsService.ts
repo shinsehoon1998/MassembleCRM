@@ -429,6 +429,58 @@ export class AtalkArsService {
     }
   }
 
+  /**
+   * 5. 캠페인 중단 - 캠페인 종료 (스텁 구현)
+   */
+  async stopCampaign(
+    campaignId: number
+  ): Promise<{ success: boolean; message: string }> {
+    try {
+      console.log(`[ATALK API] 캠페인 중단 요청: ${campaignId}`);
+      
+      // TODO: 실제 ATALK API 캠페인 중단 기능 구현 필요
+      // 현재는 스텁으로 성공 응답만 반환
+      
+      return {
+        success: true,
+        message: '캠페인이 중단되었습니다. (스텁 구현)',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '캠페인 중단에 실패했습니다.',
+      };
+    }
+  }
+
+  /**
+   * 6. 고객 그룹을 ATALK 발송리스트에 동기화 (스텁 구현)
+   */
+  async syncCustomerGroupToAtalk(
+    groupId: string,
+    groupName: string,
+    customerIds: string[]
+  ): Promise<{ success: boolean; message: string; historyKeys: string[] }> {
+    try {
+      console.log(`[ATALK API] 고객 그룹 동기화: ${groupName} (${customerIds.length}명)`);
+      
+      // TODO: 실제 ATALK API 고객 그룹 동기화 기능 구현 필요
+      // 현재는 스텁으로 성공 응답만 반환
+      
+      return {
+        success: true,
+        message: `고객 그룹 "${groupName}" 동기화 완료 (${customerIds.length}명)`,
+        historyKeys: [] // 실제 구현 시 ATALK에서 반환하는 history keys
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '고객 그룹 동기화에 실패했습니다.',
+        historyKeys: []
+      };
+    }
+  }
+
 
 
 

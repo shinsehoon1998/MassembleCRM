@@ -1728,7 +1728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // 캠페인의 대상 고객들 조회하여 실제 ARS 발송 시작
           const customerIds = campaign.targetGroupId 
-            ? (await storage.getCustomerGroupCustomers(campaign.targetGroupId)).map(c => c.id)
+            ? (await storage.getCustomersInGroup(campaign.targetGroupId)).map((c: any) => c.id)
             : await storage.getAllMarketingTargetIds();
           
           if (customerIds.length === 0) {
@@ -2104,10 +2104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           atalkResult = await atalkArsService.uploadAudioFile(
             audioFile.buffer,
-            audioFile.originalname,
-            scenario.name,
-            'ars',
-            audioFile.mimetype
+            audioFile.originalname
           );
 
           console.log(`[음원 업로드] 아톡비즈 연동 성공: ${atalkResult.fileName}`);
@@ -2495,10 +2492,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 아톡 음원 업로드 API 호출 (개선된 구현)
       const uploadResult = await atalkArsService.uploadAudioFile(
         file.buffer,
-        file.originalname,
-        scenarioId || 'default_campaign',
-        audioType,
-        file.mimetype // 실제 파일 MIME 타입 사용
+        file.originalname
       );
 
       // 활동 로그 기록

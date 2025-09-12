@@ -5,13 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Phone, Users, Calendar, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock, Play, RotateCcw, TestTube, StopCircle } from "lucide-react";
+import { Phone, Users, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock, Play, RotateCcw, TestTube, StopCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -47,11 +46,6 @@ export default function ArsCampaigns() {
     queryKey: ["/api/ars/campaigns"],
   });
 
-  // 아톡비즈 캠페인 목록 조회
-  const { data: atalkCampaigns, isLoading: atalkCampaignsLoading, refetch: refetchAtalkCampaigns } = useQuery({
-    queryKey: ["/api/ars/campaigns/list"],
-    retry: 1,
-  });
 
   // 마케팅 대상 고객 조회
   const { data: marketingTargets } = useQuery({
@@ -74,54 +68,7 @@ export default function ArsCampaigns() {
     enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
   });
 
-  // 발송리스트 조회
-  const sendingListMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("GET", "/api/ars/sending-lists");
-    },
-    onSuccess: (data: any) => {
-      toast({
-        title: "발송리스트 동기화 완료",
-        description: `${data.syncedCount || 0}개 동기화, ${data.failedCount || 0}개 실패`,
-      });
-      // 캠페인 목록 새로고침
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "조회 실패",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
-  // 아톡비즈 캠페인 목록 조회
-  const atalkCampaignListMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("GET", "/api/ars/campaigns/list");
-    },
-    onSuccess: (data: any) => {
-      toast({
-        title: "캠페인 목록 조회 완료",
-        description: data.success 
-          ? `${data.campaigns?.length || 0}개 유효한 캠페인 발견: ${data.campaigns?.join(', ')}`
-          : data.message || "조회 완료",
-        variant: data.success ? "default" : "destructive",
-      });
-      if (data.success) {
-        // 성공 시 발송리스트도 동기화
-        sendingListMutation.mutate();
-      }
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "캠페인 조회 실패",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   // 선택된 캠페인의 상세 정보 조회
   const { data: campaignDetail, isLoading: campaignDetailLoading } = useQuery<{
@@ -401,27 +348,6 @@ export default function ArsCampaigns() {
             결과 업데이트
           </Button>
           
-          <Button 
-            onClick={() => atalkCampaignListMutation.mutate()}
-            disabled={atalkCampaignListMutation.isPending}
-            variant="outline"
-            className="border-green-500 text-green-600 hover:bg-green-50"
-            data-testid="button-check-atalk-campaigns"
-          >
-            <TrendingUp className={`h-4 w-4 mr-2 ${atalkCampaignListMutation.isPending ? 'animate-spin' : ''}`} />
-            {atalkCampaignListMutation.isPending ? '확인 중...' : '아톡 캠페인 확인'}
-          </Button>
-
-          <Button 
-            onClick={() => sendingListMutation.mutate()}
-            disabled={sendingListMutation.isPending}
-            variant="outline"
-            className="border-blue-500 text-blue-600 hover:bg-blue-50"
-            data-testid="button-sync-sending-lists"
-          >
-            <Users className={`h-4 w-4 mr-2 ${sendingListMutation.isPending ? 'animate-spin' : ''}`} />
-            {sendingListMutation.isPending ? '조회 중...' : '발송리스트 조회'}
-          </Button>
           
           <Dialog open={showBulkModal} onOpenChange={setShowBulkModal}>
             <DialogTrigger asChild>
@@ -625,8 +551,8 @@ export default function ArsCampaigns() {
 
       {/* 캠페인 목록 테이블 */}
       <div className="grid grid-cols-12 gap-6">
-        {/* 캠페인 목록 (왼쪽 8컬럼) */}
-        <div className="col-span-8">
+        {/* 캠페인 목록 */}
+        <div className="col-span-12">
           <Card>
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
@@ -766,230 +692,6 @@ export default function ArsCampaigns() {
                   </TableBody>
                 </Table>
               )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* 캠페인 설정 패널 (우쪽 4컬럼) */}
-        <div className="col-span-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">캠페인인원보정</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div>
-                  <Label htmlFor="campaign-type" className="text-sm font-medium">
-                    회차명 <span className="text-red-500">*</span>
-                  </Label>
-                  <Select>
-                    <SelectTrigger className="mt-1" data-testid="select-campaign-type">
-                      <SelectValue placeholder="우선순위를선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="high">높음</SelectItem>
-                      <SelectItem value="medium">보통</SelectItem>
-                      <SelectItem value="low">낮음</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label htmlFor="campaign-name" className="text-sm font-medium">
-                    캠페인명 <span className="text-red-500">*</span>
-                  </Label>
-                  <Select>
-                    <SelectTrigger className="mt-1" data-testid="select-campaign-name">
-                      <SelectValue placeholder="우선순위를선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="marketing">마케팅</SelectItem>
-                      <SelectItem value="notice">공지</SelectItem>
-                      <SelectItem value="survey">설문</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">
-                    방식 <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="flex gap-4 mt-2">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="digital" data-testid="checkbox-digital" />
-                      <Label htmlFor="digital" className="text-sm">Digital 사용</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="ivr" data-testid="checkbox-ivr" />
-                      <Label htmlFor="ivr" className="text-sm">IVR 연결</Label>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="retry-time" className="text-sm font-medium">
-                    무응답 시간 <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Input 
-                      id="retry-time" 
-                      placeholder="40" 
-                      className="w-20" 
-                      data-testid="input-retry-time"
-                    />
-                    <span className="text-sm text-gray-600">(초)</span>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="retry-count" className="text-sm font-medium">
-                    최대 응시 호수 <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Input 
-                      id="retry-count" 
-                      placeholder="1" 
-                      className="w-20" 
-                      data-testid="input-retry-count"
-                    />
-                    <span className="text-sm text-gray-600">최대 : 1</span>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">
-                    발송리스트 <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="flex gap-2 mt-1">
-                    <Select>
-                      <SelectTrigger className="flex-1" data-testid="select-send-list">
-                        <SelectValue placeholder="선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">전체</SelectItem>
-                        <SelectItem value="group">그룹별</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button variant="outline" size="sm" data-testid="button-refresh-list">
-                      업로드
-                    </Button>
-                    <Button variant="outline" size="sm" data-testid="button-upload-list">
-                      추가업로드
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">발송번호</Label>
-                  <Button 
-                    variant="outline" 
-                    className="w-full mt-1 justify-start" 
-                    data-testid="button-send-number"
-                  >
-                    발송번호관리
-                  </Button>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">
-                    발송일자 <span className="text-red-500">*</span>
-                  </Label>
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    <Input 
-                      placeholder="2025-09-04" 
-                      data-testid="input-send-date-start"
-                    />
-                    <Input 
-                      placeholder="2030-12-31" 
-                      data-testid="input-send-date-end"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">발송시간</Label>
-                  <div className="grid grid-cols-4 gap-2 mt-1">
-                    <Input placeholder="00" data-testid="input-send-hour" />
-                    <Input placeholder="00" data-testid="input-send-minute" />
-                    <Input placeholder="23" data-testid="input-send-hour-end" />
-                    <Input placeholder="59" data-testid="input-send-minute-end" />
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">수신거부 설정</Label>
-                  <Select>
-                    <SelectTrigger className="mt-1" data-testid="select-reject-setting">
-                      <SelectValue placeholder="사용안함" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">사용안함</SelectItem>
-                      <SelectItem value="use">사용함</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">음성설정</Label>
-                  <div className="flex gap-2 mt-1">
-                    <Select>
-                      <SelectTrigger className="flex-1" data-testid="select-voice-setting">
-                        <SelectValue placeholder="사용안함" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">사용안함</SelectItem>
-                        <SelectItem value="use">사용함</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button variant="outline" size="sm" data-testid="button-preview">
-                      미리듣기
-                    </Button>
-                    <Button variant="outline" size="sm" data-testid="button-upload-voice">
-                      음성업로드
-                    </Button>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">최대재시도 <span className="text-blue-500">ⓘ</span></Label>
-                  <Input 
-                    placeholder="5" 
-                    className="mt-1" 
-                    data-testid="input-max-retry"
-                  />
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">재발신설정 <span className="text-blue-500">ⓘ</span></Label>
-                  <div className="bg-gray-50 rounded-md p-3 mt-1">
-                    <div className="grid grid-cols-5 gap-2 text-xs">
-                      <div className="font-medium">항목</div>
-                      <div className="font-medium">재발송 주기(분)</div>
-                      <div className="font-medium">재발송 횟수</div>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2 mt-2 text-xs">
-                      <div>무응답</div>
-                      <div>0</div>
-                      <div>0</div>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2 mt-1 text-xs">
-                      <div>통화중</div>
-                      <div>0</div>
-                      <div>0</div>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2 mt-1 text-xs">
-                      <div>사서함</div>
-                      <div>0</div>
-                      <div>0</div>
-                    </div>
-                    <div className="grid grid-cols-5 gap-2 mt-1 text-xs">
-                      <div>일반실패</div>
-                      <div>0</div>
-                      <div>0</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>
