@@ -1,21 +1,39 @@
 import crypto from 'crypto';
+import FormData from 'form-data';
 import { db } from './db';
 import { arsCampaigns, arsSendLogs, arsApiLogs, customers } from '@shared/schema';
 import type { InsertArsCampaign, InsertArsSendLog } from '@shared/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
+import { z } from 'zod';
 
-// 아톡비즈 API 설정 - 올바른 매핑 적용
+// Audio upload validation schema
+const audioUploadSchema = z.object({
+  fileName: z.string().min(1, '파일 이름이 필요합니다'),
+  campaignName: z.string().min(1, '캐페인명이 필요합니다'),
+  audioType: z.enum(['ars', 'voice', 'music', 'announcement']).default('ars'),
+  mimeType: z.string().refine(
+    (type) => ['audio/wav', 'audio/mp3', 'audio/mpeg', 'audio/x-wav'].includes(type),
+    { message: '지원하지 않는 오디오 형식입니다' }
+  )
+});
+
+// 아톡비즈 API 설정 - 환경변수 사용으로 보안 강화
 const ATALK_API_CONFIG = {
-  baseUrl: 'http://101.202.45.50:8080/thirdparty/v1',
-  token: 'NjI3OTIz',      // 원래 토큰 값 (환경변수에 이 값이 설정되어야 함)
-  company: '627923',       // 원래 회사 ID  
-  userId: 'bWI2Mjc5MjM=', // 원래 사용자 ID (base64 인코딩)
+  baseUrl: 'https://101.202.45.50:8080/thirdparty/v1', // HTTPS로 변경
+  token: process.env.ATALK_API_KEY,
+  company: process.env.ATALK_COMPANY_ID || '627923', // fallback to original for compatibility
+  userId: process.env.ATALK_USER_ID || process.env.ATALK_SECRET_KEY, // try ATALK_USER_ID first, fallback to SECRET_KEY
   campaignName: '주식회사마셈블',
-  defaultSendNumber: '16602426', // 고정 발신번호 (하이픈 제거)
+  defaultSendNumber: process.env.ATALK_SENDER_NUMBER,
 };
 
-// 디버깅용 로그 (토큰은 로그하지 않음)
-console.log(`[ARS CONFIG] company: ${ATALK_API_CONFIG.company}, userId: ${ATALK_API_CONFIG.userId}, sendNumber: ${ATALK_API_CONFIG.defaultSendNumber}`);
+// 필수 환경변수 확인
+if (!ATALK_API_CONFIG.token || !ATALK_API_CONFIG.company || !ATALK_API_CONFIG.userId || !ATALK_API_CONFIG.defaultSendNumber) {
+  throw new Error('아톡 API 설정에 필요한 환경변수가 누락되었습니다. ATALK_API_KEY, (ATALK_COMPANY_ID), (ATALK_USER_ID or ATALK_SECRET_KEY), ATALK_SENDER_NUMBER를 확인하세요.');
+}
+
+// 디버깅용 로그 (민감한 정보는 마스킹)
+console.log(`[ARS CONFIG] company: ${ATALK_API_CONFIG.company ? '***' : 'MISSING'}, userId: ${ATALK_API_CONFIG.userId ? '***' : 'MISSING'}, sendNumber: ${ATALK_API_CONFIG.defaultSendNumber ? '***' : 'MISSING'}`);
 
 export interface AtalkApiResponse {
   code: string;
@@ -44,6 +62,19 @@ export interface CampaignStopRequest {
   history_key: string;
   company: string;
   user_id: string;
+}
+
+export interface AudioUploadRequest {
+  text_campaign_name: string;
+  company: string;
+  user_id: string;
+  file_file_name: string;
+  text_type: string;
+}
+
+export interface AudioUploadResponse {
+  code: string;
+  result: string;
 }
 
 export interface CallHistoryResponse {
@@ -525,6 +556,160 @@ export class AtalkArsService {
       return {
         success: false,
         message: error instanceof Error ? error.message : '캠페인 종료에 실패했습니다.',
+      };
+    }
+  }
+
+  /**
+   * 음원 파일 업로드 - FormData를 사용한 개선된 구현
+   */
+  async uploadAudioFile(
+    fileBuffer: Buffer,
+    fileName: string,
+    campaignName: string,
+    audioType: string = 'ars',
+    mimeType: string = 'audio/wav'
+  ): Promise<{ success: boolean; message: string; fileName?: string }> {
+    try {
+      // Zod 유효성 검사
+      const validationResult = audioUploadSchema.safeParse({
+        fileName,
+        campaignName,
+        audioType,
+        mimeType
+      });
+
+      if (!validationResult.success) {
+        const errorMessage = validationResult.error.errors.map(e => e.message).join(', ');
+        throw new Error(`입력 데이터 오류: ${errorMessage}`);
+      }
+
+      const validatedData = validationResult.data;
+
+      // FormData를 사용한 버터 및 보안성 있는 multipart 업로드
+      const formData = new FormData();
+      
+      // 텍스트 필드 추가
+      formData.append('text_campaign_name', validatedData.campaignName);
+      formData.append('company', ATALK_API_CONFIG.company);
+      formData.append('user_id', ATALK_API_CONFIG.userId);
+      formData.append('file_file_name', validatedData.fileName);
+      formData.append('text_type', validatedData.audioType);
+
+      // 파일 추가 (올바른 MIME 타입 사용)
+      formData.append('uploadFile', fileBuffer, {
+        filename: validatedData.fileName,
+        contentType: validatedData.mimeType
+      });
+
+      const response = await fetch(`${ATALK_API_CONFIG.baseUrl}/resource/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ATALK_API_CONFIG.token}`,
+          // FormData가 자동으로 Content-Type 설정
+        },
+        body: formData,
+      });
+
+      const result = await response.json() as AudioUploadResponse;
+
+      // API 호출 로그 저장
+      await this.logApiCall('/resource/upload', 'POST', {
+        fileName: validatedData.fileName,
+        campaignName: validatedData.campaignName,
+        audioType: validatedData.audioType,
+        mimeType: validatedData.mimeType
+      }, result, response.status);
+
+      if (result.code !== '200') {
+        throw new Error(`음원 업로드 실패: ${result.result || 'Unknown error'}`);
+      }
+
+      return {
+        success: true,
+        message: '음원 파일이 성공적으로 업로드되었습니다.',
+        fileName: validatedData.fileName // 클라이언트와의 일관성을 위한 필드
+      };
+    } catch (error) {
+      // 에러 로그 저장
+      await this.logApiCall('/resource/upload', 'POST', {
+        fileName,
+        campaignName,
+        audioType,
+        mimeType
+      }, { error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '음원 업로드에 실패했습니다.',
+        fileName
+      };
+    }
+  }
+
+  /**
+   * 고객그룹의 발송리스트를 아톡에 등록
+   */
+  async syncCustomerGroupToAtalk(
+    groupId: string,
+    groupName: string,
+    customerIds: string[]
+  ): Promise<{ success: boolean; message: string; historyKeys: string[] }> {
+    try {
+      const historyKeys: string[] = [];
+      let failedCount = 0;
+
+      // 고객 정보 조회
+      const customerList = await db.query.customers.findMany({
+        where: inArray(customers.id, customerIds),
+      });
+
+      console.log(`[아톡 동기화] 그룹 "${groupName}"의 ${customerList.length}명을 아톡 발송리스트에 등록`);
+
+      // 각 고객을 아톡 발송리스트에 추가
+      for (const customer of customerList) {
+        try {
+          if (!customer.phone) {
+            failedCount++;
+            continue;
+          }
+
+          const formattedPhone = customer.phone.replace(/[^0-9]/g, '');
+          
+          const callData: CallRequest = {
+            text_send_no: ATALK_API_CONFIG.defaultSendNumber,
+            company: ATALK_API_CONFIG.company,
+            user_id: ATALK_API_CONFIG.userId,
+            text_campaign_name: `${groupName}_발송리스트`,
+            text_page: formattedPhone,
+          };
+
+          const response = await this.makeApiCall('/calllist/add', callData);
+          
+          if (response.history_key) {
+            historyKeys.push(response.history_key);
+          }
+
+          // API 호출 간격
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          failedCount++;
+          console.error(`고객 ${customer.name} 등록 실패:`, error);
+        }
+      }
+
+      const successCount = customerList.length - failedCount;
+
+      return {
+        success: true,
+        message: `그룹 동기화 완료: 성공 ${successCount}명, 실패 ${failedCount}명`,
+        historyKeys,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '그룹 동기화에 실패했습니다.',
+        historyKeys: [],
       };
     }
   }

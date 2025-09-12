@@ -1517,8 +1517,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         action: "customer_group_created",
         description: `고객 그룹 "${group.name}" 생성`,
       });
-      
-      res.json(group);
+
+      // 아톡 발송리스트 자동 동기화 (고객 ID가 있는 경우)
+      if (req.body.syncToAtalk && req.body.customerIds && req.body.customerIds.length > 0) {
+        try {
+          const syncResult = await atalkArsService.syncCustomerGroupToAtalk(
+            group.id,
+            group.name,
+            req.body.customerIds
+          );
+          
+          // 동기화 활동 로그 기록
+          await storage.createActivityLog({
+            userId: req.user.id,
+            customerId: null,
+            action: "atalk_sync",
+            description: `고객 그룹 "${group.name}" 아톡 동기화: ${syncResult.message}`,
+          });
+
+          res.json({
+            ...group,
+            atalkSync: syncResult
+          });
+        } catch (syncError) {
+          console.error('아톡 동기화 실패:', syncError);
+          // 그룹 생성은 성공했으나 동기화만 실패한 경우
+          res.json({
+            ...group,
+            atalkSync: {
+              success: false,
+              message: '아톡 동기화에 실패했습니다. 나중에 수동으로 동기화해주세요.',
+              historyKeys: []
+            }
+          });
+        }
+      } else {
+        res.json(group);
+      }
     } catch (error) {
       console.error('Failed to create customer group:', error);
       if (error instanceof z.ZodError) {
@@ -1669,6 +1704,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Failed to get customer groups:', error);
       res.status(500).json({ message: '고객 그룹 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 고객 그룹 아톡 수동 동기화
+  app.post('/api/customer-groups/:groupId/sync-atalk', isAuthenticated, async (req: any, res) => {
+    try {
+      const { groupId } = req.params;
+      
+      // 그룹 정보 조회
+      const group = await storage.getCustomerGroup(groupId);
+      if (!group) {
+        return res.status(404).json({ message: '그룹을 찾을 수 없습니다.' });
+      }
+
+      // 그룹 내 고객들 조회
+      const customers = await storage.getCustomersInGroup(groupId);
+      const customerIds = customers.map(c => c.id);
+
+      if (customerIds.length === 0) {
+        return res.status(400).json({ message: '그룹에 고객이 없습니다.' });
+      }
+
+      // 아톡 동기화 실행
+      const syncResult = await atalkArsService.syncCustomerGroupToAtalk(
+        group.id,
+        group.name,
+        customerIds
+      );
+      
+      // 동기화 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "atalk_manual_sync",
+        description: `고객 그룹 "${group.name}" 수동 아톡 동기화: ${syncResult.message}`,
+      });
+
+      res.json(syncResult);
+    } catch (error) {
+      console.error('아톡 수동 동기화 실패:', error);
+      res.status(500).json({ 
+        success: false,
+        message: '아톡 동기화 중 오류가 발생했습니다.',
+        historyKeys: []
+      });
+    }
+  });
+
+  // ============================================
+  // 음원 업로드 API (시나리오 관리용)
+  // ============================================
+  
+  // 음원 파일 업로드
+  app.post('/api/scenarios/upload-audio', isAuthenticated, (app as any).upload.single('audioFile'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: '음원 파일을 선택해주세요.' });
+      }
+
+      const { scenarioId, audioType = 'ars' } = req.body;
+      const file = req.file;
+
+      // 파일 형식 검증 (wav, mp3 등)
+      const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return res.status(400).json({ message: '지원하지 않는 음원 형식입니다. WAV 또는 MP3 파일을 업로드해주세요.' });
+      }
+
+      // 파일 크기 검증 (10MB 제한)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        return res.status(400).json({ message: '파일 크기가 너무 큽니다. 10MB 이하의 파일을 업로드해주세요.' });
+      }
+
+      // 아톡 음원 업로드 API 호출 (개선된 구현)
+      const uploadResult = await atalkArsService.uploadAudioFile(
+        file.buffer,
+        file.originalname,
+        scenarioId || 'default_campaign',
+        audioType,
+        file.mimetype // 실제 파일 MIME 타입 사용
+      );
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "audio_uploaded",
+        description: `음원 파일 "${file.originalname}" 업로드: ${uploadResult.message}`,
+      });
+
+      res.json({
+        ...uploadResult,
+        fileName: file.originalname, // 클라이언트 일관성을 위해 중복이지만 유지
+        fileSize: file.size,
+        fileType: file.mimetype
+      });
+    } catch (error) {
+      console.error('음원 업로드 실패:', error);
+      res.status(500).json({ 
+        success: false,
+        message: '음원 업로드 중 오류가 발생했습니다.' 
+      });
     }
   });
 

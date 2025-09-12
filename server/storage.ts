@@ -132,6 +132,7 @@ export interface IStorage {
 
   // 고객 그룹 관련 메서드들
   getCustomerGroups(): Promise<CustomerGroup[]>;
+  getCustomerGroup(id: string): Promise<CustomerGroup | undefined>;
   createCustomerGroup(group: InsertCustomerGroup): Promise<CustomerGroup>;
   updateCustomerGroup(id: string, updates: Partial<CustomerGroup>): Promise<CustomerGroup | undefined>;
   deleteCustomerGroup(id: string): Promise<boolean>;
@@ -680,6 +681,14 @@ export class DatabaseStorage implements IStorage {
       console.error('[ERROR] getCustomerGroups failed:', error);
       throw error;
     }
+  }
+
+  async getCustomerGroup(id: string): Promise<CustomerGroup | undefined> {
+    const [group] = await db
+      .select()
+      .from(customerGroups)
+      .where(and(eq(customerGroups.id, id), eq(customerGroups.isActive, true)));
+    return group;
   }
 
   async createCustomerGroup(group: InsertCustomerGroup): Promise<CustomerGroup> {

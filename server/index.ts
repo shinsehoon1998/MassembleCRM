@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import multer from 'multer';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import bcrypt from 'bcryptjs';
@@ -84,6 +85,25 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// multer 설정 (음원 파일 업로드용)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB 제한
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('지원하지 않는 파일 형식입니다. WAV 또는 MP3 파일만 업로드 가능합니다.'));
+    }
+  }
+});
+
+// multer를 app에 추가하여 routes에서 사용할 수 있도록 함
+(app as any).upload = upload;
 
 app.use((req, res, next) => {
   const start = Date.now();

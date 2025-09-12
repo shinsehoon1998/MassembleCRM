@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { PlusIcon, EditIcon, TrashIcon, UsersIcon, UserMinus, Search, UserPlus } from "lucide-react";
+import { PlusIcon, EditIcon, TrashIcon, UsersIcon, UserMinus, Search, UserPlus, RefreshCw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { CustomerGroup, InsertCustomerGroup, CustomerWithUser } from "@shared/schema";
 
@@ -24,6 +24,7 @@ export default function CustomerGroups() {
   const [editingGroup, setEditingGroup] = useState<CustomerGroup | null>(null);
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [syncingGroupId, setSyncingGroupId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<InsertCustomerGroup>>({
     name: "",
     description: "",
@@ -159,6 +160,28 @@ export default function CustomerGroups() {
     },
   });
 
+  // 아톡 수동 동기화
+  const syncAtalkMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      return await apiRequest("POST", `/api/customer-groups/${groupId}/sync-atalk`);
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "아톡 동기화 완료",
+        description: data.message || "아톡 발송리스트에 동기화되었습니다.",
+      });
+      setSyncingGroupId(null);
+    },
+    onError: (error) => {
+      toast({
+        title: "동기화 실패",
+        description: error.message || "아톡 동기화 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+      setSyncingGroupId(null);
+    },
+  });
+
   const handleCreateGroup = () => {
     if (!formData.name?.trim()) {
       toast({
@@ -229,6 +252,11 @@ export default function CustomerGroups() {
       groupId: selectedGroup.id,
       customerId,
     });
+  };
+
+  const handleSyncAtalk = (groupId: string) => {
+    setSyncingGroupId(groupId);
+    syncAtalkMutation.mutate(groupId);
   };
 
   // 그룹에 속하지 않은 고객들만 필터링
@@ -367,6 +395,16 @@ export default function CustomerGroups() {
                       data-testid={`button-view-customers-${group.id}`}
                     >
                       <UsersIcon className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSyncAtalk(group.id)}
+                      disabled={syncingGroupId === group.id || syncAtalkMutation.isPending}
+                      title="아톡 발송리스트에 동기화"
+                      data-testid={`button-sync-atalk-${group.id}`}
+                    >
+                      <RefreshCw className={`h-4 w-4 text-blue-600 ${syncingGroupId === group.id ? 'animate-spin' : ''}`} />
                     </Button>
                     <Button
                       variant="ghost"

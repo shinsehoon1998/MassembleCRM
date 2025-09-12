@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Edit, Trash2, MessageSquare } from "lucide-react";
+import { Plus, Edit, Trash2, MessageSquare, Upload } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +32,8 @@ export default function ScenarioManagement() {
   const { toast } = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingScenario, setEditingScenario] = useState<any>(null);
+  const [uploadingAudio, setUploadingAudio] = useState<string | null>(null);
+  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -110,6 +112,45 @@ export default function ScenarioManagement() {
     },
   });
 
+  // 음원 파일 업로드
+  const uploadAudioMutation = useMutation({
+    mutationFn: async ({ scenarioId, file }: { scenarioId: string; file: File }) => {
+      const formData = new FormData();
+      formData.append('audioFile', file);
+      formData.append('scenarioId', scenarioId);
+      formData.append('audioType', 'ars');
+
+      const response = await fetch('/api/scenarios/upload-audio', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || '음원 업로드에 실패했습니다.');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "음원 업로드 완료",
+        description: `음원 파일이 성공적으로 업로드되었습니다: ${data.fileName}`,
+      });
+      setUploadingAudio(null);
+      setSelectedAudioFile(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "업로드 실패",
+        description: error.message,
+        variant: "destructive",
+      });
+      setUploadingAudio(null);
+    },
+  });
+
   const handleCreate = () => {
     if (!formData.id || !formData.name) {
       toast({
@@ -153,6 +194,49 @@ export default function ScenarioManagement() {
 
   const handleDelete = (id: string) => {
     deleteScenarioMutation.mutate(id);
+  };
+
+  const handleAudioFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // 파일 형식 검증
+      const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "파일 형식 오류",
+          description: "WAV 또는 MP3 파일만 업로드 가능합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // 파일 크기 검증 (10MB)
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        toast({
+          title: "파일 크기 오류",
+          description: "10MB 이하의 파일만 업로드 가능합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setSelectedAudioFile(file);
+    }
+  };
+
+  const handleUploadAudio = (scenarioId: string) => {
+    if (!selectedAudioFile) {
+      toast({
+        title: "파일 선택 필요",
+        description: "업로드할 음원 파일을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setUploadingAudio(scenarioId);
+    uploadAudioMutation.mutate({ scenarioId, file: selectedAudioFile });
   };
 
   if (isLoading) {
