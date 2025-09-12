@@ -42,16 +42,23 @@ function validateAndSecureConfig() {
   return { baseUrl, token, company, userId };
 }
 
-// 보안 검증된 설정
-const secureConfig = validateAndSecureConfig();
-const ATALK_API_CONFIG = {
-  baseUrl: secureConfig.baseUrl,
-  token: secureConfig.token,
-  company: secureConfig.company,
-  userId: secureConfig.userId,
-  campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-  page: 'A'
-};
+// 환경변수 설정을 lazy하게 처리
+let ATALK_API_CONFIG: any = null;
+
+function getAtalkConfig() {
+  if (!ATALK_API_CONFIG) {
+    const secureConfig = validateAndSecureConfig();
+    ATALK_API_CONFIG = {
+      baseUrl: secureConfig.baseUrl,
+      token: secureConfig.token,
+      company: secureConfig.company,
+      userId: secureConfig.userId,
+      campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
+      page: 'A'
+    };
+  }
+  return ATALK_API_CONFIG;
+}
 
 console.log('✅ ARS API 보안 설정 완료 - 환경변수 검증 및 HTTPS 보안 적용');
 
@@ -92,11 +99,12 @@ export class AtalkArsService {
     data: any,
     method: 'POST' = 'POST'
   ): Promise<T> {
-    const url = `${ATALK_API_CONFIG.baseUrl}${endpoint}`;
+    const config = getAtalkConfig();
+    const url = `${config.baseUrl}${endpoint}`;
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${ATALK_API_CONFIG.token}`
+      'Authorization': `Bearer ${config.token}`
     };
     
     const requestOptions = {
@@ -113,7 +121,7 @@ export class AtalkArsService {
     console.log(`[ATALK API] ${method} ${endpoint}`, {
       endpoint,
       data: maskedData,
-      authPresent: !!ATALK_API_CONFIG.token
+      authPresent: !!config.token
     });
 
     try {
@@ -211,12 +219,13 @@ export class AtalkArsService {
     targetPhone: string
   ): Promise<{ success: boolean; historyKey?: string; message: string }> {
     try {
+      const config = getAtalkConfig();
       const callData: AddCallListRequest = {
         text_send_no: sendNumber,
-        company: ATALK_API_CONFIG.company,
-        user_id: ATALK_API_CONFIG.userId,
-        text_campaign_name: ATALK_API_CONFIG.campaignName,
-        text_page: ATALK_API_CONFIG.page,
+        company: config.company,
+        user_id: config.userId,
+        text_campaign_name: config.campaignName,
+        text_page: config.page,
         callee: targetPhone.replace(/[^0-9]/g, '') // 숫자만
       };
 
@@ -250,9 +259,10 @@ export class AtalkArsService {
       const formData = new FormData();
       
       // 필수 필드 추가
-      formData.append('text_campaign_name', ATALK_API_CONFIG.campaignName);
-      formData.append('company', ATALK_API_CONFIG.company);
-      formData.append('user_id', ATALK_API_CONFIG.userId);
+      const config = getAtalkConfig();
+      formData.append('text_campaign_name', config.campaignName);
+      formData.append('company', config.company);
+      formData.append('user_id', config.userId);
       formData.append('file_title_name', fileName.replace(/\.[^/.]+$/, "")); // 확장자 제거
       formData.append('text_type', 'A');
 
@@ -260,10 +270,10 @@ export class AtalkArsService {
       const blob = new Blob([fileBuffer], { type: 'audio/wav' });
       formData.append('uploadFile', blob, fileName);
       
-      const response = await fetch(`${ATALK_API_CONFIG.baseUrl}/resource/upload`, {
+      const response = await fetch(`${config.baseUrl}/resource/upload`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${ATALK_API_CONFIG.token}`,
+          'Authorization': `Bearer ${config.token}`,
         },
         body: formData,
       });
@@ -356,11 +366,12 @@ export class AtalkArsService {
       }
 
       // 발송 즉시 시작 API 사용
+      const config = getAtalkConfig();
       const startData = {
-        company: ATALK_API_CONFIG.company,
-        user_id: ATALK_API_CONFIG.userId,
-        text_campaign_name: ATALK_API_CONFIG.campaignName,
-        text_page: ATALK_API_CONFIG.page,
+        company: config.company,
+        user_id: config.userId,
+        text_campaign_name: config.campaignName,
+        text_page: config.page,
         ...(historyKey && { history_key: historyKey })
       };
 
@@ -390,12 +401,13 @@ export class AtalkArsService {
     historyKey: string
   ): Promise<{ success: boolean; status?: string; message: string }> {
     try {
+      const config = getAtalkConfig();
       const historyData = {
         history_key: historyKey,
-        company: ATALK_API_CONFIG.company,
-        user_id: ATALK_API_CONFIG.userId,
-        text_campaign_name: ATALK_API_CONFIG.campaignName,
-        text_page: ATALK_API_CONFIG.page,
+        company: config.company,
+        user_id: config.userId,
+        text_campaign_name: config.campaignName,
+        text_page: config.page,
       };
 
       const response = await this.makeApiCall('/calllist/status', historyData);

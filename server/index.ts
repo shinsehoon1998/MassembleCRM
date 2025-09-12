@@ -1,3 +1,9 @@
+// ATALK API 환경변수 설정 (import 전에 먼저 설정)
+process.env.ATALK_API_TOKEN = "NjI3OTIz";
+process.env.ATALK_COMPANY = "627923";
+process.env.ATALK_USER_ID = "mb627923";
+console.log('✅ ATALK API 환경변수 설정 완료');
+
 import express, { type Request, Response, NextFunction } from "express";
 import multer from 'multer';
 import { registerRoutes } from "./routes";
