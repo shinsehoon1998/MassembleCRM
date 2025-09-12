@@ -333,6 +333,21 @@ export const arsScenarios = pgTable("ars_scenarios", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// 음원 파일 관리 테이블
+export const audioFiles = pgTable("audio_files", {
+  id: varchar("id", { length: 50 }).primaryKey(),
+  scenarioId: varchar("scenario_id", { length: 50 }).references(() => arsScenarios.id),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  originalName: varchar("original_name", { length: 255 }).notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: varchar("mime_type", { length: 50 }).notNull(),
+  description: text("description"),
+  atalkSynced: boolean("atalk_synced").default(false),
+  atalkFileName: varchar("atalk_file_name", { length: 255 }),
+  createdBy: varchar("created_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 
 // ARS 관련 스키마
 export const insertArsCampaignSchema = createInsertSchema(arsCampaigns).omit({
@@ -349,6 +364,10 @@ export const insertArsSendLogSchema = createInsertSchema(arsSendLogs).omit({
 export const insertArsScenarioSchema = createInsertSchema(arsScenarios).omit({
   createdAt: true,
   updatedAt: true,
+});
+
+export const insertAudioFileSchema = createInsertSchema(audioFiles).omit({
+  createdAt: true,
 });
 
 // 고객 그룹 스키마
@@ -370,6 +389,8 @@ export type ArsSendLog = typeof arsSendLogs.$inferSelect;
 export type InsertArsSendLog = z.infer<typeof insertArsSendLogSchema>;
 export type ArsScenario = typeof arsScenarios.$inferSelect;
 export type InsertArsScenario = z.infer<typeof insertArsScenarioSchema>;
+export type AudioFile = typeof audioFiles.$inferSelect;
+export type InsertAudioFile = z.infer<typeof insertAudioFileSchema>;
 
 // 고객 그룹 타입 정의
 export type CustomerGroup = typeof customerGroups.$inferSelect;

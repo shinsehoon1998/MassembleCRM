@@ -1509,6 +1509,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 음원 파일 업로드용 multer 설정
+  const audioUpload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('WAV 또는 MP3 파일만 업로드 가능합니다.'), false);
+      }
+    },
+    limits: {
+      fileSize: 10 * 1024 * 1024 // 10MB 제한
+    }
+  });
+
+  // 시나리오 생성 + 음원 업로드 + 아톡 연동
+  app.post('/api/ars/scenarios/create-with-audio', isAuthenticated, audioUpload.single('audioFile'), async (req: any, res) => {
+    try {
+      const { description, uploadToAtalk } = req.body;
+      const audioFile = req.file;
+
+      if (!audioFile) {
+        return res.status(400).json({ message: '음원 파일을 선택해주세요.' });
+      }
+
+      if (!description?.trim()) {
+        return res.status(400).json({ message: '시나리오 설명을 입력해주세요.' });
+      }
+
+      // 입력값 추가 검증
+      if (typeof description !== 'string' || description.length > 1000) {
+        return res.status(400).json({ message: '설명은 1000자 이하로 입력해주세요.' });
+      }
+
+      // 고유한 시나리오 ID 생성
+      const scenarioId = `scenario_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // 1. 시나리오 생성
+      const scenario = await storage.createArsScenario({
+        id: scenarioId,
+        name: `음원시나리오_${Date.now()}`,
+        description: description.trim(),
+        createdBy: req.user?.name || 'unknown'
+      });
+
+      let atalkResult = null;
+      
+      // 2. 아톡 음원 업로드 (옵션)
+      if (uploadToAtalk === 'true') {
+        try {
+          atalkResult = await atalkArsService.uploadAudioFile({
+            fileName: audioFile.originalname,
+            campaignName: scenario.name,
+            audioType: 'ars',
+            mimeType: audioFile.mimetype
+          }, audioFile.buffer);
+
+          console.log(`[음원 업로드] 아톡비즈 연동 성공: ${atalkResult.fileName}`);
+        } catch (atalkError) {
+          console.error('[음원 업로드] 아톡비즈 연동 실패:', atalkError);
+          // 아톡 연동 실패해도 로컬 시나리오는 유지
+        }
+      }
+
+      // 3. 로컬 음원 파일 정보 저장
+      const audioRecord = await storage.createAudioFile({
+        id: `audio_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        scenarioId: scenario.id,
+        fileName: audioFile.originalname,
+        originalName: audioFile.originalname,
+        fileSize: audioFile.size,
+        mimeType: audioFile.mimetype,
+        description: description.trim(),
+        atalkSynced: !!atalkResult,
+        atalkFileName: atalkResult?.fileName || null,
+        createdBy: req.user?.name || 'unknown'
+      });
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "scenario_with_audio_created",
+        description: `시나리오 "${scenario.name}" 생성 (음원: ${audioFile.originalname}${atalkResult ? ', 아톡 연동됨' : ''})`,
+      });
+
+      res.json({
+        scenario,
+        audioFile: audioRecord,
+        atalkSynced: !!atalkResult,
+        atalkResult,
+        fileName: audioFile.originalname,
+        message: atalkResult 
+          ? '시나리오와 음원이 생성되고 아톡비즈에도 등록되었습니다.'
+          : '시나리오와 음원이 생성되었습니다.'
+      });
+
+    } catch (error) {
+      console.error('Failed to create scenario with audio:', error);
+      if (error.message?.includes('WAV 또는 MP3')) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: '시나리오 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 음원 파일 목록 조회
+  app.get('/api/ars/audio-files', isAuthenticated, async (req, res) => {
+    try {
+      const audioFiles = await storage.getAudioFiles();
+      res.json(audioFiles);
+    } catch (error) {
+      console.error('Failed to get audio files:', error);
+      res.status(500).json({ message: '음원 파일 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 음원 파일 삭제
+  app.delete('/api/ars/audio-files/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      
+      const audioFile = await storage.getAudioFile(id);
+      if (!audioFile) {
+        return res.status(404).json({ message: '음원 파일을 찾을 수 없습니다.' });
+      }
+
+      const success = await storage.deleteAudioFile(id);
+      if (!success) {
+        return res.status(500).json({ message: '음원 파일 삭제에 실패했습니다.' });
+      }
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "audio_file_deleted",
+        description: `음원 파일 삭제: ${audioFile.fileName}`,
+      });
+      
+      res.json({ message: '음원 파일이 삭제되었습니다.' });
+    } catch (error) {
+      console.error('Failed to delete audio file:', error);
+      res.status(500).json({ message: '음원 파일 삭제 중 오류가 발생했습니다.' });
+    }
+  });
+
   // ============================================
   // 고객 그룹 관리 API
   // ============================================

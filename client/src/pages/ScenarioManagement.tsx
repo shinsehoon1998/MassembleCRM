@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, Edit, Trash2, MessageSquare, Upload } from "lucide-react";
+import { Plus, Upload, FileAudio, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,232 +39,187 @@ import {
 export default function ScenarioManagement() {
   const { toast } = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [editingScenario, setEditingScenario] = useState<any>(null);
-  const [uploadingAudio, setUploadingAudio] = useState<Set<string>>(new Set());
-  const [selectedAudioFiles, setSelectedAudioFiles] = useState<Map<string, File>>(new Map());
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragActive, setIsDragActive] = useState(false);
   const [formData, setFormData] = useState({
-    id: "",
-    name: "",
     description: "",
   });
 
-  // 시나리오 목록 조회
-  const { data: scenarios, isLoading } = useQuery({
-    queryKey: ["/api/ars/scenarios"],
+  // 아톡 음원 목록 조회
+  const { data: audioFiles, isLoading } = useQuery({
+    queryKey: ["/api/ars/audio-files"],
   });
 
-  // 시나리오 생성
+  // 시나리오 생성 + 음원 업로드 (아톡비즈 연동)
   const createScenarioMutation = useMutation({
-    mutationFn: async (data: { id: string; name: string; description: string }) => {
-      return apiRequest("POST", "/api/ars/scenarios", data);
-    },
-    onSuccess: () => {
-      toast({
-        title: "성공",
-        description: "시나리오가 생성되었습니다.",
-      });
-      setShowCreateModal(false);
-      setFormData({ id: "", name: "", description: "" });
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/scenarios"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "오류",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // 시나리오 수정
-  const updateScenarioMutation = useMutation({
-    mutationFn: async (data: { id: string; updates: Partial<any> }) => {
-      return apiRequest("PUT", `/api/ars/scenarios/${data.id}`, data.updates);
-    },
-    onSuccess: () => {
-      toast({
-        title: "성공",
-        description: "시나리오가 수정되었습니다.",
-      });
-      setEditingScenario(null);
-      setFormData({ id: "", name: "", description: "" });
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/scenarios"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "오류",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // 시나리오 삭제 (비활성화)
-  const deleteScenarioMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/ars/scenarios/${id}`);
-    },
-    onSuccess: () => {
-      toast({
-        title: "성공",
-        description: "시나리오가 삭제되었습니다.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/scenarios"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "오류",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // 음원 파일 업로드
-  const uploadAudioMutation = useMutation({
-    mutationFn: async ({ scenarioId, file }: { scenarioId: string; file: File }) => {
+    mutationFn: async (data: { description: string; audioFile: File }) => {
       const formData = new FormData();
-      formData.append('audioFile', file);
-      formData.append('scenarioId', scenarioId);
-      formData.append('audioType', 'ars');
+      formData.append('description', data.description);
+      formData.append('audioFile', data.audioFile);
+      formData.append('uploadToAtalk', 'true'); // 아톡비즈 연동 플래그
 
-      const response = await fetch('/api/ars/scenarios/upload-audio', {
+      const response = await fetch('/api/ars/scenarios/create-with-audio', {
         method: 'POST',
         body: formData,
         credentials: 'include',
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '음원 업로드에 실패했습니다.');
+        let errorMessage = '시나리오 생성에 실패했습니다.';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // JSON 파싱 실패 시 텍스트로 시도
+          try {
+            const errorText = await response.text();
+            errorMessage = errorText || errorMessage;
+          } catch {
+            // 최종 fallback
+            errorMessage = `서버 오류 (${response.status})`;
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       return response.json();
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (data) => {
       toast({
-        title: "음원 업로드 완료",
-        description: `음원 파일이 성공적으로 업로드되었습니다: ${data.fileName}`,
+        title: "시나리오 생성 완료",
+        description: `음원이 아톡비즈에도 자동 등록되었습니다: ${data.fileName}`,
       });
-      
-      // 해당 시나리오의 업로딩 상태 및 파일 제거
-      setUploadingAudio(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(variables.scenarioId);
-        return newSet;
-      });
-      setSelectedAudioFiles(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(variables.scenarioId);
-        return newMap;
-      });
-      
-      // 시나리오 목록 새로고침
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/scenarios"] });
+      setShowCreateModal(false);
+      setFormData({ description: "" });
+      setSelectedFile(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/audio-files"] });
     },
-    onError: (error: Error, variables) => {
+    onError: (error: Error) => {
       toast({
-        title: "업로드 실패",
+        title: "생성 실패",
         description: error.message,
         variant: "destructive",
-      });
-      
-      // 해당 시나리오의 업로딩 상태 제거
-      setUploadingAudio(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(variables.scenarioId);
-        return newSet;
       });
     },
   });
 
-  const handleCreate = () => {
-    if (!formData.id || !formData.name) {
+  // 음원 삭제
+  const deleteAudioMutation = useMutation({
+    mutationFn: async (audioId: string) => {
+      return apiRequest("DELETE", `/api/ars/audio-files/${audioId}`);
+    },
+    onSuccess: () => {
       toast({
-        title: "입력 오류",
-        description: "시나리오 ID와 이름을 입력해주세요.",
+        title: "삭제 완료",
+        description: "음원이 삭제되었습니다.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/audio-files"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "삭제 실패",
+        description: error.message,
         variant: "destructive",
       });
-      return;
-    }
+    },
+  });
 
-    createScenarioMutation.mutate(formData);
-  };
-
-  const handleEdit = (scenario: any) => {
-    setEditingScenario(scenario);
-    setFormData({
-      id: scenario.id,
-      name: scenario.name,
-      description: scenario.description || "",
-    });
-  };
-
-  const handleUpdate = () => {
-    if (!formData.name) {
+  const validateFile = (file: File) => {
+    // 파일 형식 검증
+    const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
+    if (!allowedTypes.includes(file.type)) {
       toast({
-        title: "입력 오류",
-        description: "시나리오 이름을 입력해주세요.",
+        title: "파일 형식 오류",
+        description: "WAV 또는 MP3 파일만 업로드 가능합니다.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
-
-    updateScenarioMutation.mutate({
-      id: editingScenario.id,
-      updates: {
-        name: formData.name,
-        description: formData.description,
-      },
-    });
+    
+    // 파일 크기 검증 (10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast({
+        title: "파일 크기 오류",
+        description: "10MB 이하의 파일만 업로드 가능합니다.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    
+    return true;
   };
 
-  const handleDelete = (id: string) => {
-    deleteScenarioMutation.mutate(id);
-  };
-
-  const handleAudioFileChange = (scenarioId: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // 파일 형식 검증
-      const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
-      if (!allowedTypes.includes(file.type)) {
-        toast({
-          title: "파일 형식 오류",
-          description: "WAV 또는 MP3 파일만 업로드 가능합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      // 파일 크기 검증 (10MB)
-      const maxSize = 10 * 1024 * 1024;
-      if (file.size > maxSize) {
-        toast({
-          title: "파일 크기 오류",
-          description: "10MB 이하의 파일만 업로드 가능합니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      setSelectedAudioFiles(prev => new Map(prev).set(scenarioId, file));
+    if (file && validateFile(file)) {
+      setSelectedFile(file);
     }
   };
 
-  const handleUploadAudio = (scenarioId: string) => {
-    const selectedFile = selectedAudioFiles.get(scenarioId);
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragActive(false);
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragActive(false);
+    
+    const files = Array.from(event.dataTransfer.files);
+    const audioFile = files.find(file => file.type.startsWith('audio/'));
+    
+    if (audioFile && validateFile(audioFile)) {
+      setSelectedFile(audioFile);
+    } else if (files.length > 0 && !audioFile) {
+      toast({
+        title: "파일 형식 오류",
+        description: "음원 파일만 업로드 가능합니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreate = () => {
+    if (!formData.description.trim()) {
+      toast({
+        title: "입력 오류",
+        description: "시나리오 설명을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!selectedFile) {
       toast({
         title: "파일 선택 필요",
-        description: "업로드할 음원 파일을 선택해주세요.",
+        description: "음원 파일을 선택해주세요.",
         variant: "destructive",
       });
       return;
     }
-    
-    setUploadingAudio(prev => new Set(prev).add(scenarioId));
-    uploadAudioMutation.mutate({ scenarioId, file: selectedFile });
+
+    createScenarioMutation.mutate({
+      description: formData.description,
+      audioFile: selectedFile
+    });
+  };
+
+  const handleDelete = (audioId: string) => {
+    deleteAudioMutation.mutate(audioId);
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   if (isLoading) {
@@ -271,8 +234,8 @@ export default function ScenarioManagement() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">ARS 시나리오 관리</h1>
-          <p className="text-gray-600 mt-1">ARS 발송에 사용할 시나리오를 관리합니다.</p>
+          <h1 className="text-2xl font-bold text-gray-900">시나리오 관리</h1>
+          <p className="text-gray-600 mt-1">ARS 시나리오와 음원을 관리합니다.</p>
         </div>
         
         <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
@@ -282,49 +245,15 @@ export default function ScenarioManagement() {
               새 시나리오
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>새 시나리오 생성</DialogTitle>
               <DialogDescription>
                 새로운 ARS 시나리오를 생성합니다.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="scenarioId">시나리오 ID</Label>
-                <Input
-                  id="scenarioId"
-                  placeholder="예: marketing_promotion"
-                  value={formData.id}
-                  onChange={(e) =>
-                    setFormData(prev => ({
-                      ...prev,
-                      id: e.target.value,
-                    }))
-                  }
-                  data-testid="input-scenario-id"
-                />
-                <p className="text-sm text-gray-500">
-                  영문, 숫자, 언더스코어(_)만 사용하세요.
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="scenarioName">시나리오 이름</Label>
-                <Input
-                  id="scenarioName"
-                  placeholder="예: 마케팅 프로모션 안내"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData(prev => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  data-testid="input-scenario-name"
-                />
-              </div>
-
+            <div className="space-y-6 py-4">
+              {/* 설명 입력 */}
               <div className="space-y-2">
                 <Label htmlFor="scenarioDescription">설명</Label>
                 <Textarea
@@ -337,8 +266,74 @@ export default function ScenarioManagement() {
                       description: e.target.value,
                     }))
                   }
+                  className="h-20"
                   data-testid="textarea-scenario-description"
                 />
+              </div>
+
+              {/* 음원 파일 업로드 */}
+              <div className="space-y-2">
+                <Label htmlFor="audioFile">음원 파일</Label>
+                <div 
+                  className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                    isDragActive 
+                      ? 'border-blue-400 bg-blue-50' 
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  <Upload className={`h-8 w-8 mx-auto mb-2 ${
+                    isDragActive ? 'text-blue-500' : 'text-gray-400'
+                  }`} />
+                  <input
+                    type="file"
+                    id="audioFile"
+                    accept="audio/wav,audio/mp3,audio/mpeg"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    data-testid="input-audio-file"
+                  />
+                  <div className="space-y-3">
+                    <div className="text-sm text-gray-600">
+                      <span className={`font-semibold ${
+                        isDragActive ? 'text-blue-600' : 'text-blue-600'
+                      }`}>
+                        여기로 드래그하거나
+                      </span>{" "}
+                      아래 버튼을 클릭하세요
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => document.getElementById('audioFile')?.click()}
+                      className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                      data-testid="button-select-file"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      파일 선택
+                    </Button>
+                    <div className="text-xs text-gray-500">
+                      WAV, MP3 파일만 지원 (최대 10MB)
+                    </div>
+                  </div>
+                  
+                  {selectedFile && (
+                    <div className="mt-3 p-2 bg-blue-50 rounded border">
+                      <div className="flex items-center justify-center">
+                        <FileAudio className="h-4 w-4 text-blue-600 mr-2" />
+                        <span className="text-sm text-blue-800 font-medium">
+                          {selectedFile.name}
+                        </span>
+                        <span className="text-xs text-blue-600 ml-2">
+                          ({formatFileSize(selectedFile.size)})
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -362,218 +357,111 @@ export default function ScenarioManagement() {
         </Dialog>
       </div>
 
-      {/* 시나리오 목록 */}
+      {/* 음원 관리 테이블 */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">등록된 시나리오</h2>
+          <h2 className="text-lg font-medium text-gray-900 flex items-center">
+            <FileAudio className="h-5 w-5 mr-2 text-blue-600" />
+            음원 리스트
+          </h2>
         </div>
         
-        <div className="divide-y divide-gray-200">
-          {(scenarios as any)?.map((scenario: any) => (
-            <div key={scenario.id} className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <MessageSquare className="h-5 w-5 text-blue-600" />
-                    <h3 className="text-lg font-medium text-gray-900" data-testid={`text-scenario-name-${scenario.id}`}>
-                      {scenario.name}
-                    </h3>
-                    <Badge variant="secondary" data-testid={`badge-scenario-id-${scenario.id}`}>
-                      {scenario.id}
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead className="w-12 text-center">번호</TableHead>
+                <TableHead>파일명</TableHead>
+                <TableHead>설명</TableHead>
+                <TableHead className="w-24 text-center">파일크기</TableHead>
+                <TableHead className="w-32 text-center">등록일</TableHead>
+                <TableHead className="w-32 text-center">아톡상태</TableHead>
+                <TableHead className="w-20 text-center">관리</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(audioFiles as any)?.map((audio: any, index: number) => (
+                <TableRow key={audio.id}>
+                  <TableCell className="text-center font-medium">
+                    {index + 1}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center">
+                      <FileAudio className="h-4 w-4 text-blue-600 mr-2" />
+                      <span className="font-medium" data-testid={`text-audio-name-${audio.id}`}>
+                        {audio.fileName}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-gray-600" data-testid={`text-audio-description-${audio.id}`}>
+                      {audio.description || "설명 없음"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className="text-sm text-gray-500">
+                      {audio.fileSize ? formatFileSize(audio.fileSize) : "알 수 없음"}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <span className="text-sm text-gray-500">
+                      {new Date(audio.createdAt).toLocaleDateString('ko-KR')}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Badge 
+                      variant={audio.atalkSynced ? "default" : "secondary"}
+                      data-testid={`badge-atalk-status-${audio.id}`}
+                    >
+                      {audio.atalkSynced ? "동기화됨" : "대기중"}
                     </Badge>
-                    {scenario.isActive && (
-                      <Badge variant="default" data-testid={`badge-scenario-status-${scenario.id}`}>
-                        활성
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  {scenario.description && (
-                    <p className="text-gray-600 mb-3" data-testid={`text-scenario-description-${scenario.id}`}>
-                      {scenario.description}
-                    </p>
-                  )}
-                  
-                  <div className="text-sm text-gray-500">
-                    생성일: {new Date(scenario.createdAt).toLocaleDateString('ko-KR')}
-                    {scenario.createdBy && ` | 생성자: ${scenario.createdBy}`}
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-2 ml-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEdit(scenario)}
-                    data-testid={`button-edit-scenario-${scenario.id}`}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    수정
-                  </Button>
-                  
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700 hover:border-red-300"
-                        data-testid={`button-delete-scenario-${scenario.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        삭제
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>시나리오 삭제</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          '{scenario.name}' 시나리오를 삭제하시겠습니까?
-                          이 작업은 되돌릴 수 없습니다.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>취소</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={() => handleDelete(scenario.id)}
-                          className="bg-red-600 hover:bg-red-700"
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700"
+                          data-testid={`button-delete-audio-${audio.id}`}
                         >
-                          삭제
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </div>
-
-              {/* 음원 업로드 섹션 */}
-              <div className="bg-gray-50 rounded-lg p-4 border mt-4">
-                <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
-                  <Upload className="h-4 w-4 mr-2 text-blue-600" />
-                  음원 파일 업로드
-                </h4>
-                
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="file"
-                      accept="audio/wav,audio/mp3,audio/mpeg"
-                      onChange={handleAudioFileChange(scenario.id)}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                      data-testid={`input-audio-file-${scenario.id}`}
-                    />
-                    {selectedAudioFiles.get(scenario.id) && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        선택된 파일: {selectedAudioFiles.get(scenario.id)!.name} ({(selectedAudioFiles.get(scenario.id)!.size / 1024 / 1024).toFixed(2)}MB)
-                      </p>
-                    )}
-                  </div>
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleUploadAudio(scenario.id)}
-                    disabled={!selectedAudioFiles.get(scenario.id) || uploadingAudio.has(scenario.id)}
-                    data-testid={`button-upload-audio-${scenario.id}`}
-                  >
-                    {uploadingAudio.has(scenario.id) ? (
-                      <>업로드 중...</>
-                    ) : (
-                      <>
-                        <Upload className="h-4 w-4 mr-1" />
-                        업로드
-                      </>
-                    )}
-                  </Button>
-                </div>
-                
-                <p className="text-xs text-gray-500 mt-2">
-                  WAV 또는 MP3 파일만 업로드 가능합니다. (최대 10MB)
-                </p>
-              </div>
-            </div>
-          ))}
-          
-          {(!scenarios || (scenarios as any).length === 0) && (
-            <div className="p-6 text-center text-gray-500">
-              등록된 시나리오가 없습니다.
-            </div>
-          )}
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>음원 삭제</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            '{audio.fileName}' 음원을 삭제하시겠습니까?
+                            이 작업은 되돌릴 수 없습니다.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>취소</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(audio.id)}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            삭제
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
+                </TableRow>
+              ))}
+              
+              {(!audioFiles || (audioFiles as any).length === 0) && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                    등록된 음원이 없습니다.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
-
-      {/* 시나리오 수정 모달 */}
-      <Dialog open={!!editingScenario} onOpenChange={() => setEditingScenario(null)}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>시나리오 수정</DialogTitle>
-            <DialogDescription>
-              시나리오 정보를 수정합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>시나리오 ID</Label>
-              <Input
-                value={formData.id}
-                disabled
-                className="bg-gray-50"
-              />
-              <p className="text-sm text-gray-500">
-                시나리오 ID는 수정할 수 없습니다.
-              </p>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="editScenarioName">시나리오 이름</Label>
-              <Input
-                id="editScenarioName"
-                placeholder="예: 마케팅 프로모션 안내"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData(prev => ({
-                    ...prev,
-                    name: e.target.value,
-                  }))
-                }
-                data-testid="input-edit-scenario-name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="editScenarioDescription">설명</Label>
-              <Textarea
-                id="editScenarioDescription"
-                placeholder="시나리오에 대한 설명을 입력하세요."
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData(prev => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                data-testid="textarea-edit-scenario-description"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => setEditingScenario(null)}
-              data-testid="button-cancel-edit"
-            >
-              취소
-            </Button>
-            <Button 
-              onClick={handleUpdate}
-              disabled={updateScenarioMutation.isPending}
-              data-testid="button-update"
-            >
-              {updateScenarioMutation.isPending ? "수정 중..." : "수정"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   arsCampaigns,
   arsSendLogs,
   arsScenarios,
+  audioFiles,
   customerGroups,
   customerGroupMappings,
   type User,
@@ -31,6 +32,8 @@ import {
   type InsertArsSendLog,
   type ArsScenario,
   type InsertArsScenario,
+  type AudioFile,
+  type InsertAudioFile,
   type CustomerGroup,
   type InsertCustomerGroup,
   type CustomerGroupMapping,
@@ -129,6 +132,13 @@ export interface IStorage {
   getArsScenarios(): Promise<ArsScenario[]>;
   createArsScenario(scenario: InsertArsScenario): Promise<ArsScenario>;
   updateArsScenario(id: string, updates: Partial<ArsScenario>): Promise<ArsScenario | undefined>;
+
+  // 음원 파일 관련 메서드들
+  getAudioFiles(): Promise<AudioFile[]>;
+  getAudioFile(id: string): Promise<AudioFile | undefined>;
+  createAudioFile(audioFile: InsertAudioFile): Promise<AudioFile>;
+  updateAudioFile(id: string, updates: Partial<AudioFile>): Promise<AudioFile | undefined>;
+  deleteAudioFile(id: string): Promise<boolean>;
 
   // 고객 그룹 관련 메서드들
   getCustomerGroups(): Promise<CustomerGroup[]>;
@@ -666,6 +676,47 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  // 음원 파일 CRUD 메서드들
+  async getAudioFiles(): Promise<AudioFile[]> {
+    return await db
+      .select()
+      .from(audioFiles)
+      .orderBy(desc(audioFiles.createdAt));
+  }
+
+  async getAudioFile(id: string): Promise<AudioFile | undefined> {
+    const [audioFile] = await db
+      .select()
+      .from(audioFiles)
+      .where(eq(audioFiles.id, id));
+    return audioFile;
+  }
+
+  async createAudioFile(audioFile: InsertAudioFile): Promise<AudioFile> {
+    const [created] = await db
+      .insert(audioFiles)
+      .values(audioFile)
+      .returning();
+    return created;
+  }
+
+  async updateAudioFile(id: string, updates: Partial<AudioFile>): Promise<AudioFile | undefined> {
+    const [updated] = await db
+      .update(audioFiles)
+      .set(updates)
+      .where(eq(audioFiles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAudioFile(id: string): Promise<boolean> {
+    const result = await db
+      .delete(audioFiles)
+      .where(eq(audioFiles.id, id));
+    const affected = Number(result.rowCount ?? 0);
+    return affected > 0;
+  }
+
   // 고객 그룹 관련 메서드들
   async getCustomerGroups(): Promise<CustomerGroup[]> {
     console.log('[DEBUG] getCustomerGroups method called');
@@ -722,7 +773,8 @@ export class DatabaseStorage implements IStorage {
       .delete(customerGroups)
       .where(eq(customerGroups.id, id));
 
-    return result.rowCount > 0;
+    const affected = Number(result.rowCount ?? 0);
+    return affected > 0;
   }
 
   async addCustomerToGroup(customerId: string, groupId: string, addedBy: string): Promise<CustomerGroupMapping> {
@@ -747,7 +799,8 @@ export class DatabaseStorage implements IStorage {
         )
       );
 
-    return result.rowCount > 0;
+    const affected = Number(result.rowCount ?? 0);
+    return affected > 0;
   }
 
   async getCustomersInGroup(groupId: string): Promise<CustomerWithUser[]> {
