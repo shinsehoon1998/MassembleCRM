@@ -50,17 +50,13 @@ async function initializeAdminUser() {
   }
 }
 
-// CORS 설정 - 배포 환경을 위한 설정
+// CORS 설정
 app.use((req, res, next) => {
-  // 배포 환경에서 NODE_ENV를 production으로 설정
-  if (req.headers.host && req.headers.host.includes('.replit.app')) {
-    process.env.NODE_ENV = 'production';
-  }
-  
   const origin = req.headers.origin;
   const allowedOrigins = [
     'https://massemble-crm-shinsehoona.replit.app',
-    /https:\/\/.*\.replit\.dev/
+    /https:\/\/.*\.replit\.dev/,
+    /https:\/\/.*\.replit\.app/
   ];
   
   // Origin 체크
