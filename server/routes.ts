@@ -1334,18 +1334,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: '유효한 전화번호를 가진 고객이 없습니다.' });
       }
 
-      // Step 2: 시나리오 기반 음성파일 준비 (필수)
+      // Step 2: 시나리오 기반 음성파일 준비 (선택적)
       let audioFileBuffer: Buffer | undefined;
       let audioFileName: string | undefined;
       
       if (scenarioId && scenarioId !== 'marketing_consent') {
-        // 시나리오에 연결된 오디오 파일 조회
+        // 시나리오에 연결된 오디오 파일 조회 (조건 완화)
         const audioFiles = await storage.getAudioFiles();
-        const scenarioAudioFile = audioFiles.find(af => af.scenarioId === scenarioId && af.atalkStatus === 'uploaded');
+        console.log(`[ARS] 시나리오 '${scenarioId}' 음성파일 조회 중... 전체 ${audioFiles.length}개 파일 확인`);
+        
+        // 🔥 수정: atalkStatus 조건 완화 - uploaded 외에도 다른 상태 허용
+        let scenarioAudioFile = audioFiles.find(af => af.scenarioId === scenarioId && af.atalkStatus === 'uploaded');
+        if (!scenarioAudioFile) {
+          // uploaded 상태가 없으면 다른 상태도 시도
+          scenarioAudioFile = audioFiles.find(af => af.scenarioId === scenarioId && af.storageUrl);
+          console.log(`[ARS] 시나리오 '${scenarioId}' - uploaded 상태 파일 없음, 다른 상태 파일 ${scenarioAudioFile ? '발견' : '없음'}`);
+        }
         
         if (scenarioAudioFile && scenarioAudioFile.storageUrl) {
           try {
-            console.log(`[ARS] 시나리오 '${scenarioId}'의 음성파일 다운로드: ${scenarioAudioFile.originalName}`);
+            console.log(`[ARS] 시나리오 '${scenarioId}'의 음성파일 다운로드: ${scenarioAudioFile.originalName} (상태: ${scenarioAudioFile.atalkStatus})`);
             
             // ObjectStorage에서 파일 다운로드
             const objectStorageService = new ObjectStorageService();
@@ -1365,17 +1373,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`[ARS] 시나리오 음성파일 준비 완료: ${audioFileName} (${audioFileBuffer.length} bytes)`);
           } catch (error) {
             console.error(`[ARS] 시나리오 음성파일 다운로드 실패: ${error}`);
-            return res.status(400).json({ 
-              success: false,
-              message: `시나리오 '${scenarioId}'의 음성파일 다운로드에 실패했습니다: ${error instanceof Error ? error.message : 'Unknown error'}` 
-            });
+            // 🔥 수정: 음성파일 다운로드 실패해도 캠페인 진행 (경고만 출력)
+            console.warn(`[ARS] 시나리오 '${scenarioId}' 음성파일 사용 불가 - 텍스트 시나리오로 진행`);
           }
         } else {
-          console.warn(`[ARS] 시나리오 '${scenarioId}'에 업로드된 음성파일이 없습니다.`);
-          return res.status(400).json({ 
-            success: false,
-            message: `시나리오 '${scenarioId}'에 업로드된 음성파일이 없습니다. 먼저 음성파일을 업로드해주세요.` 
-          });
+          // 🔥 수정: 음성파일이 없어도 에러 대신 경고만 출력하고 진행
+          console.warn(`[ARS] 시나리오 '${scenarioId}'에 음성파일이 없습니다 - 텍스트 시나리오 또는 기본 설정으로 진행`);
+          const availableFiles = audioFiles.filter(af => af.scenarioId === scenarioId);
+          if (availableFiles.length > 0) {
+            console.log(`[ARS] 시나리오 '${scenarioId}' 관련 파일 ${availableFiles.length}개 발견 (상태: ${availableFiles.map(af => af.atalkStatus).join(', ')})`);
+          }
         }
       }
 

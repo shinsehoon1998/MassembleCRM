@@ -219,27 +219,51 @@ export class AtalkArsService {
     try {
       const config = getAtalkConfig();
       
+      const cleanPhone = targetPhone.replace(/[^0-9]/g, ''); // 숫자만
       const callData: AddCallListRequest = {
         text_send_no: sendNumber,
         company: config.company,
         user_id: config.userId,
         text_campaign_name: config.campaignName,
         text_page: config.page,
-        callee: targetPhone.replace(/[^0-9]/g, '') // 숫자만
+        callee: cleanPhone
       };
 
+      console.log(`[ARS] 발송리스트 추가: ${targetPhone} -> ${cleanPhone}`);
       const response = await this.makeApiCall('/calllist/add', callData);
 
-      if (response.code === '200') {
+      // 🔥 수정: 더 정교한 성공/실패 판단 로직
+      console.log(`[ARS] 발송리스트 추가 응답:`, {
+        code: response.code,
+        result: response.result,
+        historyKey: response.history_key,
+        phone: cleanPhone
+      });
+
+      const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
+      const isSuccessResult = !response.result || 
+                              response.result === '성공' || 
+                              response.result === 'SUCCESS' || 
+                              response.result.includes('성공') ||
+                              response.result.toLowerCase().includes('success');
+
+      if (isSuccessCode && isSuccessResult) {
+        console.log(`[ARS] 발송리스트 추가 성공: ${cleanPhone}, historyKey: ${response.history_key}`);
         return {
           success: true,
           historyKey: response.history_key,
           message: '발송리스트에 추가되었습니다.',
         };
       } else {
-        throw new Error(response.result || '발송리스트 추가 실패');
+        const errorMessage = response.result || 
+                            response.data?.error || 
+                            response.data?.message ||
+                            `발송리스트 추가 실패 (코드: ${response.code})`;
+        console.warn(`[ARS] 발송리스트 추가 실패: ${cleanPhone} - ${errorMessage}`);
+        throw new Error(errorMessage);
       }
     } catch (error) {
+      console.error(`[ARS] 발송리스트 추가 예외: ${targetPhone}`, error);
       return {
         success: false,
         message: error instanceof Error ? error.message : '발송리스트 추가에 실패했습니다.',
@@ -335,14 +359,35 @@ export class AtalkArsService {
         campaignName: ATALK_API_CONFIG.campaignName
       }, result, response.status);
 
-      if (result.code === '200') {
+      // 🔥 수정: 더 정교한 성공/실패 판단 로직
+      console.log(`[ARS] 음성파일 업로드 응답:`, {
+        code: result.code,
+        result: result.result,
+        data: result.data,
+        fileName
+      });
+
+      const isSuccessCode = result.code === '200' || result.code === 'SUCCESS' || result.code === '0';
+      const isSuccessResult = !result.result || 
+                              result.result === '성공' || 
+                              result.result === 'SUCCESS' || 
+                              result.result.includes('성공') ||
+                              result.result.toLowerCase().includes('success');
+
+      if (isSuccessCode && isSuccessResult) {
+        console.log(`[ARS] 음성파일 업로드 성공: ${fileName}`);
         return {
           success: true,
           message: '음성파일이 성공적으로 업로드되었습니다.',
           fileName
         };
       } else {
-        throw new Error(result.result || '음성파일 업로드 실패');
+        const errorMessage = result.result || 
+                            result.data?.error || 
+                            result.data?.message ||
+                            `음성파일 업로드 실패 (코드: ${result.code})`;
+        console.warn(`[ARS] 음성파일 업로드 실패: ${fileName} - ${errorMessage}`);
+        throw new Error(errorMessage);
       }
     } catch (error) {
       return {
@@ -376,15 +421,47 @@ export class AtalkArsService {
 
       const response = await this.makeApiCall('/calllist/start', startData);
       
-      if (response.code === '200' || response.code === 'SUCCESS') {
+      // 🔥 수정: 더 정교한 성공/실패 판단 로직
+      console.log(`[ARS] 캠페인 시작 응답 분석:`, {
+        code: response.code,
+        result: response.result,
+        data: response.data,
+        historyKey: response.history_key,
+      });
+
+      const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
+      const isSuccessResult = !response.result || 
+                              response.result === '성공' || 
+                              response.result === 'SUCCESS' || 
+                              response.result.includes('성공') ||
+                              response.result.toLowerCase().includes('success');
+      const hasValidData = !response.data || typeof response.data === 'object';
+
+      // 성공 조건: 응답 코드가 성공이고 result가 에러가 아닌 경우
+      if (isSuccessCode && isSuccessResult) {
+        console.log(`[ARS] 캠페인 시작 성공 확인 - code: ${response.code}, result: ${response.result}`);
         return {
           success: true,
           message: '캠페인이 성공적으로 시작되었습니다.',
         };
       } else {
-        throw new Error(response.result || '캠페인 시작 실패');
+        // 실패 조건들을 상세히 로깅
+        const failReasons = [];
+        if (!isSuccessCode) failReasons.push(`잘못된 코드: ${response.code}`);
+        if (!isSuccessResult) failReasons.push(`결과 에러: ${response.result}`);
+        if (!hasValidData) failReasons.push(`데이터 문제: ${JSON.stringify(response.data)}`);
+        
+        console.warn(`[ARS] 캠페인 시작 실패 - ${failReasons.join(', ')}`);
+        
+        const errorMessage = response.result || 
+                            response.data?.error || 
+                            response.data?.message ||
+                            `캠페인 시작 실패 (코드: ${response.code})`;
+        
+        throw new Error(errorMessage);
       }
     } catch (error) {
+      console.error(`[ARS] 캠페인 시작 예외:`, error);
       return {
         success: false,
         message: error instanceof Error ? error.message : '캠페인 시작에 실패했습니다.',
@@ -544,28 +621,48 @@ export class AtalkArsService {
       }
 
       // Step 2: 발송리스트 추가 (배치 처리)
-      console.log(`[ARS 파이프라인] 발송리스트 추가 시작`);
+      console.log(`[ARS 파이프라인] 발송리스트 추가 시작 - 총 ${params.customerPhones.length}개 전화번호`);
       const batchSize = 5; // 동시 처리 제한
       const historyKeys: string[] = [];
 
       for (let i = 0; i < params.customerPhones.length; i += batchSize) {
         const batch = params.customerPhones.slice(i, i + batchSize);
+        console.log(`[ARS 파이프라인] 배치 ${Math.floor(i / batchSize) + 1}/${Math.ceil(params.customerPhones.length / batchSize)} 처리 중 (${batch.length}개)`);
+        
         const batchPromises = batch.map(phone => 
           this.addCallList(params.sendNumber, phone)
         );
 
         const batchResults = await Promise.allSettled(batchPromises);
         
-        for (const result of batchResults) {
+        // 🔥 개선: 배치 결과 상세 분석
+        let batchSuccess = 0;
+        let batchFailed = 0;
+        
+        for (let j = 0; j < batchResults.length; j++) {
+          const result = batchResults[j];
+          const phone = batch[j];
+          
           if (result.status === 'fulfilled' && result.value.success) {
             results.callListAdded++;
+            batchSuccess++;
             if (result.value.historyKey) {
               historyKeys.push(result.value.historyKey);
+              console.log(`[ARS 파이프라인] ✓ ${phone}: ${result.value.historyKey}`);
+            } else {
+              console.warn(`[ARS 파이프라인] ⚠ ${phone}: 성공했지만 historyKey 없음`);
             }
           } else {
             results.callListFailed++;
+            batchFailed++;
+            const errorMsg = result.status === 'fulfilled' 
+              ? result.value.message 
+              : result.reason?.message || 'Unknown error';
+            console.error(`[ARS 파이프라인] ✗ ${phone}: ${errorMsg}`);
           }
         }
+        
+        console.log(`[ARS 파이프라인] 배치 ${Math.floor(i / batchSize) + 1} 완료 - 성공: ${batchSuccess}, 실패: ${batchFailed}`);
 
         // 배치 간 지연 (API 과부하 방지)
         if (i + batchSize < params.customerPhones.length) {
