@@ -44,8 +44,8 @@ function Router() {
           <Route component={NotFound} />
         </>
       ) : (
-        <>
-          <Layout>
+        <Layout>
+          <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/customers" component={Customers} />
             <Route path="/customers/:id" component={CustomerDetail} />
@@ -55,9 +55,11 @@ function Router() {
             <Route path="/customer-groups" component={CustomerGroups} />
             <Route path="/users" component={Users} />
             <Route path="/settings" component={Settings} />
-          </Layout>
-          <Route component={NotFound} />
-        </>
+            <Route>
+              <NotFound />
+            </Route>
+          </Switch>
+        </Layout>
       )}
     </Switch>
   );
