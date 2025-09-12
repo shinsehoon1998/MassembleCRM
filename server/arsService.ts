@@ -876,21 +876,21 @@ export class AtalkArsService {
         }
         secureLog(LogLevel.INFO, 'ARS_PIPELINE', '음성파일 업로드 완료', {}, requestId);
       } else if (params.scenarioId && params.scenarioId !== 'marketing_consent') {
-        // 🔥 시나리오 오디오 필수 업로드 로직 강화
-        secureLog(LogLevel.WARNING, 'ARS_PIPELINE', '시나리오에 오디오 파일 없음', {
-          scenarioId: params.scenarioId
+        // 🔥 Fallback 메커니즘: 오디오 파일이 없어도 아톡비즈 기본 음원으로 발송 진행
+        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '시나리오 오디오 파일 없음 - 아톡비즈 기본 음원 사용', {
+          scenarioId: params.scenarioId,
+          fallbackMode: 'atalk_default_audio'
         }, requestId);
-        secureLog(LogLevel.WARNING, 'ARS_PIPELINE', '시나리오 오디오 파일 필수 경고', {}, requestId);
         
-        // 🔥 선택적 엄격 벌시: 시나리오 오디오 필수일 때 업로드 없이 진행 차단
-        const strictMode = process.env.ARS_STRICT_AUDIO_REQUIRED === 'true';
-        if (strictMode) {
-          return {
-            success: false,
-            message: `시나리오 "${params.scenarioId}"에는 오디오 파일이 필수입니다. 오디오 파일을 먼저 업로드해주세요.`,
-            results,
-          };
-        }
+        // 🔥 오디오 없어도 발송 허용: 아톡비즈 관리자페이지 기본 음원 자동 사용
+        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '아톡비즈 기본 음원으로 발송 계속 진행', {
+          message: 'CRM 오디오 미업로드 상태이지만 아톡비즈 관리자페이지 음원설정으로 자동 처리'
+        }, requestId);
+      } else if (!params.audioFileBuffer) {
+        // 🔥 모든 경우에서 오디오 파일 없으면 아톡비즈 기본 음원 사용
+        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '오디오 파일 없음 - 아톡비즈 기본 음원 사용', {
+          fallbackMode: 'atalk_default_audio'
+        }, requestId);
       }
 
       // Step 2: 발송리스트 추가 (배치 처리)
@@ -1074,8 +1074,13 @@ export class AtalkArsService {
         const uploadResult = await this.uploadAudioFile(params.audioFileBuffer, params.audioFileName);
         
         if (!uploadResult.success) {
-          console.warn(`[ARS 재발송] 음성파일 업로드 실패, 기존 파일 사용: ${uploadResult.message}`);
+          console.warn(`[ARS 재발송] 음성파일 업로드 실패 - 아톡비즈 기본 음원으로 재발송 진행: ${uploadResult.message}`);
+        } else {
+          console.log(`[ARS 재발송] 음성파일 재업로드 완료`);
         }
+      } else {
+        // 🔥 Fallback 메커니즘: 오디오 파일이 없어도 아톡비즈 기본 음원으로 재발송 진행
+        console.log(`[ARS 재발송] 오디오 파일 없음 - 아톡비즈 기본 음원으로 재발송 진행`);
       }
 
       // Step 2: 발송리스트 재추가
