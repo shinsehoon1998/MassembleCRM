@@ -338,15 +338,17 @@ export const arsScenarios = pgTable("ars_scenarios", {
 export const audioFiles = pgTable("audio_files", {
   id: varchar("id", { length: 50 }).primaryKey(),
   scenarioId: varchar("scenario_id", { length: 50 }).references(() => arsScenarios.id),
-  fileName: varchar("file_name", { length: 255 }).notNull(),
-  originalName: varchar("original_name", { length: 255 }).notNull(),
+  fileName: varchar("filename", { length: 255 }).notNull(), // DB 실제 컬럼명에 맞춤
+  originalName: varchar("original_filename", { length: 255 }).notNull(), // DB 실제 컬럼명에 맞춤
   fileSize: integer("file_size").notNull(),
   mimeType: varchar("mime_type", { length: 50 }).notNull(),
   description: text("description"),
-  atalkSynced: boolean("atalk_synced").default(false),
-  atalkFileName: varchar("atalk_file_name", { length: 255 }),
-  createdBy: varchar("created_by"),
+  storageUrl: varchar("storage_path", { length: 500 }), // 실제 DB 컬럼에 맞춤
+  atalkStatus: varchar("atalk_status", { length: 50 }).default("pending"), // 실제 DB 컬럼에 맞춤
+  atalkResponse: text("atalk_response"), // 실제 DB 컬럼에 맞춤
+  uploadedBy: varchar("uploaded_by"), // 실제 DB 컬럼에 맞춤
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 
