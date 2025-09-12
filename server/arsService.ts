@@ -225,18 +225,18 @@ export class AtalkArsService {
 
         const formattedPhone = customer.phone.replace(/[^0-9]/g, '');
 
-        // 통합 캠페인명 사용 (아톡 관리자에서 하나의 캠페인으로 관리)
-        const unifiedCampaignName = `${campaignName}_${new Date().toISOString().slice(0, 10)}`;
+        // 아톡 시스템에서 인식 가능한 기본 캠페인명 사용
+        const validCampaignName = ATALK_API_CONFIG.campaignName; // "주식회사마셈블"
         
         const callData: CallRequest = {
           text_send_no: ATALK_API_CONFIG.defaultSendNumber, // 고정 발신번호 사용
           company: ATALK_API_CONFIG.company,
           user_id: ATALK_API_CONFIG.userId,
-          text_campaign_name: unifiedCampaignName, // 통합 캠페인명 사용
+          text_campaign_name: validCampaignName, // 검증된 캠페인명 사용
           text_page: formattedPhone,
         };
 
-        console.log(`[ARS] 통합캠페인 "${unifiedCampaignName}"으로 ${customer.name} (${formattedPhone}) 발송`);
+        console.log(`[ARS] "${validCampaignName}" 캠페인으로 ${customer.name} (${formattedPhone}) 발송`);
         const response = await this.makeApiCall('/calllist/add', callData);
 
         // 성공 로그 저장
