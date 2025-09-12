@@ -152,6 +152,9 @@ export interface IStorage {
   removeCustomerFromGroup(customerId: string, groupId: string): Promise<boolean>;
   getCustomersInGroup(groupId: string): Promise<CustomerWithUser[]>;
   getCustomerGroupsByCustomerId(customerId: string): Promise<CustomerGroup[]>;
+  
+  // ARS 마케팅 대상 관련 메서드들
+  getAllMarketingTargetIds(): Promise<string[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -889,6 +892,21 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(asc(customerGroups.name));
+  }
+
+  async getAllMarketingTargetIds(): Promise<string[]> {
+    // 마케팅 동의한 고객들의 ID 목록 반환
+    const marketingTargets = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.marketingConsent, true),
+          sql`${customers.phone} IS NOT NULL AND ${customers.phone} != ''`
+        )
+      );
+    
+    return marketingTargets.map(target => target.id);
   }
 }
 

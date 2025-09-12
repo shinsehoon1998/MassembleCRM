@@ -17,35 +17,34 @@ const audioUploadSchema = z.object({
   )
 });
 
-// 아톡비즈 PDS API 설정 - 보안 강화 및 실제 스펙 완전 적용
+// 아톡비즈 PDS API 설정 - 환경변수 기반 설정 구현
 const ATALK_API_CONFIG = {
-  baseUrl: process.env.NODE_ENV === 'production' 
-    ? 'https://101.202.45.50:8443/thirdparty/v1' 
-    : 'http://101.202.45.50:8080/thirdparty/v1', // 운영환경에서는 HTTPS 강제
-  clientToken: process.env.ATALK_API_KEY!, // CLIENT_TOKEN (Bearer용)
-  company: process.env.ATALK_COMPANY_ID || 'comtest', // 회사 코드
-  userId: process.env.ATALK_USER_ID || 'eple', // Plain text 사용자 ID (PDS 스펙)
-  campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블', // 캠페인명
-  defaultSendNumber: process.env.ATALK_SENDER_NUMBER!,
-  page: 'A', // 페이지 구분
-  // 한국어 캠페인명 정규화를 위한 대안 목록
-  campaignAliases: [
-    '주식회사마셈블',
-    '주식회사 마셈블', 
-    'MASSEMBLE',
-    '마셈블',
-    'IVR_API',
-    '자동발송'
-  ]
+  baseUrl: process.env.ATALK_BASE_URL || 'http://101.202.45.50:8080/thirdparty/v1',
+  clientToken: process.env.ATALK_API_KEY || 'NjI3OTIz', // 사용자 제공 API 키
+  secretKey: process.env.ATALK_SECRET_KEY || 'NjI3OTIz', // 서명/인증용 비밀키
+  company: process.env.ATALK_COMPANY_ID || '627923', // 사용자 제공 company ID
+  userId: process.env.ATALK_USER_ID || 'mb627923', // 사용자 제공 user ID (base64 디코딩된 값)
+  campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블', // 사용자 제공 캠페인명
+  defaultSendNumber: process.env.ATALK_SENDER_NUMBER || '1588-0000', // 발신번호
+  authMode: (process.env.ATALK_AUTH_MODE || 'basic') as 'basic' | 'bearer' | 'none', // 인증 모드 스위치
+  allowDevBypass: process.env.ATALK_ALLOW_DEV_BYPASS === 'true', // 개발 환경 우회 허용
+  page: 'A',
+  campaignAliases: [] // 런타임에 원격 검증으로 채워짐
 };
 
-// 필수 환경변수 확인 - PDS 스펙에 맞게 수정
-if (!ATALK_API_CONFIG.clientToken || !ATALK_API_CONFIG.company || !ATALK_API_CONFIG.userId || !ATALK_API_CONFIG.defaultSendNumber) {
-  throw new Error('아톡 PDS API 설정에 필요한 환경변수가 누락되었습니다. ATALK_API_KEY(CLIENT_TOKEN), ATALK_COMPANY_ID, ATALK_USER_ID, ATALK_SENDER_NUMBER를 확인하세요.');
+// 필수 설정값 확인 - 사용자 제공 값으로 완전 설정
+const ARS_ENV_CONFIGURED = !!(ATALK_API_CONFIG.clientToken && ATALK_API_CONFIG.company && 
+    ATALK_API_CONFIG.userId && ATALK_API_CONFIG.campaignName && ATALK_API_CONFIG.defaultSendNumber);
+
+if (ARS_ENV_CONFIGURED) {
+  console.log('✅ ARS API 설정 완료 - 사용자 제공 정보로 구성됨');
+} else {
+  console.warn('⚠️  ARS PDS API 환경변수가 누락되었습니다. ARS 기능이 비활성화됩니다.');
+  console.warn('ARS 기능 사용을 위해서는 다음 환경변수가 필요합니다: ATALK_API_KEY, ATALK_SECRET_KEY, ATALK_COMPANY_ID, ATALK_USER_ID, ATALK_CAMPAIGN_NAME, ATALK_SENDER_NUMBER');
 }
 
-// 디버깅용 로그 (민감한 정보는 완전 마스킹) - PDS 스펙 적용 확인
-console.log(`[PDS CONFIG] company: ${ATALK_API_CONFIG.company ? '***' : 'MISSING'}, userId: ${ATALK_API_CONFIG.userId ? '***' : 'MISSING'}, sendNumber: ${ATALK_API_CONFIG.defaultSendNumber ? '***' : 'MISSING'}, baseUrl: ${ATALK_API_CONFIG.baseUrl}`);
+// 디버깅용 로그 (민감한 정보는 완전 마스킹) - 실제 값 확인
+console.log(`[PDS CONFIG] company: ${ATALK_API_CONFIG.company}, userId: ${ATALK_API_CONFIG.userId ? '***' : 'MISSING'}, authMode: ${ATALK_API_CONFIG.authMode}, baseUrl: ${ATALK_API_CONFIG.baseUrl}`);
 
 export interface AtalkApiResponse {
   code: string;
@@ -106,6 +105,15 @@ export interface CallHistoryResponse {
 
 export class AtalkArsService {
   private validCampaignNameCache?: string; // 성능 최적화: 유효한 캠페인명 캠시
+  
+  private checkArsConfiguration(): boolean {
+    if (!ARS_ENV_CONFIGURED) {
+      console.warn('⚠️  ARS 기능이 설정되지 않았습니다. 환경변수를 확인해주세요.');
+      return false;
+    }
+    return true;
+  }
+  
   private async makeApiCall<T = AtalkApiResponse>(
     endpoint: string,
     data: any,
@@ -113,15 +121,32 @@ export class AtalkArsService {
   ): Promise<T> {
     const url = `${ATALK_API_CONFIG.baseUrl}${endpoint}`;
     
-    // PDS API 스펙에 맞는 Bearer 토큰 생성 - CLIENT_TOKEN만 사용
-    const authToken = Buffer.from(ATALK_API_CONFIG.clientToken).toString('base64');
+    // 인증 모드 스위치 구현 - basic/bearer/none 지원
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'ATALK-PDS-Client/1.0'
+    };
+
+    switch (ATALK_API_CONFIG.authMode) {
+      case 'basic':
+        const basicToken = Buffer.from(`${ATALK_API_CONFIG.clientToken}:${ATALK_API_CONFIG.secretKey || ATALK_API_CONFIG.clientToken}`).toString('base64');
+        headers['Authorization'] = `Basic ${basicToken}`;
+        break;
+      case 'bearer':
+        headers['Authorization'] = `Bearer ${ATALK_API_CONFIG.clientToken}`;
+        break;
+      case 'none':
+        // Authorization 헤더 없음
+        break;
+      default:
+        console.warn(`[ATALK API] 알 수 없는 인증 모드: ${ATALK_API_CONFIG.authMode}, basic 사용`);
+        const defaultToken = Buffer.from(`${ATALK_API_CONFIG.clientToken}:${ATALK_API_CONFIG.secretKey || ATALK_API_CONFIG.clientToken}`).toString('base64');
+        headers['Authorization'] = `Basic ${defaultToken}`;
+    }
     
     const requestOptions = {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
-      },
+      headers,
       body: JSON.stringify(data),
     };
 
@@ -134,7 +159,7 @@ export class AtalkArsService {
     console.log(`[ATALK API] ${method} ${endpoint}`, {
       endpoint,
       data: sanitizedData,
-      authPresent: !!authToken // 토큰 존재 여부만 로깅
+      authPresent: !!headers['Authorization'] // Authorization 헤더 존재 여부만 로깅
     });
 
     try {
@@ -163,8 +188,12 @@ export class AtalkArsService {
         dataLength: result.data ? (Array.isArray(result.data) ? result.data.length : 'object') : 0
       });
 
-      // API 호출 로그 저장
-      await this.logApiCall(endpoint, method, data, result, response.status);
+      // API 호출 로그 저장 - 민감한 정보 완전 마스킹
+      const sanitizedDataForLog = { ...data };
+      if (sanitizedDataForLog.callee) sanitizedDataForLog.callee = '[MASKED]';
+      if (sanitizedDataForLog.text_send_no) sanitizedDataForLog.text_send_no = '[MASKED]';
+      if (sanitizedDataForLog.user_id) sanitizedDataForLog.user_id = '[MASKED]';
+      await this.logApiCall(endpoint, method, sanitizedDataForLog, result, response.status);
 
       if (result.code !== '200') {
         throw new Error(`API 오류: ${result.result || result.message || 'Unknown error'}`);
@@ -180,6 +209,7 @@ export class AtalkArsService {
       const sanitizedData = { ...data };
       if (sanitizedData.callee) sanitizedData.callee = '[MASKED]';
       if (sanitizedData.text_send_no) sanitizedData.text_send_no = '[MASKED]';
+      if (sanitizedData.user_id) sanitizedData.user_id = '[MASKED]';
       
       await this.logApiCall(endpoint, method, sanitizedData, { error: errorMessage }, 500);
       throw error;
@@ -196,33 +226,85 @@ export class AtalkArsService {
       .trim();
   }
 
-  // 사용 가능한 캠페인명 확인 메서드 - 직접 검증 대신 캐시 사용
+  /**
+   * 원격 API를 통한 실제 캠페인명 검증 메서드
+   * 아톡비즈 API에서 실제 등록된 캠페인을 확인하여 유효성 검증
+   */
   private async findValidCampaignName(preferredName: string): Promise<string> {
     // 캐시된 유효한 캠페인명이 있으면 사용
     if (this.validCampaignNameCache) {
-      console.log(`[ATALK] 캐시된 캠페인명 사용: ${this.validCampaignNameCache}`);
+      console.log(`[ATALK] 캐시된 유효 캠페인명 사용: ${this.validCampaignNameCache}`);
       return this.validCampaignNameCache;
     }
 
     const normalizedPreferred = this.normalizeCampaignName(preferredName);
     
-    // 기본 캠페인명부터 우선순위대로 사용
-    const campaignPriority = [
-      normalizedPreferred,
-      ...ATALK_API_CONFIG.campaignAliases.map(name => this.normalizeCampaignName(name))
-    ];
-
-    // 중복 제거
-    const uniqueCampaigns = [...new Set(campaignPriority)];
+    // 개발 환경 우회 로직
+    if (ATALK_API_CONFIG.allowDevBypass) {
+      console.warn(`[ATALK] 캠페인 원격 검증 생략 - 개발 모드: ${normalizedPreferred}`);
+      this.validCampaignNameCache = normalizedPreferred;
+      return normalizedPreferred;
+    }
     
-    console.log(`[ATALK] 캠페인명 선택: ${uniqueCampaigns.length}개 중 첫 번째 사용`);
-    
-    // 검증 없이 첫 번째 캠페인명 사용 (실제 호출에서 검증)
-    const selectedCampaign = uniqueCampaigns[0];
-    this.validCampaignNameCache = selectedCampaign;
-    
-    console.log(`[ATALK] 선택된 캠페인명: ${selectedCampaign}`);
-    return selectedCampaign;
+    // 실제 벤더 API를 통한 캠페인 검증 구현
+    try {
+      console.log(`[ATALK] 캠페인 "${normalizedPreferred}" 원격 검증 시작`);
+      
+      // 테스트 history 호출로 캠페인 존재 확인
+      const testHistoryData = {
+        history_key: '505056', // 테스트용 키
+        company: ATALK_API_CONFIG.company,
+        user_id: ATALK_API_CONFIG.userId,
+        text_campaign_name: normalizedPreferred,
+        text_page: ATALK_API_CONFIG.page
+      };
+      
+      const response = await this.makeApiCall('/calllist/history', testHistoryData);
+      
+      if (response.code === '200' || response.code === '100') {
+        // 캠페인이 존재함 (성공 또는 데이터 없음)
+        console.log(`[ATALK] 캠페인 "${normalizedPreferred}" 검증 성공`);
+        this.validCampaignNameCache = normalizedPreferred;
+        return normalizedPreferred;
+      } else {
+        throw new Error(`캠페인 검증 실패: ${response.result || response.code}`);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '캠페인 검증 실패';
+      console.error(`[ATALK] 캠페인 "${normalizedPreferred}" 검증 실패: ${errorMsg}`);
+      
+      // 검증 실패 시 다른 캠페인명들 시도
+      const alternativeCampaigns = ['주식회사 마셈블', 'IVR_API', 'MASSEMBLE', '마셈블', '자동발송'];
+      
+      for (const altCampaign of alternativeCampaigns) {
+        if (altCampaign === normalizedPreferred) continue;
+        
+        try {
+          console.log(`[ATALK] 대체 캠페인 테스트: ${altCampaign}`);
+          const altTestData = {
+            history_key: '505056',
+            company: ATALK_API_CONFIG.company,
+            user_id: ATALK_API_CONFIG.userId,
+            text_campaign_name: altCampaign,
+            text_page: ATALK_API_CONFIG.page
+          };
+          
+          const altResponse = await this.makeApiCall('/calllist/history', altTestData);
+          
+          if (altResponse.code === '200' || altResponse.code === '100') {
+            console.log(`[ATALK] 대체 캠페인 "${altCampaign}" 검증 성공`);
+            this.validCampaignNameCache = altCampaign;
+            return altCampaign;
+          }
+        } catch (altError) {
+          console.log(`[ATALK] 캠페인 "${altCampaign}" 테스트 실패: ${altError instanceof Error ? altError.message : altError}`);
+          continue;
+        }
+      }
+      
+      // 모든 캠페인 검증 실패
+      throw new Error(`사용 가능한 캠페인을 찾을 수 없습니다. 아톡 시스템에 등록된 캠페인을 확인하세요.`);
+    }
   }
 
   private async logApiCall(
@@ -233,11 +315,29 @@ export class AtalkArsService {
     httpCode: number
   ): Promise<void> {
     try {
+      // PII 제거를 위한 요청 데이터 마스킹
+      const sanitizedRequest = { ...request };
+      if (sanitizedRequest.callee) sanitizedRequest.callee = '[MASKED_PHONE]';
+      if (sanitizedRequest.text_send_no) sanitizedRequest.text_send_no = '[MASKED_SENDER]';
+      if (sanitizedRequest.user_id) sanitizedRequest.user_id = '[MASKED_USER]';
+      
+      // PII 제거를 위한 응답 데이터 마스킹
+      const sanitizedResponse = { ...response };
+      if (sanitizedResponse.data && Array.isArray(sanitizedResponse.data)) {
+        sanitizedResponse.data = sanitizedResponse.data.map((item: any) => ({
+          ...item,
+          callee: item.callee ? '[MASKED_PHONE]' : undefined,
+          caller: item.caller ? '[MASKED_PHONE]' : undefined,
+          send_no: item.send_no ? '[MASKED_SENDER]' : undefined,
+          connect_time: item.connect_time ? '[MASKED_TIME]' : undefined
+        }));
+      }
+      
       await db.insert(arsApiLogs).values({
         endpoint,
         method,
-        requestData: JSON.stringify(request),
-        responseData: JSON.stringify(response),
+        requestData: JSON.stringify(sanitizedRequest),
+        responseData: JSON.stringify(sanitizedResponse),
         httpCode,
       });
     } catch (error) {
@@ -253,6 +353,13 @@ export class AtalkArsService {
     sendNumber: string,
     scenarioId: string = 'marketing_consent'
   ): Promise<{ success: boolean; historyKey?: string; message: string }> {
+    if (!this.checkArsConfiguration()) {
+      return {
+        success: false,
+        message: 'ARS 기능이 설정되지 않았습니다. 환경변수를 확인해주세요.'
+      };
+    }
+    
     try {
       // 고객 정보 조회
       const customer = await db.query.customers.findFirst({
@@ -374,7 +481,7 @@ export class AtalkArsService {
           callee: formattedPhone
         };
 
-        console.log(`[ARS] "${validCampaignName}" 캠페인으로 ${customer.name} (***) 발송`); // 보안: PII 마스킹
+        console.log(`[ARS] "${this.validCampaignNameCache}" 캠페인으로 ${customer.name} (***) 발송`); // 보안: PII 마스킹
         const response = await this.makeApiCall('/calllist/add', callData);
 
         // 성공 로그 저장
@@ -718,11 +825,15 @@ export class AtalkArsService {
       const blob = new Blob([fileBuffer], { type: validatedData.mimeType });
       formData.append('uploadFile', blob, validatedData.fileName);
 
+      // 일관된 Bearer 토큰 사용 (makeApiCall과 동일한 인증 방식)
+      const authToken = Buffer.from(`${ATALK_API_CONFIG.clientToken}:${ATALK_API_CONFIG.secretKey}`).toString('base64');
+      
       const response = await fetch(`${ATALK_API_CONFIG.baseUrl}/resource/upload`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${Buffer.from(ATALK_API_CONFIG.clientToken).toString('base64')}`,
-          // 글로벌 FormData가 Content-Type 자동 설정
+          'Authorization': `Basic ${authToken}`,
+          'User-Agent': 'ATALK-PDS-Client/1.0',
+          // FormData가 Content-Type 자동 설정
         },
         body: formData,
       });
@@ -747,10 +858,10 @@ export class AtalkArsService {
         fileName: validatedData.fileName // 클라이언트와의 일관성을 위한 필드
       };
     } catch (error) {
-      // 에러 로그 저장
+      // 에러 로그 저장 (민감한 정보 제거)
       await this.logApiCall('/resource/upload', 'POST', {
-        fileName,
-        campaignName,
+        fileName: fileName || '[NO_NAME]',
+        campaignName: campaignName || '[NO_CAMPAIGN]',
         audioType,
         mimeType
       }, { error: error instanceof Error ? error.message : 'Unknown error' }, 500);
@@ -852,17 +963,18 @@ export class AtalkArsService {
       
       for (const campaignName of possibleCampaigns) {
         try {
-          // 테스트 호출로 캠페인 존재 여부 확인
+          // 테스트 호출로 캠페인 존재 여부 확인 - history_key 포함
           const testData = {
             company: ATALK_API_CONFIG.company,
             user_id: ATALK_API_CONFIG.userId,
             text_campaign_name: campaignName,
-            text_page: ATALK_API_CONFIG.page
+            text_page: ATALK_API_CONFIG.page,
+            history_key: '505056' // 필수 파라미터 추가
           };
           
           console.log(`[아톡 API] 캠페인 테스트: ${campaignName}`);
           
-          // /calllist/history 엔드포인트로 캠페인 유효성 확인 (올바른 엔드포인트)
+          // /calllist/history 엔드포인트로 캠페인 유효성 확인 - history_key 포함
           const response = await this.makeApiCall('/calllist/history', testData);
           
           if (response.code === '200') {

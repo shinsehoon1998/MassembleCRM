@@ -41,21 +41,24 @@ function Router() {
           <Route path="/login" component={Login} />
           <Route path="/register" component={Register} />
           <Route path="/" component={Login} />
+          <Route component={NotFound} />
         </>
       ) : (
-        <Layout>
-          <Route path="/" component={Dashboard} />
-          <Route path="/customers" component={Customers} />
-          <Route path="/customers/:id" component={CustomerDetail} />
-          <Route path="/data-import" component={DataImport} />
-          <Route path="/ars-campaigns" component={ArsCampaigns} />
-          <Route path="/scenario-management" component={ScenarioManagement} />
-          <Route path="/customer-groups" component={CustomerGroups} />
-          <Route path="/users" component={Users} />
-          <Route path="/settings" component={Settings} />
-        </Layout>
+        <>
+          <Layout>
+            <Route path="/" component={Dashboard} />
+            <Route path="/customers" component={Customers} />
+            <Route path="/customers/:id" component={CustomerDetail} />
+            <Route path="/data-import" component={DataImport} />
+            <Route path="/ars-campaigns" component={ArsCampaigns} />
+            <Route path="/scenario-management" component={ScenarioManagement} />
+            <Route path="/customer-groups" component={CustomerGroups} />
+            <Route path="/users" component={Users} />
+            <Route path="/settings" component={Settings} />
+          </Layout>
+          <Route component={NotFound} />
+        </>
       )}
-      <Route component={NotFound} />
     </Switch>
   );
 }
