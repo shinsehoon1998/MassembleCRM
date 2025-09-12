@@ -1757,7 +1757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================
   
   // 음원 파일 업로드
-  app.post('/api/scenarios/upload-audio', isAuthenticated, (app as any).upload.single('audioFile'), async (req: any, res) => {
+  app.post('/api/ars/scenarios/upload-audio', isAuthenticated, (app as any).upload.single('audioFile'), async (req: any, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: '음원 파일을 선택해주세요.' });

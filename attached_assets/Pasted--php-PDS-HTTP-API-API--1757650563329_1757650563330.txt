@@ -1,0 +1,469 @@
+<?php
+/**
+ * 아톡비즈 PDS HTTP API 연동 시스템
+ * 실제 API 스펙에 맞춘 구현
+ */
+
+// ============================================
+// config/atalk_api_config.php - API 설정
+// ============================================
+
+define('ATALK_API_BASE_URL', 'http://[아웃바운드(ACS/PDS)]');
+define('ATALK_API_COMPANY', 'comtest');  // 회사 코드
+define('ATALK_API_USER_ID', 'ZXBsZQ==');  // Base64 인코딩된 사용자 ID
+define('ATALK_API_CAMPAIGN_NAME', 'IVR_API');  // 캠페인명
+define('ATALK_API_PAGE', 'A');  // 페이지 구분
+
+// ============================================
+// classes/AtalkPDSAPI.php - API 클래스
+// ============================================
+
+class AtalkPDSAPI {
+    private $baseUrl;
+    private $company;
+    private $userId;
+    private $db;
+    
+    public function __construct() {
+        $this->baseUrl = ATALK_API_BASE_URL;
+        $this->company = ATALK_API_COMPANY;
+        $this->userId = ATALK_API_USER_ID;
+        $this->db = new DBHelper();
+    }
+    
+    /**
+     * HTTP 요청 실행
+     */
+    private function executeRequest($endpoint, $data, $isFileUpload = false) {
+        $url = $this->baseUrl . $endpoint;
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        
+        if ($isFileUpload) {
+            // multipart/form-data for file upload
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: multipart/form-data',
+                'Authorization: Bearer ' . $this->getAuthToken()
+            ]);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        } else {
+            // application/json for regular requests
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $this->getAuthToken()
+            ]);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        }
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        // 로그 기록
+        $this->logApiCall($endpoint, $data, $response, $httpCode);
+        
+        return [
+            'success' => $httpCode === 200,
+            'data' => json_decode($response, true),
+            'http_code' => $httpCode
+        ];
+    }
+    
+    /**
+     * Bearer 토큰 생성
+     */
+    private function getAuthToken() {
+        // CLIENT_TOKEN을 Base64로 인코딩
+        return base64_encode('CLIENT_TOKEN');
+    }
+    
+    /**
+     * 발송리스트 추가 - /calllist/add
+     */
+    public function addCallList($sendNo, $campaignName = null, $page = 'A') {
+        $endpoint = '/thirdparty/v1/calllist/add';
+        
+        $data = [
+            'text_send_no' => $sendNo,  // 발신번호 (1~20자)
+            'company' => $this->company,
+            'user_id' => $this->userId,
+            'text_campaign_name' => $campaignName ?: ATALK_API_CAMPAIGN_NAME,
+            'text_page' => $page
+        ];
+        
+        return $this->executeRequest($endpoint, $data);
+    }
+    
+    /**
+     * 발송리스트 조회 - /calllist/history
+     */
+    public function getCallHistory($historyKey = null) {
+        $endpoint = '/thirdparty/v1/calllist/history';
+        
+        $data = [
+            'history_key' => $historyKey ?: '505056',
+            'company' => $this->company,
+            'user_id' => $this->userId,
+            'text_campaign_name' => ATALK_API_CAMPAIGN_NAME,
+            'text_page' => 'A'
+        ];
+        
+        return $this->executeRequest($endpoint, $data);
+    }
+    
+    /**
+     * 음원 파일 등록 - /resource/upload
+     */
+    public function uploadAudioFile($filePath, $campaignName, $fileTitle = '') {
+        $endpoint = '/thirdparty/v1/resource/upload';
+        
+        if (!file_exists($filePath)) {
+            return ['success' => false, 'message' => '파일이 존재하지 않습니다.'];
+        }
+        
+        $data = [
+            'uploadFile' => new CURLFile($filePath, 'audio/wav', basename($filePath)),
+            'text_campaign_name' => $campaignName,
+            'company' => $this->company,
+            'user_id' => $this->userId,
+            'file_title_name' => $fileTitle ?: basename($filePath, '.wav'),
+            'text_type' => 'A'  // A: 고정
+        ];
+        
+        return $this->executeRequest($endpoint, $data, true);
+    }
+    
+    /**
+     * 대량 발송 리스트 생성
+     */
+    public function createBulkCallList($customers) {
+        $results = [];
+        $successCount = 0;
+        $failCount = 0;
+        
+        foreach ($customers as $customer) {
+            // 전화번호 형식 검증 및 정리
+            $phoneNumber = $this->formatPhoneNumber($customer['phone']);
+            
+            if (!$this->validatePhoneNumber($phoneNumber)) {
+                $failCount++;
+                $results[] = [
+                    'customer_id' => $customer['id'],
+                    'phone' => $customer['phone'],
+                    'status' => 'failed',
+                    'message' => '유효하지 않은 전화번호'
+                ];
+                continue;
+            }
+            
+            // API 호출
+            $response = $this->addCallList($phoneNumber, $customer['campaign_name'] ?? null);
+            
+            if ($response['success']) {
+                $successCount++;
+                $historyKey = $response['data']['history_key'] ?? null;
+                
+                // DB에 발송 이력 저장
+                $this->db->insert('ars_send_logs', [
+                    'customer_id' => $customer['id'],
+                    'phone' => $phoneNumber,
+                    'campaign_name' => $customer['campaign_name'] ?? ATALK_API_CAMPAIGN_NAME,
+                    'history_key' => $historyKey,
+                    'status' => 'sent',
+                    'sent_at' => date('Y-m-d H:i:s')
+                ]);
+                
+                $results[] = [
+                    'customer_id' => $customer['id'],
+                    'phone' => $phoneNumber,
+                    'status' => 'success',
+                    'history_key' => $historyKey
+                ];
+            } else {
+                $failCount++;
+                $errorCode = $response['data']['code'] ?? 'unknown';
+                $errorMessage = $this->getErrorMessage($errorCode);
+                
+                $results[] = [
+                    'customer_id' => $customer['id'],
+                    'phone' => $phoneNumber,
+                    'status' => 'failed',
+                    'error_code' => $errorCode,
+                    'message' => $errorMessage
+                ];
+            }
+            
+            // API Rate Limiting 고려 (초당 10건 제한 가정)
+            usleep(100000); // 0.1초 대기
+        }
+        
+        return [
+            'success' => true,
+            'total' => count($customers),
+            'success_count' => $successCount,
+            'fail_count' => $failCount,
+            'results' => $results
+        ];
+    }
+    
+    /**
+     * 발송 결과 조회 및 업데이트
+     */
+    public function updateCallResults($historyKeys) {
+        $results = [];
+        
+        foreach ($historyKeys as $historyKey) {
+            $response = $this->getCallHistory($historyKey);
+            
+            if ($response['success'] && isset($response['data']['data'])) {
+                $callData = $response['data']['data'][0] ?? [];
+                
+                // 발송 결과 파싱
+                $status = $this->parseCallStatus($callData);
+                
+                // DB 업데이트
+                $this->db->update('ars_send_logs', [
+                    'call_result_code' => $callData['call_result_code'] ?? '',
+                    'digit' => $callData['digit'] ?? '',
+                    'duration' => $callData['duration'] ?? 0,
+                    'connect_time' => $callData['connect_time'] ?? null,
+                    'result_code' => $callData['result_code'] ?? '',
+                    'result_message' => $callData['result_message'] ?? '',
+                    'updated_at' => date('Y-m-d H:i:s')
+                ], 'history_key = :key', ['key' => $historyKey]);
+                
+                $results[] = [
+                    'history_key' => $historyKey,
+                    'status' => $status,
+                    'data' => $callData
+                ];
+            }
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * 전화번호 포맷팅
+     */
+    private function formatPhoneNumber($phone) {
+        // 숫자만 추출
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+        
+        // 지역번호 또는 휴대폰 번호 형식으로 변환
+        if (strlen($phone) === 11 && substr($phone, 0, 3) === '010') {
+            // 휴대폰 번호
+            return $phone;
+        } elseif (strlen($phone) === 10) {
+            // 지역번호 (02 제외)
+            return $phone;
+        } elseif (strlen($phone) === 9 && substr($phone, 0, 2) === '02') {
+            // 서울 지역번호
+            return '0' . $phone;
+        }
+        
+        return $phone;
+    }
+    
+    /**
+     * 전화번호 유효성 검증
+     */
+    private function validatePhoneNumber($phone) {
+        // 숫자만 있는지 확인
+        if (!preg_match('/^[0-9]+$/', $phone)) {
+            return false;
+        }
+        
+        // 길이 확인 (9~11자리)
+        if (strlen($phone) < 9 || strlen($phone) > 11) {
+            return false;
+        }
+        
+        // 유효한 번호 패턴 확인
+        $validPatterns = [
+            '/^02[0-9]{7,8}$/',     // 서울
+            '/^0[3-6][0-9]{8,9}$/', // 지역번호
+            '/^01[0-9]{8,9}$/',     // 휴대폰
+            '/^050[0-9]{7,8}$/',    // 인터넷전화
+            '/^070[0-9]{7,8}$/'     // 인터넷전화
+        ];
+        
+        foreach ($validPatterns as $pattern) {
+            if (preg_match($pattern, $phone)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 통화 상태 파싱
+     */
+    private function parseCallStatus($callData) {
+        $resultCode = $callData['call_result_code'] ?? '';
+        
+        // OK: 정상완료
+        if ($resultCode === 'OK') {
+            return 'success';
+        }
+        
+        // REFUSE: 거절
+        if ($resultCode === 'REFUSE') {
+            return 'refused';
+        }
+        
+        // 기타 실패 코드
+        return 'failed';
+    }
+    
+    /**
+     * 에러 메시지 매핑
+     */
+    private function getErrorMessage($code) {
+        $errorMessages = [
+            '200' => '정상',
+            '400' => '필수항목이 누락됨',
+            '401' => '클라이언트 토큰 오류',
+            '500' => '내부 시스템 오류'
+        ];
+        
+        return $errorMessages[$code] ?? '알 수 없는 오류';
+    }
+    
+    /**
+     * API 호출 로그 기록
+     */
+    private function logApiCall($endpoint, $request, $response, $httpCode) {
+        $this->db->insert('atalk_api_logs', [
+            'endpoint' => $endpoint,
+            'request_data' => is_array($request) ? json_encode($request) : $request,
+            'response_data' => $response,
+            'http_code' => $httpCode,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+}
+
+// ============================================
+// api/atalk_pds.php - PDS API 엔드포인트
+// ============================================
+
+session_start();
+require_once '../config/database.php';
+require_once '../config/atalk_api_config.php';
+require_once '../classes/AtalkPDSAPI.php';
+
+header('Content-Type: application/json');
+
+$action = $_GET['action'] ?? '';
+$api = new AtalkPDSAPI();
+$db = new DBHelper();
+
+switch ($action) {
+    case 'send_single':
+        // 단일 발송
+        $phone = $_POST['phone'] ?? '';
+        $campaignName = $_POST['campaign_name'] ?? null;
+        
+        if (empty($phone)) {
+            echo json_encode(['success' => false, 'message' => '전화번호가 필요합니다.']);
+            exit;
+        }
+        
+        $result = $api->addCallList($phone, $campaignName);
+        echo json_encode($result);
+        break;
+        
+    case 'send_bulk':
+        // 대량 발송
+        $customerIds = json_decode($_POST['customer_ids'] ?? '[]', true);
+        $campaignName = $_POST['campaign_name'] ?? null;
+        
+        if (empty($customerIds)) {
+            echo json_encode(['success' => false, 'message' => '발송 대상이 없습니다.']);
+            exit;
+        }
+        
+        // 고객 정보 조회
+        $customers = $db->select("
+            SELECT id, name, phone 
+            FROM customers 
+            WHERE id IN (" . implode(',', array_map('intval', $customerIds)) . ")
+        ");
+        
+        // 캠페인명 추가
+        foreach ($customers as &$customer) {
+            $customer['campaign_name'] = $campaignName;
+        }
+        
+        $result = $api->createBulkCallList($customers);
+        echo json_encode($result);
+        break;
+        
+    case 'check_history':
+        // 발송 이력 조회
+        $historyKey = $_GET['history_key'] ?? '';
+        
+        if (empty($historyKey)) {
+            echo json_encode(['success' => false, 'message' => 'history_key가 필요합니다.']);
+            exit;
+        }
+        
+        $result = $api->getCallHistory($historyKey);
+        echo json_encode($result);
+        break;
+        
+    case 'upload_audio':
+        // 음원 파일 업로드
+        if (!isset($_FILES['audio'])) {
+            echo json_encode(['success' => false, 'message' => '파일이 없습니다.']);
+            exit;
+        }
+        
+        $file = $_FILES['audio'];
+        $campaignName = $_POST['campaign_name'] ?? ATALK_API_CAMPAIGN_NAME;
+        $fileTitle = $_POST['file_title'] ?? '';
+        
+        // 임시 파일 경로
+        $tempPath = $file['tmp_name'];
+        
+        // WAV 파일 검증
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $tempPath);
+        finfo_close($finfo);
+        
+        if (!in_array($mimeType, ['audio/wav', 'audio/x-wav', 'audio/wave'])) {
+            echo json_encode(['success' => false, 'message' => 'WAV 파일만 지원됩니다.']);
+            exit;
+        }
+        
+        $result = $api->uploadAudioFile($tempPath, $campaignName, $fileTitle);
+        echo json_encode($result);
+        break;
+        
+    case 'update_results':
+        // 발송 결과 일괄 업데이트
+        $historyKeys = $db->select("
+            SELECT DISTINCT history_key 
+            FROM ars_send_logs 
+            WHERE history_key IS NOT NULL 
+              AND call_result_code IS NULL
+              AND sent_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        ");
+        
+        $keys = array_column($historyKeys, 'history_key');
+        $results = $api->updateCallResults($keys);
+        
+        echo json_encode([
+            'success' => true,
+            'updated' => count($results),
+            'results' => $results
+        ]);
+        break;
+        
+    default:
+        echo json_encode(['success' => false, 'message' => 'Invalid action']);
+}

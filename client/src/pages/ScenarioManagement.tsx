@@ -32,8 +32,8 @@ export default function ScenarioManagement() {
   const { toast } = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingScenario, setEditingScenario] = useState<any>(null);
-  const [uploadingAudio, setUploadingAudio] = useState<string | null>(null);
-  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
+  const [uploadingAudio, setUploadingAudio] = useState<Set<string>>(new Set());
+  const [selectedAudioFiles, setSelectedAudioFiles] = useState<Map<string, File>>(new Map());
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -120,7 +120,7 @@ export default function ScenarioManagement() {
       formData.append('scenarioId', scenarioId);
       formData.append('audioType', 'ars');
 
-      const response = await fetch('/api/scenarios/upload-audio', {
+      const response = await fetch('/api/ars/scenarios/upload-audio', {
         method: 'POST',
         body: formData,
         credentials: 'include',
@@ -133,21 +133,40 @@ export default function ScenarioManagement() {
 
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       toast({
         title: "음원 업로드 완료",
         description: `음원 파일이 성공적으로 업로드되었습니다: ${data.fileName}`,
       });
-      setUploadingAudio(null);
-      setSelectedAudioFile(null);
+      
+      // 해당 시나리오의 업로딩 상태 및 파일 제거
+      setUploadingAudio(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(variables.scenarioId);
+        return newSet;
+      });
+      setSelectedAudioFiles(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(variables.scenarioId);
+        return newMap;
+      });
+      
+      // 시나리오 목록 새로고침
+      queryClient.invalidateQueries({ queryKey: ["/api/ars/scenarios"] });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, variables) => {
       toast({
         title: "업로드 실패",
         description: error.message,
         variant: "destructive",
       });
-      setUploadingAudio(null);
+      
+      // 해당 시나리오의 업로딩 상태 제거
+      setUploadingAudio(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(variables.scenarioId);
+        return newSet;
+      });
     },
   });
 
@@ -196,7 +215,7 @@ export default function ScenarioManagement() {
     deleteScenarioMutation.mutate(id);
   };
 
-  const handleAudioFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAudioFileChange = (scenarioId: string) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
       // 파일 형식 검증
@@ -221,12 +240,13 @@ export default function ScenarioManagement() {
         return;
       }
       
-      setSelectedAudioFile(file);
+      setSelectedAudioFiles(prev => new Map(prev).set(scenarioId, file));
     }
   };
 
   const handleUploadAudio = (scenarioId: string) => {
-    if (!selectedAudioFile) {
+    const selectedFile = selectedAudioFiles.get(scenarioId);
+    if (!selectedFile) {
       toast({
         title: "파일 선택 필요",
         description: "업로드할 음원 파일을 선택해주세요.",
@@ -235,8 +255,8 @@ export default function ScenarioManagement() {
       return;
     }
     
-    setUploadingAudio(scenarioId);
-    uploadAudioMutation.mutate({ scenarioId, file: selectedAudioFile });
+    setUploadingAudio(prev => new Set(prev).add(scenarioId));
+    uploadAudioMutation.mutate({ scenarioId, file: selectedFile });
   };
 
   if (isLoading) {
@@ -423,6 +443,52 @@ export default function ScenarioManagement() {
                     </AlertDialogContent>
                   </AlertDialog>
                 </div>
+              </div>
+
+              {/* 음원 업로드 섹션 */}
+              <div className="bg-gray-50 rounded-lg p-4 border mt-4">
+                <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
+                  <Upload className="h-4 w-4 mr-2 text-blue-600" />
+                  음원 파일 업로드
+                </h4>
+                
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <input
+                      type="file"
+                      accept="audio/wav,audio/mp3,audio/mpeg"
+                      onChange={handleAudioFileChange(scenario.id)}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      data-testid={`input-audio-file-${scenario.id}`}
+                    />
+                    {selectedAudioFiles.get(scenario.id) && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        선택된 파일: {selectedAudioFiles.get(scenario.id)!.name} ({(selectedAudioFiles.get(scenario.id)!.size / 1024 / 1024).toFixed(2)}MB)
+                      </p>
+                    )}
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleUploadAudio(scenario.id)}
+                    disabled={!selectedAudioFiles.get(scenario.id) || uploadingAudio.has(scenario.id)}
+                    data-testid={`button-upload-audio-${scenario.id}`}
+                  >
+                    {uploadingAudio.has(scenario.id) ? (
+                      <>업로드 중...</>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 mr-1" />
+                        업로드
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                <p className="text-xs text-gray-500 mt-2">
+                  WAV 또는 MP3 파일만 업로드 가능합니다. (최대 10MB)
+                </p>
               </div>
             </div>
           ))}
