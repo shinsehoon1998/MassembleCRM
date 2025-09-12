@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -1311,6 +1311,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error updating call results:", error);
       res.status(500).json({ 
         message: error instanceof Error ? error.message : "ARS 결과 업데이트 중 오류가 발생했습니다." 
+      });
+    }
+  });
+
+  // ARS 캠페인 생성
+  app.post('/api/ars/campaigns', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaignData = insertArsCampaignSchema.parse(req.body);
+      const newCampaign = await storage.createArsCampaign(campaignData);
+      
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaign_created",
+        description: `ARS 캠페인 "${newCampaign.name}" 생성`,
+      });
+      
+      res.status(201).json(newCampaign);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      console.error("Error creating ARS campaign:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "ARS 캠페인 생성 중 오류가 발생했습니다." 
       });
     }
   });

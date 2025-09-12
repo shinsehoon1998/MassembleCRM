@@ -116,6 +116,7 @@ export interface IStorage {
 
   // ARS operations
   getArsCampaigns(): Promise<ArsCampaign[]>;
+  createArsCampaign(campaign: InsertArsCampaign): Promise<ArsCampaign>;
   getArsSendLogs(params: {
     campaignId?: number;
     customerId?: string;
@@ -587,6 +588,15 @@ export class DatabaseStorage implements IStorage {
     return campaigns;
   }
 
+  // ARS 캠페인 생성
+  async createArsCampaign(campaign: InsertArsCampaign): Promise<ArsCampaign> {
+    const [created] = await db
+      .insert(arsCampaigns)
+      .values(campaign)
+      .returning();
+    return created;
+  }
+
   // ID로 ARS 캠페인 조회
   async getArsCampaignById(id: number): Promise<ArsCampaign | undefined> {
     const [campaign] = await db
@@ -804,7 +814,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCustomersInGroup(groupId: string): Promise<CustomerWithUser[]> {
-    return await db
+    const customersData = await db
       .select({
         id: customers.id,
         name: customers.name,
@@ -832,20 +842,19 @@ export class DatabaseStorage implements IStorage {
         memo: customers.memo,
         createdAt: customers.createdAt,
         updatedAt: customers.updatedAt,
-        assignedUser: {
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          role: users.role,
-          department: users.department,
-        },
-        secondaryUser: sql`NULL`.as('secondaryUser'),
+        assignedUser: users,
       })
       .from(customerGroupMappings)
       .innerJoin(customers, eq(customerGroupMappings.customerId, customers.id))
       .leftJoin(users, eq(customers.assignedUserId, users.id))
       .where(eq(customerGroupMappings.groupId, groupId))
       .orderBy(asc(customers.name));
+
+    return customersData.map(row => ({
+      ...row,
+      assignedUser: row.assignedUser,
+      secondaryUser: null, // Since we're not joining secondary user here
+    })) as CustomerWithUser[];
   }
 
   async getCustomerGroupsByCustomerId(customerId: string): Promise<CustomerGroup[]> {
