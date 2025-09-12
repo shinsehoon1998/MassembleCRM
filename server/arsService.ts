@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import FormData from 'form-data';
+// FormData는 Node.js 18+ 글로벌 사용
 import { db } from './db';
 import { arsCampaigns, arsSendLogs, arsApiLogs, customers } from '@shared/schema';
 import type { InsertArsCampaign, InsertArsSendLog } from '@shared/schema';
@@ -17,23 +17,24 @@ const audioUploadSchema = z.object({
   )
 });
 
-// 아톡비즈 API 설정 - 환경변수 사용으로 보안 강화
+// 아톡비즈 PDS API 설정 - 실제 스펙 완전 적용
 const ATALK_API_CONFIG = {
-  baseUrl: 'https://101.202.45.50:8080/thirdparty/v1', // HTTPS로 변경
-  token: process.env.ATALK_API_KEY,
-  company: process.env.ATALK_COMPANY_ID || '627923', // fallback to original for compatibility
-  userId: process.env.ATALK_USER_ID || process.env.ATALK_SECRET_KEY, // try ATALK_USER_ID first, fallback to SECRET_KEY
-  campaignName: '주식회사마셈블',
-  defaultSendNumber: process.env.ATALK_SENDER_NUMBER,
+  baseUrl: 'https://101.202.45.50:8080/thirdparty/v1', // PDS 서버 + prefix
+  clientToken: process.env.ATALK_API_KEY!, // CLIENT_TOKEN (Bearer용)
+  company: process.env.ATALK_COMPANY_ID || 'comtest', // 회사 코드
+  userId: process.env.ATALK_USER_ID || 'eple', // Plain text 사용자 ID (PDS 스펙)
+  campaignName: process.env.ATALK_CAMPAIGN_NAME || 'IVR_API', // 캠페인명
+  defaultSendNumber: process.env.ATALK_SENDER_NUMBER!,
+  page: 'A' // 페이지 구분
 };
 
-// 필수 환경변수 확인
-if (!ATALK_API_CONFIG.token || !ATALK_API_CONFIG.company || !ATALK_API_CONFIG.userId || !ATALK_API_CONFIG.defaultSendNumber) {
-  throw new Error('아톡 API 설정에 필요한 환경변수가 누락되었습니다. ATALK_API_KEY, (ATALK_COMPANY_ID), (ATALK_USER_ID or ATALK_SECRET_KEY), ATALK_SENDER_NUMBER를 확인하세요.');
+// 필수 환경변수 확인 - PDS 스펙에 맞게 수정
+if (!ATALK_API_CONFIG.clientToken || !ATALK_API_CONFIG.company || !ATALK_API_CONFIG.userId || !ATALK_API_CONFIG.defaultSendNumber) {
+  throw new Error('아톡 PDS API 설정에 필요한 환경변수가 누락되었습니다. ATALK_API_KEY(CLIENT_TOKEN), ATALK_COMPANY_ID, ATALK_USER_ID, ATALK_SENDER_NUMBER를 확인하세요.');
 }
 
-// 디버깅용 로그 (민감한 정보는 마스킹)
-console.log(`[ARS CONFIG] company: ${ATALK_API_CONFIG.company ? '***' : 'MISSING'}, userId: ${ATALK_API_CONFIG.userId ? '***' : 'MISSING'}, sendNumber: ${ATALK_API_CONFIG.defaultSendNumber ? '***' : 'MISSING'}`);
+// 디버깅용 로그 (민감한 정보는 마스킹) - PDS 스펙 적용 확인
+console.log(`[PDS CONFIG] company: ${ATALK_API_CONFIG.company ? '***' : 'MISSING'}, userId: ${ATALK_API_CONFIG.userId ? '***' : 'MISSING'}, sendNumber: ${ATALK_API_CONFIG.defaultSendNumber ? '***' : 'MISSING'}, baseUrl: ${ATALK_API_CONFIG.baseUrl}`);
 
 export interface AtalkApiResponse {
   code: string;
@@ -48,6 +49,7 @@ export interface CallRequest {
   user_id: string;
   text_campaign_name: string;
   text_page: string;
+  callee: string; // PDS 스펙: 수신번호 필수
 }
 
 export interface CallHistoryRequest {
@@ -68,7 +70,7 @@ export interface AudioUploadRequest {
   text_campaign_name: string;
   company: string;
   user_id: string;
-  file_file_name: string;
+  file_title_name: string;
   text_type: string;
 }
 
@@ -99,11 +101,14 @@ export class AtalkArsService {
   ): Promise<T> {
     const url = `${ATALK_API_CONFIG.baseUrl}${endpoint}`;
     
+    // PDS API 스펙에 맞는 Bearer 토큰 생성 (CLIENT_TOKEN을 Base64 인코딩)
+    const authToken = Buffer.from(ATALK_API_CONFIG.clientToken).toString('base64');
+    
     const requestOptions = {
       method,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ATALK_API_CONFIG.token}`,
+        'Authorization': `Bearer ${authToken}`,
       },
       body: JSON.stringify(data),
     };
@@ -179,7 +184,8 @@ export class AtalkArsService {
         company: ATALK_API_CONFIG.company,
         user_id: ATALK_API_CONFIG.userId,
         text_campaign_name: ATALK_API_CONFIG.campaignName,
-        text_page: formattedPhone,
+        text_page: ATALK_API_CONFIG.page, // PDS 스펙: 페이지 코드 'A'
+        callee: formattedPhone // PDS 스펙: 수신번호
       };
 
       const response = await this.makeApiCall('/calllist/add', callData);
@@ -264,7 +270,8 @@ export class AtalkArsService {
           company: ATALK_API_CONFIG.company,
           user_id: ATALK_API_CONFIG.userId,
           text_campaign_name: validCampaignName, // 검증된 캠페인명 사용
-          text_page: formattedPhone,
+          text_page: ATALK_API_CONFIG.page, // PDS 스펙: 페이지 코드 'A'
+          callee: formattedPhone // PDS 스펙: 수신번호
         };
 
         console.log(`[ARS] "${validCampaignName}" 캠페인으로 ${customer.name} (${formattedPhone}) 발송`);
@@ -593,20 +600,18 @@ export class AtalkArsService {
       formData.append('text_campaign_name', validatedData.campaignName);
       formData.append('company', ATALK_API_CONFIG.company);
       formData.append('user_id', ATALK_API_CONFIG.userId);
-      formData.append('file_file_name', validatedData.fileName);
-      formData.append('text_type', validatedData.audioType);
+      formData.append('file_title_name', validatedData.fileName.replace(/\.[^/.]+$/, "")); // 확장자 제거
+      formData.append('text_type', 'A'); // PDS 스펙: A 고정
 
-      // 파일 추가 (올바른 MIME 타입 사용)
-      formData.append('uploadFile', fileBuffer, {
-        filename: validatedData.fileName,
-        contentType: validatedData.mimeType
-      });
+      // 파일 추가 (Blob 사용으로 web FormData 호환)
+      const blob = new Blob([fileBuffer], { type: validatedData.mimeType });
+      formData.append('uploadFile', blob, validatedData.fileName);
 
       const response = await fetch(`${ATALK_API_CONFIG.baseUrl}/resource/upload`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${ATALK_API_CONFIG.token}`,
-          // FormData가 자동으로 Content-Type 설정
+          'Authorization': `Bearer ${Buffer.from(ATALK_API_CONFIG.clientToken).toString('base64')}`,
+          // 글로벌 FormData가 Content-Type 자동 설정
         },
         body: formData,
       });
@@ -681,7 +686,8 @@ export class AtalkArsService {
             company: ATALK_API_CONFIG.company,
             user_id: ATALK_API_CONFIG.userId,
             text_campaign_name: `${groupName}_발송리스트`,
-            text_page: formattedPhone,
+            text_page: ATALK_API_CONFIG.page, // PDS 스펙: 페이지 코드 'A'
+            callee: formattedPhone // PDS 스펙: 수신번호
           };
 
           const response = await this.makeApiCall('/calllist/add', callData);
