@@ -19,7 +19,7 @@ const audioUploadSchema = z.object({
 
 // 아톡비즈 PDS API 설정 - 실제 스펙 완전 적용
 const ATALK_API_CONFIG = {
-  baseUrl: 'https://101.202.45.50:8080/thirdparty/v1', // PDS 서버 + prefix
+  baseUrl: 'http://101.202.45.50:8080/thirdparty/v1', // PDS 서버 + prefix (HTTP)
   clientToken: process.env.ATALK_API_KEY!, // CLIENT_TOKEN (Bearer용)
   company: process.env.ATALK_COMPANY_ID || 'comtest', // 회사 코드
   userId: process.env.ATALK_USER_ID || 'eple', // Plain text 사용자 ID (PDS 스펙)
@@ -751,16 +751,16 @@ export class AtalkArsService {
           
           if (existingCampaign.length === 0) {
             // 새 캠페인 생성
-            await db.insert(arsCampaigns).values({
+            const payload = {
               name: listItem.text_campaign_name || '아톡 동기화 캠페인',
               scenarioId: 'marketing_consent',
-              status: 'synced',
+              status: 'synced' as const,
               totalCount: 1,
               successCount: listItem.status === 'completed' ? 1 : 0,
               failedCount: listItem.status === 'failed' ? 1 : 0,
-              sendNumber: listItem.text_send_no || ATALK_API_CONFIG.defaultSendNumber,
-              createdAt: new Date(),
-            });
+              createdBy: 'system'
+            } satisfies typeof arsCampaigns.$inferInsert;
+            await db.insert(arsCampaigns).values(payload);
             syncedCount++;
           } else {
             // 기존 캠페인 업데이트
