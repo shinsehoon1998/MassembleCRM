@@ -215,25 +215,64 @@ export default function ArsCampaigns() {
       return;
     }
 
-    const sendData: any = {
+    // 발송 데이터 준비 - 기본 필드만 포함
+    const sendData: {
+      campaignName: string;
+      scenarioId: string;
+      groupId?: string;
+      customerIds?: string[];
+    } = {
       campaignName: bulkCampaignData.campaignName,
       scenarioId: bulkCampaignData.scenarioId,
     };
 
-    if (bulkCampaignData.targetType === "group") {
+    // targetType에 따라 정확히 하나의 필드만 설정
+    if (bulkCampaignData.targetType === "group" && bulkCampaignData.groupId) {
+      // 그룹 기반 발송 - groupId만 설정
       sendData.groupId = bulkCampaignData.groupId;
-    } else {
-      // 전체 마케팅 동의 고객
+      console.log(`[ARS] 그룹 기반 발송: ${bulkCampaignData.groupId}`, sendData);
+    } else if (bulkCampaignData.targetType === "all") {
+      // 전체 마케팅 동의 고객 - customerIds만 설정
       const targets = (marketingTargets as any)?.targets || [];
       if (!targets.length) {
         toast({
           title: "대상 없음",
-          description: "마케팅 대상 고객이 없습니다.",
+          description: "마케팅 동의한 고객이 없습니다.",
           variant: "destructive",
         });
         return;
       }
-      sendData.customerIds = targets.map((customer: any) => customer.id);
+      const customerIds = targets.map((customer: any) => customer.id);
+      sendData.customerIds = customerIds;
+      console.log(`[ARS] 전체 고객 발송: ${customerIds.length}명`, sendData);
+    } else {
+      toast({
+        title: "발송 대상 오류",
+        description: "발송 대상을 올바르게 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 검증: groupId와 customerIds가 동시에 설정되지 않았는지 확인
+    if (sendData.groupId && sendData.customerIds) {
+      console.error("[ARS] 오류: groupId와 customerIds가 동시에 설정됨", sendData);
+      toast({
+        title: "설정 오류",
+        description: "시스템 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 검증: 최소 하나는 설정되어야 함
+    if (!sendData.groupId && (!sendData.customerIds || sendData.customerIds.length === 0)) {
+      toast({
+        title: "대상 선택 오류",
+        description: "발송 대상을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
     }
     
     sendBulkArsMutation.mutate(sendData);

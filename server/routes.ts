@@ -1608,11 +1608,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 대량 ARS 발송 (캠페인) - 통합 파이프라인 사용
   app.post('/api/ars/send-bulk', isAuthenticated, async (req: any, res) => {
     try {
+      // 디버깅을 위한 요청 데이터 로깅
+      console.log('[ARS] 대량 발송 요청 데이터:', {
+        campaignName: req.body.campaignName,
+        targetType: req.body.targetType,
+        groupId: req.body.groupId,
+        customerIds: req.body.customerIds ? `Array(${req.body.customerIds.length})` : undefined,
+        scenarioId: req.body.scenarioId
+      });
+
       // 요청 검증
       const validation = bulkArsSendSchema.safeParse(req.body);
       if (!validation.success) {
+        const errorDetails = validation.error.errors.map(err => ({
+          field: err.path.join('.'),
+          message: err.message,
+          code: err.code
+        }));
+        
+        console.error('[ARS] 요청 검증 실패:', {
+          receivedData: {
+            groupId: req.body.groupId,
+            customerIds: req.body.customerIds ? `Array(${req.body.customerIds.length})` : undefined,
+            hasGroupId: !!req.body.groupId,
+            hasCustomerIds: !!(req.body.customerIds && req.body.customerIds.length > 0)
+          },
+          errors: errorDetails
+        });
+        
+        // 더 구체적인 에러 메시지 제공
+        let userMessage = '요청 데이터가 올바르지 않습니다.';
+        const hasGroupId = !!req.body.groupId;
+        const hasCustomerIds = !!(req.body.customerIds && req.body.customerIds.length > 0);
+        
+        if (hasGroupId && hasCustomerIds) {
+          userMessage = '그룹 발송과 개별 고객 발송을 동시에 선택할 수 없습니다. 하나만 선택해주세요.';
+        } else if (!hasGroupId && !hasCustomerIds) {
+          userMessage = '발송 대상을 선택해주세요. 그룹 또는 개별 고객을 선택해야 합니다.';
+        } else {
+          userMessage = validation.error.errors[0]?.message || userMessage;
+        }
+        
         return res.status(400).json({ 
-          message: validation.error.errors[0]?.message || '요청 데이터가 올바르지 않습니다.' 
+          message: userMessage,
+          details: process.env.NODE_ENV === 'development' ? errorDetails : undefined
         });
       }
       
