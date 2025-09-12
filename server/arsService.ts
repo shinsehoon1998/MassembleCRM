@@ -213,12 +213,7 @@ export class AtalkArsService {
       where: inArray(customers.id, customerIds),
     });
 
-    // 디버깅: 조회된 고객 정보 로그
-    console.log(`[ARS DEBUG] customerIds 요청: ${JSON.stringify(customerIds)}`);
-    console.log(`[ARS DEBUG] 조회된 고객 수: ${customerList.length}`);
-    customerList.forEach((customer, index) => {
-      console.log(`[ARS DEBUG] 고객 ${index + 1}: ID=${customer.id}, 이름=${customer.name}, 전화=${customer.phone}`);
-    });
+    console.log(`[ARS] 캠페인 "${campaignName}" 생성 - 대상 고객 ${customerList.length}명`);
 
     // 각 고객에게 개별 발송
     for (const customer of customerList) {
@@ -230,20 +225,18 @@ export class AtalkArsService {
 
         const formattedPhone = customer.phone.replace(/[^0-9]/g, '');
 
-        console.log(`[ARS DEBUG] 발송 처리 중: ${customer.name} (${customer.phone} → ${formattedPhone})`);
-
-        // 각 고객마다 고유한 캠페인명 생성 (아톡 시스템에서 덮어쓰기 방지)
-        const uniqueCampaignName = `${ATALK_API_CONFIG.campaignName}_${customer.name}_${Date.now()}`;
+        // 통합 캠페인명 사용 (아톡 관리자에서 하나의 캠페인으로 관리)
+        const unifiedCampaignName = `${campaignName}_${new Date().toISOString().slice(0, 10)}`;
         
         const callData: CallRequest = {
           text_send_no: ATALK_API_CONFIG.defaultSendNumber, // 고정 발신번호 사용
           company: ATALK_API_CONFIG.company,
           user_id: ATALK_API_CONFIG.userId,
-          text_campaign_name: uniqueCampaignName, // 고유한 캠페인명 사용
+          text_campaign_name: unifiedCampaignName, // 통합 캠페인명 사용
           text_page: formattedPhone,
         };
 
-        console.log(`[ARS DEBUG] 아톡 API 호출 데이터: ${JSON.stringify(callData)}`);
+        console.log(`[ARS] 통합캠페인 "${unifiedCampaignName}"으로 ${customer.name} (${formattedPhone}) 발송`);
         const response = await this.makeApiCall('/calllist/add', callData);
 
         // 성공 로그 저장
@@ -261,8 +254,8 @@ export class AtalkArsService {
           historyKeys.push(response.history_key);
         }
 
-        // API 호출 간격 (과부하 방지)
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // API 호출 간격 (과부하 방지 + 같은 캠페인으로 인식되도록 시간 조정)
+        await new Promise(resolve => setTimeout(resolve, 300));
       } catch (error) {
         failedCount++;
         
