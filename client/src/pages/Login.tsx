@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Redirect } from 'wouter';
+import { Redirect, useLocation } from 'wouter';
 
 export default function Login() {
   const [credentials, setCredentials] = useState({
@@ -16,10 +16,18 @@ export default function Login() {
   const [error, setError] = useState('');
   
   const { isAuthenticated } = useAuth();
+  const [location] = useLocation();
+
+  // Extract redirectTo parameter from URL
+  const getRedirectUrl = () => {
+    const urlParams = new URLSearchParams(location.split('?')[1] || '');
+    const redirectTo = urlParams.get('redirectTo');
+    return redirectTo && redirectTo !== '/login' && redirectTo !== '/register' ? redirectTo : '/';
+  };
 
   // Redirect if already authenticated
   if (isAuthenticated) {
-    return <Redirect to="/" />;
+    return <Redirect to={getRedirectUrl()} />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

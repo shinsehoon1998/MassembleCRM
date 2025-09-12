@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,6 +17,21 @@ import Users from "@/pages/Users";
 import Settings from "@/pages/Settings";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
+
+// Component to redirect unauthenticated users to login while preserving intended destination
+function RedirectToLogin() {
+  const [location] = useLocation();
+  
+  // Only redirect if not already on login or register pages
+  if (location !== '/login' && location !== '/register' && location !== '/') {
+    // Store the intended destination for post-login redirect
+    const redirectUrl = `/login?redirectTo=${encodeURIComponent(location)}`;
+    return <Redirect to={redirectUrl} />;
+  }
+  
+  // For root path, just go to login
+  return <Redirect to="/login" />;
+}
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -41,7 +56,7 @@ function Router() {
           <Route path="/login" component={Login} />
           <Route path="/register" component={Register} />
           <Route path="/" component={Login} />
-          <Route component={NotFound} />
+          <Route component={RedirectToLogin} />
         </>
       ) : (
         <Layout>
