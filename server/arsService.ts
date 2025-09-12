@@ -101,8 +101,9 @@ export class AtalkArsService {
   ): Promise<T> {
     const url = `${ATALK_API_CONFIG.baseUrl}${endpoint}`;
     
-    // PDS API 스펙에 맞는 Bearer 토큰 생성 (CLIENT_TOKEN을 Base64 인코딩)
-    const authToken = Buffer.from(ATALK_API_CONFIG.clientToken).toString('base64');
+    // PDS API 스펙에 맞는 Bearer 토큰 생성 (API_KEY:SECRET_KEY를 Base64 인코딩)
+    const clientCredentials = `${process.env.ATALK_API_KEY}:${process.env.ATALK_SECRET_KEY}`;
+    const authToken = Buffer.from(clientCredentials).toString('base64');
     
     const requestOptions = {
       method,
