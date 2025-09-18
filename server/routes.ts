@@ -1712,20 +1712,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             console.log(`[ARS] 시나리오 '${scenarioId}'의 음성파일 다운로드: ${scenarioAudioFile.originalName} (상태: ${scenarioAudioFile.atalkStatus})`);
             
-            // ObjectStorage에서 파일 다운로드
-            const objectStorageService = new ObjectStorageService();
-            const file = await objectStorageService.getObjectEntityFile(scenarioAudioFile.storageUrl);
-            
-            // 파일을 Buffer로 읽기
-            const chunks: Buffer[] = [];
-            const stream = file.createReadStream();
-            
-            for await (const chunk of stream) {
-              chunks.push(chunk);
+            // 🔥 스토리지 타입별 처리
+            if (scenarioAudioFile.storageUrl.startsWith('/uploads/audio/')) {
+              // 로컬 파일시스템에서 읽기
+              const fs = await import('fs/promises');
+              const path = await import('path');
+              const filePath = path.join(process.cwd(), scenarioAudioFile.storageUrl);
+              
+              console.log(`[ARS] 로컬 파일시스템에서 읽기: ${filePath}`);
+              audioFileBuffer = await fs.readFile(filePath);
+              audioFileName = scenarioAudioFile.originalName;
+              
+            } else if (scenarioAudioFile.storageUrl.startsWith('/objects/')) {
+              // ObjectStorage에서 파일 다운로드
+              const objectStorageService = new ObjectStorageService();
+              const file = await objectStorageService.getObjectEntityFile(scenarioAudioFile.storageUrl);
+              
+              // 파일을 Buffer로 읽기
+              const chunks: Buffer[] = [];
+              const stream = file.createReadStream();
+              
+              for await (const chunk of stream) {
+                chunks.push(chunk);
+              }
+              
+              audioFileBuffer = Buffer.concat(chunks);
+              audioFileName = scenarioAudioFile.originalName;
+              
+            } else {
+              throw new Error(`지원되지 않는 스토리지 경로: ${scenarioAudioFile.storageUrl}`);
             }
-            
-            audioFileBuffer = Buffer.concat(chunks);
-            audioFileName = scenarioAudioFile.originalName;
             
             console.log(`[ARS] 시나리오 음성파일 준비 완료: ${audioFileName} (${audioFileBuffer.length} bytes)`);
           } catch (error) {
@@ -2344,18 +2360,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     const scenarioAudioFile = audioFiles.find(af => af.scenarioId === campaign.scenarioId && af.atalkStatus === 'uploaded');
                     
                     if (scenarioAudioFile && scenarioAudioFile.storageUrl) {
-                      const objectStorageService = new ObjectStorageService();
-                      const file = await objectStorageService.getObjectEntityFile(scenarioAudioFile.storageUrl);
-                      
-                      const chunks: Buffer[] = [];
-                      const stream = file.createReadStream();
-                      
-                      for await (const chunk of stream) {
-                        chunks.push(chunk);
+                      // 🔥 스토리지 타입별 처리 (재발송용)
+                      if (scenarioAudioFile.storageUrl.startsWith('/uploads/audio/')) {
+                        // 로컬 파일시스템에서 읽기
+                        const fs = await import('fs/promises');
+                        const path = await import('path');
+                        const filePath = path.join(process.cwd(), scenarioAudioFile.storageUrl);
+                        
+                        console.log(`[ARS 재발송] 로컬 파일시스템에서 읽기: ${filePath}`);
+                        audioFileBuffer = await fs.readFile(filePath);
+                        audioFileName = scenarioAudioFile.originalName;
+                        
+                      } else if (scenarioAudioFile.storageUrl.startsWith('/objects/')) {
+                        // ObjectStorage에서 파일 다운로드
+                        const objectStorageService = new ObjectStorageService();
+                        const file = await objectStorageService.getObjectEntityFile(scenarioAudioFile.storageUrl);
+                        
+                        const chunks: Buffer[] = [];
+                        const stream = file.createReadStream();
+                        
+                        for await (const chunk of stream) {
+                          chunks.push(chunk);
+                        }
+                        
+                        audioFileBuffer = Buffer.concat(chunks);
+                        audioFileName = scenarioAudioFile.originalName;
+                        
+                      } else {
+                        throw new Error(`지원되지 않는 스토리지 경로: ${scenarioAudioFile.storageUrl}`);
                       }
-                      
-                      audioFileBuffer = Buffer.concat(chunks);
-                      audioFileName = scenarioAudioFile.originalName;
                       console.log(`[ARS 재발송] 시나리오 오디오 파일 준비 완료: ${audioFileName}`);
                     }
                   } catch (audioError) {
@@ -2605,11 +2638,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const audioUpload = multer({
     storage: multer.memoryStorage(),
     fileFilter: (req, file, cb) => {
-      const allowedTypes = ['audio/wav', 'audio/mp3', 'audio/mpeg'];
+      // WAV 파일의 다양한 MIME 타입과 MP3 지원
+      const allowedTypes = [
+        'audio/wav', 'audio/wave', 'audio/x-wav', // WAV 파일
+        'audio/mp3', 'audio/mpeg', 'audio/mpeg3', // MP3 파일
+        'application/octet-stream' // 브라우저에서 인식 못하는 경우
+      ];
+      
+      // MIME 타입 체크
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('WAV 또는 MP3 파일만 업로드 가능합니다.') as any, false);
+        // 파일 확장자도 체크 (fallback)
+        const fileExtension = file.originalname.toLowerCase().split('.').pop();
+        if (fileExtension === 'wav' || fileExtension === 'mp3') {
+          cb(null, true);
+        } else {
+          console.log(`[DEBUG] 거부된 파일: ${file.originalname}, MIME: ${file.mimetype}`);
+          cb(new Error('WAV 또는 MP3 파일만 업로드 가능합니다.') as any, false);
+        }
       }
     },
     limits: {
