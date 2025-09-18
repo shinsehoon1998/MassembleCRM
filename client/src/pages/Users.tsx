@@ -6,10 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Edit, Trash2, UserPlus } from "lucide-react";
 import type { User } from "@shared/schema";
 import { UserModal } from "@/components/UserModal";
 
-function UsersList({ onEditUser, isAdmin }: { onEditUser: (user: User) => void; isAdmin: boolean }) {
+function UsersList({ 
+  onEditUser, 
+  isAdmin, 
+  selectedUsers, 
+  onToggleUser, 
+  onToggleAll 
+}: { 
+  onEditUser: (user: User) => void; 
+  isAdmin: boolean;
+  selectedUsers: Set<string>;
+  onToggleUser: (userId: string) => void;
+  onToggleAll: (checked: boolean) => void;
+}) {
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ['/api/users'],
   });
@@ -69,11 +83,62 @@ function UsersList({ onEditUser, isAdmin }: { onEditUser: (user: User) => void; 
     );
   }
 
+  // selectedUsers에 대한 안전한 처리
+  const safeSelectedUsers = selectedUsers || new Set<string>();
+  const allUsersSelected = users && users.length > 0 && users.every(user => safeSelectedUsers.has(user.id));
+  const someUsersSelected = users && users.some(user => safeSelectedUsers.has(user.id));
+
   return (
     <div className="space-y-4">
+      {/* 헤더 - 전체 선택 체크박스 */}
+      {isAdmin && users && users.length > 0 && (
+        <div className="flex items-center justify-between p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="flex items-center space-x-3">
+            <Checkbox
+              checked={allUsersSelected}
+              onCheckedChange={(checked) => onToggleAll(checked as boolean)}
+              data-testid="checkbox-select-all"
+            />
+            <span className="text-sm font-medium text-gray-700">
+              {safeSelectedUsers.size > 0 ? `${safeSelectedUsers.size}명 선택됨` : '전체 선택'}
+            </span>
+          </div>
+          {safeSelectedUsers.size > 0 && (
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                data-testid="button-bulk-edit"
+              >
+                <Edit className="h-4 w-4 mr-1" />
+                선택 수정
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                data-testid="button-bulk-delete"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                선택 삭제
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 사용자 목록 */}
       {users.map((user) => (
         <div key={user.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
           <div className="flex items-center space-x-4">
+            {isAdmin && (
+              <Checkbox
+                checked={safeSelectedUsers.has(user.id)}
+                onCheckedChange={() => onToggleUser(user.id)}
+                data-testid={`checkbox-user-${user.id}`}
+              />
+            )}
             <div className="w-10 h-10 bg-massemble-red rounded-full flex items-center justify-center">
               <i className="fas fa-user text-white text-sm"></i>
             </div>
@@ -100,7 +165,7 @@ function UsersList({ onEditUser, isAdmin }: { onEditUser: (user: User) => void; 
                 onClick={() => onEditUser(user)}
                 data-testid={`button-edit-user-${user.id}`}
               >
-                <i className="fas fa-edit"></i>
+                <Edit className="h-4 w-4" />
               </Button>
             )}
           </div>
@@ -115,6 +180,11 @@ export default function Users() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+
+  const { data: users } = useQuery<User[]>({
+    queryKey: ['/api/users'],
+  });
 
   const handleEditUser = (user: User) => {
     setEditingUser(user);
@@ -124,6 +194,27 @@ export default function Users() {
   const handleCloseModal = () => {
     setEditingUser(null);
     setIsUserModalOpen(false);
+  };
+
+  // 체크박스 관련 함수들
+  const handleToggleUser = (userId: string) => {
+    setSelectedUsers(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(userId)) {
+        newSelected.delete(userId);
+      } else {
+        newSelected.add(userId);
+      }
+      return newSelected;
+    });
+  };
+
+  const handleToggleAll = (checked: boolean) => {
+    if (checked && users) {
+      setSelectedUsers(new Set(users.map(user => user.id)));
+    } else {
+      setSelectedUsers(new Set());
+    }
   };
 
   // Redirect to home if not authenticated
@@ -139,7 +230,8 @@ export default function Users() {
       }, 500);
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+  }, [isAuthenticated, isLoading]);
+  // Note: toast is deliberately excluded from dependencies to prevent infinite re-renders
 
   if (isLoading || !isAuthenticated) {
     return (
@@ -167,13 +259,19 @@ export default function Users() {
                   onClick={() => setIsUserModalOpen(true)}
                   data-testid="button-add-user"
                 >
-                  <i className="fas fa-plus mr-2"></i>
+                  <UserPlus className="h-4 w-4 mr-2" />
                   사용자 추가
                 </Button>
               )}
             </div>
             
-            <UsersList onEditUser={handleEditUser} isAdmin={user?.role === 'admin'} />
+            <UsersList 
+              onEditUser={handleEditUser} 
+              isAdmin={user?.role === 'admin'} 
+              selectedUsers={selectedUsers}
+              onToggleUser={handleToggleUser}
+              onToggleAll={handleToggleAll}
+            />
           </div>
         </CardContent>
       </Card>
