@@ -177,26 +177,26 @@ function applyPersonalInfoMasking<T extends Record<string, any>>(data: T): T {
     return data;
   }
   
-  // 이름 필드 마스킹
-  if (masked.name && typeof masked.name === 'string') {
-    masked.name = maskName(masked.name);
+  // 이름 필드 마스킹 - 안전한 타입 체크
+  if ('name' in masked && masked.name && typeof masked.name === 'string') {
+    (masked as any).name = maskName(masked.name);
   }
-  if (masked.customerName && typeof masked.customerName === 'string') {
-    masked.customerName = maskName(masked.customerName);
+  if ('customerName' in masked && masked.customerName && typeof masked.customerName === 'string') {
+    (masked as any).customerName = maskName(masked.customerName);
   }
   
-  // 전화번호 필드 마스킹
-  if (masked.phone && typeof masked.phone === 'string') {
-    masked.phone = maskPhoneNumber(masked.phone);
+  // 전화번호 필드 마스킹 - 안전한 타입 체크
+  if ('phone' in masked && masked.phone && typeof masked.phone === 'string') {
+    (masked as any).phone = maskPhoneNumber(masked.phone);
   }
-  if (masked.phoneNumber && typeof masked.phoneNumber === 'string') {
-    masked.phoneNumber = maskPhoneNumber(masked.phoneNumber);
+  if ('phoneNumber' in masked && masked.phoneNumber && typeof masked.phoneNumber === 'string') {
+    (masked as any).phoneNumber = maskPhoneNumber(masked.phoneNumber);
   }
-  if (masked.secondaryPhone && typeof masked.secondaryPhone === 'string') {
-    masked.secondaryPhone = maskPhoneNumber(masked.secondaryPhone);
+  if ('secondaryPhone' in masked && masked.secondaryPhone && typeof masked.secondaryPhone === 'string') {
+    (masked as any).secondaryPhone = maskPhoneNumber(masked.secondaryPhone);
   }
-  if (masked.customerPhone && typeof masked.customerPhone === 'string') {
-    masked.customerPhone = maskPhoneNumber(masked.customerPhone);
+  if ('customerPhone' in masked && masked.customerPhone && typeof masked.customerPhone === 'string') {
+    (masked as any).customerPhone = maskPhoneNumber(masked.customerPhone);
   }
 
   return masked;
@@ -1977,7 +1977,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     // 🔥 Critical Fix: Safe SQL data query with comprehensive error handling
-    let logsWithDetails = [];
+    let logsWithDetails: any[] = [];
     try {
       console.log('[DEBUG] Executing main data query...');
       const queryResult = await db
@@ -2067,8 +2067,8 @@ export class DatabaseStorage implements IStorage {
         }
       } catch (maskingError) {
         console.error('[SECURITY] Critical error in masking process:', {
-          error: maskingError.message,
-          stack: maskingError.stack,
+          error: maskingError instanceof Error ? maskingError.message : String(maskingError),
+          stack: maskingError instanceof Error ? maskingError.stack : 'No stack trace',
           logsType: typeof logsWithDetails,
           logsIsArray: Array.isArray(logsWithDetails),
           logsLength: logsWithDetails ? logsWithDetails.length : 'N/A'
@@ -2093,8 +2093,8 @@ export class DatabaseStorage implements IStorage {
       
     } catch (mainError) {
       console.error('[STORAGE] Critical error in getEnhancedSendLogs:', {
-        error: mainError.message,
-        stack: mainError.stack,
+        error: mainError instanceof Error ? mainError.message : String(mainError),
+        stack: mainError instanceof Error ? mainError.stack : 'No stack trace',
         paramsType: typeof params,
         paramsKeys: (() => {
           try {
@@ -2531,7 +2531,7 @@ export class DatabaseStorage implements IStorage {
   // ============================================
 
   // 🔥 발송 로그 스트리밍 다운로드용 메서드 (PII 처리 완전 구현)
-  async streamSendLogsForExport(
+  async *streamSendLogsForExport(
     filters: {
       campaignId?: number;
       callResult?: string;
@@ -2551,7 +2551,7 @@ export class DatabaseStorage implements IStorage {
       includePersonalInfo?: boolean;
     },
     options: { includePersonalInfo: boolean }
-  ): AsyncIterable<{
+  ): AsyncGenerator<{
     id: number;
     sentAt: Date | null;
     campaignName: string;
@@ -2589,18 +2589,18 @@ export class DatabaseStorage implements IStorage {
     const validatedSortOrder = validateSortOrder(rawSortOrder);
 
     // 쿼리 조건 구축
-    const whereConditions = [];
+    const whereConditions: any[] = [];
 
     if (campaignId) {
       whereConditions.push(eq(arsSendLogs.campaignId, campaignId));
     }
 
     if (callResult) {
-      whereConditions.push(eq(arsSendLogs.callResult, callResult));
+      whereConditions.push(eq(arsSendLogs.callResult, callResult as any));
     }
 
     if (retryType) {
-      whereConditions.push(eq(arsSendLogs.retryType, retryType));
+      whereConditions.push(eq(arsSendLogs.retryType, retryType as any));
     }
 
     if (dateFrom) {
@@ -2685,15 +2685,15 @@ export class DatabaseStorage implements IStorage {
             campaignName: record.campaignName || '',
             customerName: options.includePersonalInfo 
               ? (record.customerName || '') 
-              : this.maskName(record.customerName || ''),
+              : maskName(record.customerName || ''),
             phoneNumber: options.includePersonalInfo 
               ? (record.phoneNumber || '') 
-              : this.maskPhoneNumber(record.phoneNumber || ''),
+              : maskPhoneNumber(record.phoneNumber || ''),
             callResult: record.callResult || '',
             retryType: record.retryType || '',
             duration: record.duration || 0,
             cost: record.cost?.toString() || '0',
-            createdAt: record.createdAt,
+            createdAt: record.createdAt || new Date(),
             completedAt: record.completedAt,
             status: record.status || '',
           };
@@ -2705,11 +2705,11 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    return streamData();
+    yield* streamData();
   }
 
   // 🔥 캠페인 스트리밍 다운로드용 메서드 (PII 처리 완전 구현)
-  async streamCampaignsForExport(
+  async *streamCampaignsForExport(
     filters: {
       query?: string;
       createdBy?: string;
@@ -2725,7 +2725,7 @@ export class DatabaseStorage implements IStorage {
       sortOrder?: 'asc' | 'desc';
     },
     options: { includePersonalInfo: boolean }
-  ): AsyncIterable<{
+  ): AsyncGenerator<{
     id: number;
     name: string;
     status: string;
@@ -2757,7 +2757,7 @@ export class DatabaseStorage implements IStorage {
     const validatedSortOrder = validateSortOrder(rawSortOrder);
 
     // 쿼리 조건 구축
-    const whereConditions = [];
+    const whereConditions: any[] = [];
 
     if (query) {
       whereConditions.push(sql`${arsCampaigns.name} ILIKE ${`%${query}%`}`);
@@ -2844,8 +2844,8 @@ export class DatabaseStorage implements IStorage {
             status: record.status || '',
             createdBy: options.includePersonalInfo 
               ? (record.createdBy || null) 
-              : (record.createdBy ? this.maskName(record.createdBy) : null),
-            createdAt: record.createdAt,
+              : (record.createdBy ? maskName(record.createdBy) : null),
+            createdAt: record.createdAt || new Date(),
             totalCount: totalCount,
             successCount: successCount,
             failedCount: record.failedCount || 0,
@@ -2861,7 +2861,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    return streamData();
+    yield* streamData();
   }
 
   // 🔥 시스템 통계 리포트 생성용 메서드 (PII 처리 완완 구현)
@@ -3060,7 +3060,7 @@ export class DatabaseStorage implements IStorage {
         name: campaign.name,
         status: campaign.status || '',
         createdBy: campaign.createdBy || null,
-        createdAt: campaign.createdAt,
+        createdAt: campaign.createdAt || new Date(),
         totalCount,
         successCount,
         failedCount: campaign.failedCount || 0,
