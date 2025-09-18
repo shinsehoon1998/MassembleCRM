@@ -1883,7 +1883,7 @@ export class DatabaseStorage implements IStorage {
 
     // 새로운 고급 필터
     if (phoneNumber) {
-      conditions.push(sql`${arsSendLogs.phoneNumber} ILIKE ${`%${phoneNumber}%`}`);
+      conditions.push(sql`${arsSendLogs.phone} ILIKE ${`%${phoneNumber}%`}`);
     }
 
     if (customerName) {
@@ -1934,7 +1934,7 @@ export class DatabaseStorage implements IStorage {
         orderByClause = orderDirection(customers.name);
         break;
       case 'phoneNumber':
-        orderByClause = orderDirection(arsSendLogs.phoneNumber);
+        orderByClause = orderDirection(arsSendLogs.phone);
         break;
       case 'callResult':
         orderByClause = orderDirection(arsSendLogs.callResult);
@@ -1992,11 +1992,10 @@ export class DatabaseStorage implements IStorage {
           cost: arsSendLogs.cost,
           status: arsSendLogs.status,
           retryType: arsSendLogs.retryType,
-          retryCount: arsSendLogs.retryCount,
+          retryAttempt: arsSendLogs.retryAttempt,
           sentAt: arsSendLogs.sentAt,
           completedAt: arsSendLogs.completedAt,
-          failureReason: arsSendLogs.failureReason,
-          responseData: arsSendLogs.responseData,
+          errorMessage: arsSendLogs.errorMessage,
           billingUnits: arsSendLogs.billingUnits,
           createdAt: arsSendLogs.createdAt,
           updatedAt: arsSendLogs.updatedAt,
@@ -2411,7 +2410,7 @@ export class DatabaseStorage implements IStorage {
         .where(
           sql`${arsCampaigns.name} ILIKE ${`%${q}%`} OR 
               ${customers.name} ILIKE ${`%${q}%`} OR 
-              ${arsSendLogs.phoneNumber} ILIKE ${`%${q}%`}`
+              ${arsSendLogs.phone} ILIKE ${`%${q}%`}`
         )
         .limit(limit);
 
@@ -2507,8 +2506,8 @@ export class DatabaseStorage implements IStorage {
             count: count(),
           })
           .from(arsSendLogs)
-          .where(sql`${arsSendLogs.phoneNumber} ILIKE ${`%${q}%`}`)
-          .groupBy(arsSendLogs.phoneNumber)
+          .where(sql`${arsSendLogs.phone} ILIKE ${`%${q}%`}`)
+          .groupBy(arsSendLogs.phone)
           .orderBy(desc(count()))
           .limit(limit);
 
@@ -2613,7 +2612,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (phoneNumber) {
-      whereConditions.push(sql`${arsSendLogs.phoneNumber} ILIKE ${`%${phoneNumber}%`}`);
+      whereConditions.push(sql`${arsSendLogs.phone} ILIKE ${`%${phoneNumber}%`}`);
     }
 
     if (customerName) {
@@ -3144,17 +3143,48 @@ export class DatabaseStorage implements IStorage {
           const duration = parseInt(result.duration || result.talkTime || '0') || 0;
           const cost = parseFloat(result.cost || result.price || '0') || 0;
           
-          // 전화번호로 고객 찾기
+          // 전화번호로 고객 찾기 (정규화된 형식으로 검색)
           let customer;
           if (phoneNumber) {
+            // 1. 정확한 매치 시도
             [customer] = await db
               .select()
               .from(customers)
               .where(eq(customers.phone, phoneNumber));
+            
+            // 2. 정규화된 형식으로 검색 (하이픈 제거 등)
+            if (!customer) {
+              const normalizedPhone = phoneNumber.replace(/[-\s()]/g, '');
+              const searchPatterns = [
+                normalizedPhone,
+                normalizedPhone.startsWith('0') ? normalizedPhone.substring(1) : '0' + normalizedPhone,
+                normalizedPhone.startsWith('82') ? '0' + normalizedPhone.substring(2) : '82' + normalizedPhone.substring(1)
+              ];
+              
+              for (const pattern of searchPatterns) {
+                if (!customer) {
+                  [customer] = await db
+                    .select()
+                    .from(customers)
+                    .where(sql`REPLACE(REPLACE(REPLACE(${customers.phone}, '-', ''), ' ', ''), '()', '') = ${pattern}`);
+                }
+              }
+              
+              // 3. LIKE 검색으로 유사한 번호 찾기
+              if (!customer && normalizedPhone.length >= 8) {
+                const phonePattern = normalizedPhone.substring(normalizedPhone.length - 8); // 마지막 8자리
+                [customer] = await db
+                  .select()
+                  .from(customers)
+                  .where(sql`${customers.phone} LIKE ${`%${phonePattern}`}`);
+              }
+            }
           }
           
           if (!customer && phoneNumber) {
-            console.warn(`[SAVE_SEND_LOGS] Customer not found for phone: ${maskPhoneNumber(phoneNumber)}`);
+            console.warn(`[SAVE_SEND_LOGS] Customer not found for phone: ${maskPhoneNumber(phoneNumber)} - will save with null customerId`);
+            // 로그에 추가 정보 기록
+            console.log(`[SAVE_SEND_LOGS] Phone patterns attempted: ${phoneNumber}`);
           }
           
           // ars_send_logs에 저장할 데이터 준비
@@ -3165,7 +3195,7 @@ export class DatabaseStorage implements IStorage {
             scenarioId: result.scenarioId || campaign?.scenarioId || null,
             historyKey: historyKey || result.historyKey || null,
             status: (callResult === 'connected' || callResult === 'answered') ? 'completed' : 'failed',
-            callResult: callResult,
+            callResult: callResult as any, // callResult enum 타입 캐스팅
             retryType: 'initial' as const,
             retryAttempt: 1,
             duration,
@@ -3175,7 +3205,7 @@ export class DatabaseStorage implements IStorage {
             errorMessage: result.error || result.errorMessage || null,
             sentAt: result.sentAt ? new Date(result.sentAt) : new Date(),
             completedAt: result.completedAt ? new Date(result.completedAt) : new Date(),
-          };
+          } as any; // 전체 데이터 객체를 any로 캐스팅하여 타입 오류 해결
           
           // 중복 체크 - 같은 전화번호, historyKey, 캠페인의 로그가 이미 있는지 확인
           let existingLog;

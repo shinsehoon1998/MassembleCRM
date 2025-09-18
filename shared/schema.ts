@@ -323,7 +323,7 @@ export const retryTypeEnum = pgEnum("retry_type", [
 export const arsSendLogs = pgTable("ars_send_logs", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   campaignId: integer("campaign_id").references(() => arsCampaigns.id),
-  customerId: varchar("customer_id").notNull().references(() => customers.id),
+  customerId: varchar("customer_id").references(() => customers.id),
   phone: varchar("phone", { length: 20 }).notNull(),
   scenarioId: varchar("scenario_id", { length: 50 }),
   historyKey: varchar("history_key", { length: 100 }),
