@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -1520,54 +1520,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // NEW ARS API ENDPOINTS - 캠페인 기반 구조
   // ============================================
 
-  // 새로운 발송리스트 추가 API용 Zod 스키마
-  const callListAddSchema = z.object({
-    campaignName: z.string().min(1, '캠페인명은 필수입니다.'),
-    page: z.string().optional().default('A'),
-    phones: z.array(z.string()).optional(),
-    phone: z.string().optional()
-  }).refine((data) => {
-    const hasPhones = data.phones && data.phones.length > 0;
-    const hasPhone = data.phone && data.phone.trim() !== '';
-    
-    if (!hasPhones && !hasPhone) {
-      return false;
-    }
-    return true;
-  }, {
-    message: 'phones 배열 또는 phone 문자열 중 하나는 필수입니다.'
-  });
+  // Note: Using shared schemas from @shared/schema.ts
+  // - arsCallListAddSchema
+  // - arsCallListHistorySchema
 
-  // 발송 이력 조회 API용 Zod 스키마
-  const callListHistorySchema = z.object({
-    historyKey: z.string().min(1, 'historyKey는 필수입니다.'),
-    campaignName: z.string().min(1, '캠페인명은 필수입니다.'),
-    page: z.string().optional().default('A')
-  });
-
-  // 기존 send-bulk 엔드포인트용 새로운 스키마 (캠페인 기반)
-  const bulkArsSendSchema = z.object({
-    campaignName: z.string().min(1, '캠페인명은 필수입니다.'),
-    page: z.string().optional().default('A'),
-    groupId: z.string().optional(),
-    customerIds: z.array(z.string()).optional(),
-  }).refine((data) => {
-    // groupId와 customerIds 중 정확히 하나만 제공되어야 함
-    const hasGroupId = !!data.groupId;
-    const hasCustomerIds = !!(data.customerIds && data.customerIds.length > 0);
-    
-    if (hasGroupId && hasCustomerIds) {
-      return false; // 둘 다 제공되면 오류
-    }
-    
-    if (!hasGroupId && !hasCustomerIds) {
-      return false; // 둘 다 없어도 오류
-    }
-    
-    return true; // 하나만 제공되면 OK
-  }, {
-    message: 'groupId 또는 customerIds 중 정확히 하나만 제공해야 합니다.'
-  });
+  // Note: Using arsBulkSendSchema from @shared/schema.ts
 
   // 1. POST /api/ars/calllist/add - 발송리스트 추가 (신규)
   app.post('/api/ars/calllist/add', isAuthenticated, async (req: any, res) => {
@@ -1575,7 +1532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       // 요청 검증
-      const validation = callListAddSchema.safeParse(req.body);
+      const validation = arsCallListAddSchema.safeParse(req.body);
       if (!validation.success) {
         secureLog(LogLevel.WARNING, 'ARS_CALLLIST', '발송리스트 추가 요청 검증 실패', {
           errors: validation.error.errors
@@ -1730,7 +1687,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 2-2. POST /api/ars/calllist/history - 발송 이력 조회 (기존 방식 유지)
   app.post('/api/ars/calllist/history', isAuthenticated, async (req: any, res) => {
     // 요청 검증
-    const validation = callListHistorySchema.safeParse(req.body);
+    const validation = arsCallListHistorySchema.safeParse(req.body);
     if (!validation.success) {
       const requestId = generateRequestId();
       secureLog(LogLevel.WARNING, 'ARS_HISTORY', '발송 이력 조회 요청 검증 실패', {
@@ -1762,7 +1719,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // 요청 검증
-      const validation = bulkArsSendSchema.safeParse(req.body);
+      const validation = arsBulkSendSchema.safeParse(req.body);
       if (!validation.success) {
         const errorDetails = validation.error.errors.map(err => ({
           field: err.path.join('.'),

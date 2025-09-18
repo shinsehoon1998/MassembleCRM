@@ -389,11 +389,47 @@ export const insertCustomerGroupMappingSchema = createInsertSchema(customerGroup
 export const arsCallListAddSchema = z.object({
   campaignName: z.string().min(1, "캠페인명을 입력해주세요"),
   page: z.string().default("A"),
-  phones: z.array(z.string()).min(1, "발송할 전화번호가 필요합니다"),
+  phones: z.array(z.string()).optional(),
+  phone: z.string().optional()
+}).refine((data) => {
+  const hasPhones = data.phones && data.phones.length > 0;
+  const hasPhone = data.phone && data.phone.trim() !== '';
+  
+  if (!hasPhones && !hasPhone) {
+    return false;
+  }
+  return true;
+}, {
+  message: "전화번호(phone) 또는 전화번호 목록(phones) 중 하나는 반드시 제공되어야 합니다.",
 });
 
 export const arsCallListHistorySchema = z.object({
   historyKey: z.string().min(1, "히스토리 키가 필요합니다"),
+  campaignName: z.string().min(1).optional(),
+  page: z.string().default("A")
+});
+
+// ARS 대량 발송용 스키마 (고객 그룹 또는 고객 ID 배열 기반)
+export const arsBulkSendSchema = z.object({
+  campaignName: z.string().min(1, "캠페인명을 입력해주세요"),
+  page: z.string().default("A"),
+  groupId: z.string().optional(),
+  customerIds: z.array(z.string()).optional(),
+}).refine((data) => {
+  const hasGroupId = !!data.groupId;
+  const hasCustomerIds = !!(data.customerIds && data.customerIds.length > 0);
+  
+  if (hasGroupId && hasCustomerIds) {
+    return false; // 둘 다 제공되면 오류
+  }
+  
+  if (!hasGroupId && !hasCustomerIds) {
+    return false; // 둘 다 없어도 오류  
+  }
+  
+  return true; // 하나만 제공되면 OK
+}, {
+  message: "groupId 또는 customerIds 중 정확히 하나만 제공해야 합니다.",
 });
 
 // ARS 타입 정의
@@ -409,6 +445,7 @@ export type InsertAudioFile = z.infer<typeof insertAudioFileSchema>;
 // 새로운 ARS API 타입
 export type ArsCallListAdd = z.infer<typeof arsCallListAddSchema>;
 export type ArsCallListHistory = z.infer<typeof arsCallListHistorySchema>;
+export type ArsBulkSend = z.infer<typeof arsBulkSendSchema>;
 
 // 고객 그룹 타입 정의
 export type CustomerGroup = typeof customerGroups.$inferSelect;
