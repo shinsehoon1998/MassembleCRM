@@ -112,6 +112,16 @@ export default function ArsCampaigns() {
   });
 
   const handleSubmit = (data: ArsCallListAdd) => {
+    // 캠페인명 검증
+    if (!data.campaignName?.trim()) {
+      toast({
+        title: "캠페인명 필요",
+        description: "아톡비즈에서 생성된 캠페인명을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     // 전화번호 배열 구성
     let phones: string[] = [];
     
@@ -207,7 +217,7 @@ export default function ArsCampaigns() {
                         />
                       </FormControl>
                       <FormDescription>
-                        아톡비즈에서 미리 생성된 캠페인명을 정확히 입력해주세요.
+                        아톡비즈에서 미리 생성된 캠페인명을 정확히 입력해주세요. (필수)
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -303,8 +313,7 @@ export default function ArsCampaigns() {
                       sendArsMutation.isPending || 
                       targetCount === 0 || 
                       marketingTargetsLoading || 
-                      (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading)) ||
-                      !form.watch('campaignName')?.trim()
+                      (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading))
                     }
                     data-testid="button-send"
                   >
