@@ -54,6 +54,50 @@ export default function ArsCampaigns() {
   const [activeTab, setActiveTab] = useState("results");
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
   
+  // 결과 동기화 기능
+  const syncResultsMutation = useMutation({
+    mutationFn: async (data: { historyKey: string; campaignName: string; campaignId?: number }) => {
+      return apiRequest('/api/ars/campaigns/sync-results', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: "동기화 완료",
+        description: `${data.savedCount}개의 결과를 성공적으로 동기화했습니다.`,
+      });
+      // 캠페인 목록과 발송 로그를 새로고침
+      queryClient.invalidateQueries({ queryKey: ['/api/ars/campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/ars/send-logs'] });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "동기화 실패",
+        description: error.message || "결과 동기화 중 오류가 발생했습니다.",
+      });
+    },
+  });
+
+  // 결과 동기화 핸들러
+  const handleSyncResults = (campaign: any) => {
+    if (!campaign.historyKey) {
+      toast({
+        variant: "destructive",
+        title: "동기화 불가능",
+        description: "해당 캠페인에 historyKey가 없습니다.",
+      });
+      return;
+    }
+
+    syncResultsMutation.mutate({
+      historyKey: campaign.historyKey,
+      campaignName: campaign.name,
+      campaignId: campaign.id,
+    });
+  };
+  
   // 필터링 상태 관리
   const [filters, setFilters] = useState<CampaignFiltersValue>({
     dateFrom: undefined,
@@ -649,18 +693,39 @@ export default function ArsCampaigns() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedCampaignId(campaign.id);
-                              setFilters(prev => ({ ...prev, campaignIds: [campaign.id] }));
-                              setActiveTab("results");
-                            }}
-                            data-testid={`button-view-campaign-${campaign.id}`}
-                          >
-                            결과 보기
-                          </Button>
+                          <div className="flex space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedCampaignId(campaign.id);
+                                setFilters(prev => ({ ...prev, campaignIds: [campaign.id] }));
+                                setActiveTab("results");
+                              }}
+                              data-testid={`button-view-campaign-${campaign.id}`}
+                            >
+                              결과 보기
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleSyncResults(campaign)}
+                              disabled={!campaign.historyKey || syncResultsMutation.isPending}
+                              data-testid={`button-sync-campaign-${campaign.id}`}
+                            >
+                              {syncResultsMutation.isPending ? (
+                                <>
+                                  <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                                  동기화 중...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="mr-1 h-3 w-3" />
+                                  결과 동기화
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

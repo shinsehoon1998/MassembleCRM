@@ -679,6 +679,14 @@ export interface IStorage {
       successRate: number;
     }>;
   }>;
+  
+  // ARS result sync methods
+  saveSendLogs(
+    atalkResults: any[], 
+    campaignName: string, 
+    historyKey?: string,
+    campaignId?: number
+  ): Promise<ArsSendLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1978,7 +1986,7 @@ export class DatabaseStorage implements IStorage {
           id: arsSendLogs.id,
           campaignId: arsSendLogs.campaignId,
           customerId: arsSendLogs.customerId,
-          phoneNumber: arsSendLogs.phoneNumber,
+          phoneNumber: arsSendLogs.phone,
           callResult: arsSendLogs.callResult,
           duration: arsSendLogs.duration,
           cost: arsSendLogs.cost,
@@ -2392,7 +2400,7 @@ export class DatabaseStorage implements IStorage {
       const sendLogsResults = await db
         .select({
           id: arsSendLogs.id,
-          phoneNumber: arsSendLogs.phoneNumber,
+          phoneNumber: arsSendLogs.phone,
           sentAt: arsSendLogs.sentAt,
           campaignName: arsCampaigns.name,
           customerName: customers.name,
@@ -2495,7 +2503,7 @@ export class DatabaseStorage implements IStorage {
       case 'phone':
         const phoneSuggestions = await db
           .select({
-            phoneNumber: arsSendLogs.phoneNumber,
+            phoneNumber: arsSendLogs.phone,
             count: count(),
           })
           .from(arsSendLogs)
@@ -2652,7 +2660,7 @@ export class DatabaseStorage implements IStorage {
             sentAt: arsSendLogs.sentAt,
             campaignName: arsCampaigns.name,
             customerName: customers.name,
-            phoneNumber: arsSendLogs.phoneNumber,
+            phoneNumber: arsSendLogs.phone,
             callResult: arsSendLogs.callResult,
             retryType: arsSendLogs.retryType,
             duration: arsSendLogs.duration,
@@ -3098,6 +3106,216 @@ export class DatabaseStorage implements IStorage {
       return name[0] + '*';
     }
     return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1];
+  }
+
+  /**
+   * ATALK 결과를 ars_send_logs 테이블에 저장
+   */
+  async saveSendLogs(
+    atalkResults: any[], 
+    campaignName: string, 
+    historyKey?: string,
+    campaignId?: number
+  ): Promise<ArsSendLog[]> {
+    if (!atalkResults || !Array.isArray(atalkResults) || atalkResults.length === 0) {
+      console.warn('[SAVE_SEND_LOGS] No data to save or invalid data format');
+      return [];
+    }
+
+    const savedLogs: ArsSendLog[] = [];
+    
+    try {
+      // 캠페인 찾기 (campaignId가 주어지지 않은 경우 캠페인명으로 조회)
+      let campaign;
+      if (campaignId) {
+        [campaign] = await db.select().from(arsCampaigns).where(eq(arsCampaigns.id, campaignId));
+      } else {
+        [campaign] = await db.select().from(arsCampaigns).where(eq(arsCampaigns.name, campaignName));
+      }
+      
+      console.log(`[SAVE_SEND_LOGS] Processing ${atalkResults.length} results for campaign: ${campaignName}`);
+      
+      for (const result of atalkResults) {
+        try {
+          // ATALK 응답 데이터 구조에 따라 필드 매핑
+          const phoneNumber = result.phone || result.phoneNumber || result.tel || '';
+          const customerName = result.name || result.customerName || '';
+          const callResult = this.mapAtalkCallResult(result.result || result.status || result.callResult);
+          const duration = parseInt(result.duration || result.talkTime || '0') || 0;
+          const cost = parseFloat(result.cost || result.price || '0') || 0;
+          
+          // 전화번호로 고객 찾기
+          let customer;
+          if (phoneNumber) {
+            [customer] = await db
+              .select()
+              .from(customers)
+              .where(eq(customers.phone, phoneNumber));
+          }
+          
+          if (!customer && phoneNumber) {
+            console.warn(`[SAVE_SEND_LOGS] Customer not found for phone: ${maskPhoneNumber(phoneNumber)}`);
+          }
+          
+          // ars_send_logs에 저장할 데이터 준비
+          const logData = {
+            campaignId: campaign?.id || null,
+            customerId: customer?.id || null,
+            phone: phoneNumber,
+            scenarioId: result.scenarioId || campaign?.scenarioId || null,
+            historyKey: historyKey || result.historyKey || null,
+            status: (callResult === 'connected' || callResult === 'answered') ? 'completed' : 'failed',
+            callResult: callResult,
+            retryType: 'initial' as const,
+            retryAttempt: 1,
+            duration,
+            cost: cost.toString(),
+            dtmfInput: result.dtmf || result.dtmfInput || null,
+            recordingUrl: result.recordUrl || result.recordingUrl || null,
+            errorMessage: result.error || result.errorMessage || null,
+            sentAt: result.sentAt ? new Date(result.sentAt) : new Date(),
+            completedAt: result.completedAt ? new Date(result.completedAt) : new Date(),
+          };
+          
+          // 중복 체크 - 같은 전화번호, historyKey, 캠페인의 로그가 이미 있는지 확인
+          let existingLog;
+          if (phoneNumber) {
+            const conditions = [eq(arsSendLogs.phone, phoneNumber)];
+            if (historyKey) {
+              conditions.push(eq(arsSendLogs.historyKey, historyKey));
+            }
+            if (campaign?.id) {
+              conditions.push(eq(arsSendLogs.campaignId, campaign.id));
+            }
+            
+            [existingLog] = await db
+              .select()
+              .from(arsSendLogs)
+              .where(and(...conditions))
+              .limit(1);
+          }
+            
+          if (existingLog) {
+            console.log(`[SAVE_SEND_LOGS] Log already exists for phone: ${maskPhoneNumber(phoneNumber)}, updating...`);
+            // 기존 로그 업데이트
+            const [updatedLog] = await db
+              .update(arsSendLogs)
+              .set({
+                ...logData,
+                updatedAt: new Date()
+              })
+              .where(eq(arsSendLogs.id, existingLog.id))
+              .returning();
+            if (updatedLog) {
+              savedLogs.push(updatedLog);
+            }
+          } else {
+            // 새 로그 생성
+            const [newLog] = await db
+              .insert(arsSendLogs)
+              .values(logData)
+              .returning();
+            if (newLog) {
+              savedLogs.push(newLog);
+            }
+          }
+          
+        } catch (itemError) {
+          console.error(`[SAVE_SEND_LOGS] Error processing individual result:`, itemError);
+          continue;
+        }
+      }
+      
+      console.log(`[SAVE_SEND_LOGS] Successfully saved/updated ${savedLogs.length} logs for campaign: ${campaignName}`);
+      
+      // 캠페인 통계 업데이트
+      if (campaign && savedLogs.length > 0) {
+        await this.updateCampaignStats(campaign.id);
+      }
+      
+      return applyPersonalInfoMaskingToArray(savedLogs);
+      
+    } catch (error) {
+      console.error('[SAVE_SEND_LOGS] Error saving send logs:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * ATALK 통화 결과를 우리 시스템의 callResult enum에 매핑
+   */
+  private mapAtalkCallResult(atalkResult: string): string {
+    if (!atalkResult) return 'pending';
+    
+    const result = atalkResult.toLowerCase();
+    
+    // ATALK 응답 매핑
+    if (result.includes('연결') || result.includes('성공') || result.includes('connected')) {
+      return 'connected';
+    }
+    if (result.includes('응답') || result.includes('answered')) {
+      return 'answered';
+    }
+    if (result.includes('통화중') || result.includes('busy')) {
+      return 'busy';
+    }
+    if (result.includes('무응답') || result.includes('no_answer') || result.includes('noanswer')) {
+      return 'no_answer';
+    }
+    if (result.includes('사서함') || result.includes('voicemail')) {
+      return 'voicemail';
+    }
+    if (result.includes('거절') || result.includes('rejected')) {
+      return 'rejected';
+    }
+    if (result.includes('결번') || result.includes('invalid')) {
+      return 'invalid_number';
+    }
+    if (result.includes('팩스') || result.includes('fax')) {
+      return 'fax';
+    }
+    if (result.includes('전원') || result.includes('power')) {
+      return 'power_off';
+    }
+    if (result.includes('자동응답') || result.includes('auto')) {
+      return 'auto_response';
+    }
+    if (result.includes('오류') || result.includes('error')) {
+      return 'error';
+    }
+    
+    // 기본값
+    return 'other';
+  }
+  
+  /**
+   * 캠페인 통계 업데이트
+   */
+  private async updateCampaignStats(campaignId: number): Promise<void> {
+    try {
+      const [stats] = await db
+        .select({
+          totalCount: sql<number>`COUNT(*)`,
+          successCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} IN ('connected', 'answered') THEN 1 END)`,
+          failedCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} NOT IN ('connected', 'answered', 'pending', 'processing') THEN 1 END)`,
+        })
+        .from(arsSendLogs)
+        .where(eq(arsSendLogs.campaignId, campaignId));
+        
+      if (stats) {
+        await db
+          .update(arsCampaigns)
+          .set({
+            totalCount: stats.totalCount,
+            successCount: stats.successCount,
+            failedCount: stats.failedCount,
+            updatedAt: new Date()
+          })
+          .where(eq(arsCampaigns.id, campaignId));
+      }
+    } catch (error) {
+      console.error(`[UPDATE_CAMPAIGN_STATS] Error updating stats for campaign ${campaignId}:`, error);
+    }
   }
 }
 

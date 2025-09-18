@@ -1634,6 +1634,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestId
       };
 
+      // 발송 성공 시 자동 결과 동기화 스케줄링
+      if (result.success && result.historyKey) {
+        setTimeout(async () => {
+          try {
+            console.log(`[AUTO_SYNC] 자동 결과 동기화 시작: ${result.historyKey}`);
+            const historyData = await atalkArsService.getCallHistory(result.historyKey, campaignName);
+            if (historyData && historyData.data && historyData.data.length > 0) {
+              const savedCount = await storage.saveSendLogs(historyData.data, campaignName);
+              console.log(`[AUTO_SYNC_SUCCESS] ${savedCount.length}개 결과 자동 동기화 완료 (Campaign: ${campaignName})`);
+            } else {
+              console.log(`[AUTO_SYNC_WARNING] 조회된 결과가 없습니다: ${result.historyKey}`);
+            }
+          } catch (error) {
+            console.error(`[AUTO_SYNC_ERROR] 자동 동기화 실패 (Campaign: ${campaignName}, historyKey: ${result.historyKey}):`, error);
+            // 자동 동기화 실패는 치명적이지 않으므로 사용자에게 영향을 주지 않음
+          }
+        }, 30000); // 30초 후 자동 동기화
+      }
+
       const httpStatus = result.success ? 200 : 400;
       res.status(httpStatus).json(responseData);
 
@@ -4071,5 +4090,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  // ============================================
+  // 🔥 ARS 캠페인 결과 수동 동기화 API
+  // ============================================
+
+  /**
+   * 수동 결과 동기화 - 특정 historyKey의 결과를 ATALK에서 가져와서 DB에 저장
+   * POST /api/ars/campaigns/sync-results
+   */
+  app.post('/api/ars/campaigns/sync-results', isAuthenticated, async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      const { historyKey, campaignName, campaignId } = req.body;
+      
+      // 입력 검증
+      if (!historyKey || !campaignName) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'historyKey와 campaignName이 필요합니다.' 
+        });
+      }
+
+      secureLog(LogLevel.INFO, 'ARS_SYNC', '수동 결과 동기화 시작', {
+        historyKey: historyKey,
+        campaignName: campaignName,
+        campaignId: campaignId,
+        userId: (req as any).user?.id
+      }, requestId);
+
+      // 1. ATALK에서 결과 가져오기
+      const historyResult = await atalkArsService.getCallHistory(historyKey, campaignName);
+      
+      if (!historyResult.success || !historyResult.data) {
+        secureLog(LogLevel.WARNING, 'ARS_SYNC', 'ATALK 결과 조회 실패', {
+          historyKey: historyKey,
+          message: historyResult.message
+        }, requestId);
+        
+        return res.status(400).json({ 
+          success: false, 
+          message: `ATALK 결과 조회 실패: ${historyResult.message}` 
+        });
+      }
+
+      // 2. DB에 저장하기
+      const savedLogs = await storage.saveSendLogs(
+        historyResult.data, 
+        campaignName, 
+        historyKey,
+        campaignId
+      );
+
+      secureLog(LogLevel.INFO, 'ARS_SYNC', '수동 결과 동기화 완료', {
+        historyKey: historyKey,
+        savedCount: savedLogs.length,
+        campaignName: campaignName
+      }, requestId);
+
+      res.json({ 
+        success: true, 
+        savedCount: savedLogs.length,
+        message: `${savedLogs.length}개의 결과를 성공적으로 동기화했습니다.`,
+        logs: savedLogs
+      });
+
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'ARS_SYNC', '수동 결과 동기화 오류', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        historyKey: req.body?.historyKey,
+        campaignName: req.body?.campaignName
+      }, requestId);
+
+      res.status(500).json({ 
+        success: false, 
+        message: error instanceof Error ? error.message : '결과 동기화 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
   return httpServer;
 }
