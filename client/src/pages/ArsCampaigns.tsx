@@ -46,7 +46,7 @@ export default function ArsCampaigns() {
   const form = useForm<ArsCallListAdd>({
     resolver: zodResolver(arsCallListAddSchema),
     defaultValues: {
-      campaignName: "테스트4",  // 성공 확인된 기본 캠페인명
+      campaignName: "",  // 사용자가 자유롭게 입력 가능
       page: "A",
       phones: [],
     },
@@ -116,22 +116,12 @@ export default function ArsCampaigns() {
     if (!data.campaignName?.trim()) {
       toast({
         title: "캠페인명 필요",
-        description: "아톡비즈에서 생성된 캠페인명을 입력해주세요.",
+        description: "ATALK에서 생성된 캠페인명을 입력해주세요.",
         variant: "destructive",
       });
       return;
     }
     
-    // 알려진 유효한 캠페인명 목록
-    const validCampaigns = ["테스트4", "주식회사마셈블"];
-    if (!validCampaigns.includes(data.campaignName.trim())) {
-      toast({
-        title: "캠페인명 확인 필요",
-        description: `현재 사용 가능한 캠페인: ${validCampaigns.join(", ")}. 다른 캠페인명은 ATALK 서버에서 400 오류가 발생할 수 있습니다.`,
-        variant: "destructive",
-      });
-      return;
-    }
     
     // 전화번호 배열 구성
     let phones: string[] = [];
@@ -217,13 +207,13 @@ export default function ArsCampaigns() {
                       <FormLabel>캠페인명 *</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="아톡비즈에서 생성된 캠페인명을 입력하세요" 
+                          placeholder="ATALK에서 생성한 캠페인명을 입력하세요" 
                           data-testid="input-campaign-name"
                           {...field} 
                         />
                       </FormControl>
                       <FormDescription>
-                        아톡비즈에서 미리 생성된 캠페인명을 정확히 입력해주세요. (필수)
+                        ATALK에서 생성한 캠페인명을 입력하세요. 모든 캠페인명을 사용할 수 있습니다.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
