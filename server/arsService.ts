@@ -22,34 +22,55 @@ function validateAndSecureConfig() {
   const company = '627923';  // API 문서 고정값
   const userId = 'bWI2Mjc5MjM=';  // API 문서 고정값
   
-  // 🔥 보안 강화: HTTPS 강제, 개발환경에서만 HTTP 허용
+  // 🔥 보안 강화: 프로토콜 선택 로직 개선 (ATALK 서버 HTTPS 미지원 대응)
   const isProduction = process.env.NODE_ENV === 'production';
   const allowInsecure = process.env.ALLOW_INSECURE_ATALK === 'true';
+  const forceHttp = process.env.ATALK_FORCE_HTTP === 'true';
   
   let baseUrl: string;
+  let protocol: string;
   
-  if (isProduction) {
-    // 프로덕션에서는 HTTPS 필수
+  // 🔥 수정: ATALK 서버가 HTTPS를 지원하지 않는 것이 확인됨 (SSL handshake error)
+  // 프로덕션에서도 ATALK_FORCE_HTTP=true 설정 시 HTTP 허용
+  if (forceHttp) {
+    baseUrl = 'http://101.202.45.50:8080/thirdparty/v1';
+    protocol = 'http';
+    secureLog(LogLevel.WARNING, 'CONFIG', '⚠️  ATALK_FORCE_HTTP 설정으로 HTTP 사용', {
+      protocol: 'http',
+      environment: isProduction ? 'production' : 'development',
+      reason: 'ATALK 서버가 HTTPS를 지원하지 않음 (SSL/TLS handshake error)',
+      security_note: 'ATALK API 서버 제약으로 인한 불가피한 HTTP 사용',
+      ssl_error: 'error:0A0000C6:SSL routines::packet length too long'
+    });
+  } else if (isProduction) {
+    // 프로덕션에서 ATALK_FORCE_HTTP가 설정되지 않은 경우 HTTPS 시도 (실패할 것으로 예상)
     baseUrl = 'https://101.202.45.50:8080/thirdparty/v1';
-    secureLog(LogLevel.INFO, 'CONFIG', '프로덕션 환경: HTTPS 강제 적용', {
+    protocol = 'https';
+    secureLog(LogLevel.ERROR, 'CONFIG', '🚫 프로덕션 환경: HTTPS 시도 (실패 예상)', {
       protocol: 'https',
-      environment: 'production'
+      environment: 'production',
+      known_issue: 'ATALK 서버가 HTTPS를 지원하지 않음',
+      solution: 'ATALK_FORCE_HTTP=true 환경변수 설정 필요',
+      ssl_error_expected: 'SSL/TLS handshake will fail'
     });
   } else if (allowInsecure) {
-    // 개발환경에서 ALLOW_INSECURE_ATALK=true인 경우만 HTTP 허용
+    // 개발환경에서 ALLOW_INSECURE_ATALK=true인 경우 HTTP 허용
     baseUrl = 'http://101.202.45.50:8080/thirdparty/v1';
-    secureLog(LogLevel.WARNING, 'CONFIG', '개발 환경: HTTP 사용 허용', {
+    protocol = 'http';
+    secureLog(LogLevel.INFO, 'CONFIG', '개발 환경: HTTP 사용 허용', {
       protocol: 'http',
       environment: 'development',
       insecureAllowed: true
     });
   } else {
-    // 개발환경이라도 기본적으로 HTTPS 사용
+    // 개발환경이라도 기본적으로 HTTPS 시도 (실패할 것으로 예상)
     baseUrl = 'https://101.202.45.50:8080/thirdparty/v1';
-    secureLog(LogLevel.INFO, 'CONFIG', '개발 환경: HTTPS 사용 (보안 권장)', {
+    protocol = 'https';
+    secureLog(LogLevel.WARNING, 'CONFIG', '⚠️  개발 환경: HTTPS 사용 (실패 예상)', {
       protocol: 'https',
       environment: 'development',
-      recommendation: 'ALLOW_INSECURE_ATALK=true 설정시 HTTP 허용 가능'
+      known_issue: 'ATALK 서버가 HTTPS를 지원하지 않음',
+      recommendation: 'ALLOW_INSECURE_ATALK=true 또는 ATALK_FORCE_HTTP=true 설정 권장'
     });
   }
 
@@ -285,11 +306,70 @@ export class AtalkArsService {
       return result as T;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      secureLog(LogLevel.ERROR, 'ATALK_API', `Error for ${endpoint}`, {
-        error: errorMessage
+      
+      // 🔥 프로토콜별 에러 분석 및 로깅 강화
+      let errorType = 'UNKNOWN';
+      let userFriendlyMessage = errorMessage;
+      let suggestedSolution = '';
+      
+      if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        
+        // SSL/TLS 관련 에러 감지
+        if (message.includes('ssl') || message.includes('tls') || 
+            message.includes('handshake') || message.includes('certificate') ||
+            message.includes('packet length too long') || message.includes('routines::')) {
+          errorType = 'SSL_TLS_ERROR';
+          userFriendlyMessage = '🔒 HTTPS 연결 실패: ATALK 서버가 HTTPS를 지원하지 않습니다.';
+          suggestedSolution = 'ATALK_FORCE_HTTP=true 환경변수를 설정하여 HTTP 사용을 허용하세요.';
+        }
+        // HTTPS URL에서 일반적인 연결 실패
+        else if (url.startsWith('https') && (message.includes('fetch') || message.includes('network') || 
+                 message.includes('connection') || message.includes('timeout'))) {
+          errorType = 'HTTPS_CONNECTION_ERROR';
+          userFriendlyMessage = '🌐 HTTPS 연결 실패: ATALK 서버 접속 불가';
+          suggestedSolution = 'ATALK_FORCE_HTTP=true 환경변수 설정 또는 네트워크 연결을 확인하세요.';
+        }
+        // HTTP 연결 실패
+        else if (url.startsWith('http') && (message.includes('fetch') || message.includes('network') || 
+                 message.includes('connection') || message.includes('timeout'))) {
+          errorType = 'HTTP_CONNECTION_ERROR';
+          userFriendlyMessage = '🌐 HTTP 연결 실패: ATALK 서버 접속 불가';
+          suggestedSolution = '네트워크 연결과 ATALK 서버 상태를 확인하세요.';
+        }
+        // JSON 파싱 에러
+        else if (message.includes('json') || message.includes('parse')) {
+          errorType = 'RESPONSE_PARSE_ERROR';
+          userFriendlyMessage = '📄 서버 응답 형식 오류';
+          suggestedSolution = 'ATALK 서버 응답 형식을 확인하세요.';
+        }
+      }
+      
+      secureLog(LogLevel.ERROR, 'ATALK_API', `${errorType}: ${endpoint} 호출 실패`, {
+        errorType,
+        originalError: errorMessage,
+        userFriendlyMessage,
+        suggestedSolution,
+        url,
+        protocol: url.startsWith('https') ? 'HTTPS' : 'HTTP',
+        isSSLError: errorType === 'SSL_TLS_ERROR',
+        endpoint
       }, currentRequestId);
       
-      await this.logApiCall(endpoint, method, data, { error: errorMessage }, 500, currentRequestId);
+      await this.logApiCall(endpoint, method, data, { 
+        error: errorMessage,
+        errorType,
+        protocol: url.startsWith('https') ? 'HTTPS' : 'HTTP',
+        userFriendlyMessage 
+      }, 500, currentRequestId);
+      
+      // 🔥 SSL/TLS 에러의 경우 더 명확한 에러 메시지 throw
+      if (errorType === 'SSL_TLS_ERROR') {
+        throw new Error(`${userFriendlyMessage} ${suggestedSolution}`);
+      } else if (errorType.includes('CONNECTION_ERROR')) {
+        throw new Error(`${userFriendlyMessage} ${suggestedSolution}`);
+      }
+      
       throw error;
     }
   }
