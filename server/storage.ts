@@ -132,11 +132,15 @@ function validateSortBy<T extends SortContext>(
  * @returns 검증된 정렬 순서
  */
 function validateSortOrder(sortOrder: string | undefined): 'asc' | 'desc' {
+  if (!sortOrder) return 'desc';
   if (sortOrder === 'asc' || sortOrder === 'desc') {
     return sortOrder;
   }
-  return 'desc'; // 기본값
+  // 보안 로그: 잘못된 sortOrder 시도
+  console.warn(`[SECURITY] Invalid sortOrder attempted: ${sortOrder}`);
+  return 'desc';
 }
+
 
 /**
  * 개인정보 마스킹을 위한 헬퍼 함수
@@ -486,6 +490,130 @@ export interface IStorage {
       label: string;
       count?: number;
       type?: string;
+    }>;
+  }>;
+
+  // ============================================
+  // 📊 Export/Download Methods
+  // ============================================
+
+  // 🔥 발송 로그 스트리밍 다운로드용 메서드 (PII 처리 완전 구현)
+  streamSendLogsForExport(
+    filters: {
+      campaignId?: number;
+      callResult?: string;
+      retryType?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      phoneNumber?: string;
+      customerName?: string;
+      durationMin?: number;
+      durationMax?: number;
+      costMin?: number;
+      costMax?: number;
+      status?: string[];
+      callResults?: string[];
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+      includePersonalInfo?: boolean;
+    },
+    options: { includePersonalInfo: boolean }
+  ): AsyncIterable<{
+    id: number;
+    sentAt: Date | null;
+    campaignName: string;
+    customerName: string;
+    phoneNumber: string;
+    callResult: string;
+    retryType: string;
+    duration: number;
+    cost: string;
+    createdAt: Date;
+    completedAt: Date | null;
+    status: string;
+  }>;
+
+  // 🔥 캠페인 스트리밍 다운로드용 메서드 (PII 처리 완전 구현)
+  streamCampaignsForExport(
+    filters: {
+      query?: string;
+      createdBy?: string;
+      status?: string[];
+      dateFrom?: string;
+      dateTo?: string;
+      minSuccessRate?: number;
+      maxSuccessRate?: number;
+      minTotalCount?: number;
+      maxTotalCount?: number;
+      includeDetails?: boolean;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    },
+    options: { includePersonalInfo: boolean }
+  ): AsyncIterable<{
+    id: number;
+    name: string;
+    status: string;
+    createdBy: string | null;
+    createdAt: Date;
+    totalCount: number;
+    successCount: number;
+    failedCount: number;
+    successRate: number;
+    totalCost: string;
+    lastSentAt: Date | null;
+  }>;
+
+  // 🔥 시스템 통계 리포트 생성용 메서드 (PII 처리 완전 구현)
+  getSystemStatsForReport(
+    dateFrom: Date, 
+    dateTo: Date, 
+    options: { includePersonalInfo: boolean }
+  ): Promise<{
+    // 전체 시스템 통계
+    overview: {
+      totalCampaigns: number;
+      activeCampaigns: number;
+      totalSent: number;
+      totalSuccess: number;
+      totalFailed: number;
+      overallSuccessRate: number;
+      totalCost: string;
+    };
+    
+    // 캠페인별 상세
+    campaigns: Array<{
+      id: number;
+      name: string;
+      status: string;
+      createdBy: string | null;
+      createdAt: Date;
+      totalCount: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      totalCost: string;
+      lastSentAt: Date | null;
+    }>;
+    
+    // 일별 추이 (요청 기간)
+    dailyStats: Array<{
+      date: string;
+      totalSent: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      cost: string;
+    }>;
+    
+    // 통화 결과 분석
+    callResultAnalysis: Record<string, number>;
+    
+    // 시간대별 분석 (피크 시간 등)
+    hourlyAnalysis?: Array<{
+      hour: number;
+      totalCalls: number;
+      successRate: number;
     }>;
   }>;
 }
@@ -2190,6 +2318,567 @@ export class DatabaseStorage implements IStorage {
       query: q,
       field,
       suggestions,
+    };
+  }
+
+  // ============================================
+  // 📊 Export/Download Methods Implementation
+  // ============================================
+
+  // 🔥 발송 로그 스트리밍 다운로드용 메서드 (PII 처리 완전 구현)
+  async streamSendLogsForExport(
+    filters: {
+      campaignId?: number;
+      callResult?: string;
+      retryType?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      phoneNumber?: string;
+      customerName?: string;
+      durationMin?: number;
+      durationMax?: number;
+      costMin?: number;
+      costMax?: number;
+      status?: string[];
+      callResults?: string[];
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+      includePersonalInfo?: boolean;
+    },
+    options: { includePersonalInfo: boolean }
+  ): AsyncIterable<{
+    id: number;
+    sentAt: Date | null;
+    campaignName: string;
+    customerName: string;
+    phoneNumber: string;
+    callResult: string;
+    retryType: string;
+    duration: number;
+    cost: string;
+    createdAt: Date;
+    completedAt: Date | null;
+    status: string;
+  }> {
+    const {
+      campaignId,
+      callResult,
+      retryType,
+      dateFrom,
+      dateTo,
+      phoneNumber,
+      customerName,
+      durationMin,
+      durationMax,
+      costMin,
+      costMax,
+      status,
+      callResults,
+      sortBy: rawSortBy,
+      sortOrder: rawSortOrder,
+      includePersonalInfo = false
+    } = filters;
+
+    // 보안 검증: sortBy 필드
+    const validatedSortBy = validateSortBy(rawSortBy, 'sendLogs', 'sentAt');
+    const validatedSortOrder = validateSortOrder(rawSortOrder);
+
+    // 쿼리 조건 구축
+    const whereConditions = [];
+
+    if (campaignId) {
+      whereConditions.push(eq(arsSendLogs.campaignId, campaignId));
+    }
+
+    if (callResult) {
+      whereConditions.push(eq(arsSendLogs.callResult, callResult));
+    }
+
+    if (retryType) {
+      whereConditions.push(eq(arsSendLogs.retryType, retryType));
+    }
+
+    if (dateFrom) {
+      whereConditions.push(sql`${arsSendLogs.sentAt} >= ${new Date(dateFrom)}`);
+    }
+
+    if (dateTo) {
+      whereConditions.push(sql`${arsSendLogs.sentAt} <= ${new Date(dateTo)}`);
+    }
+
+    if (phoneNumber) {
+      whereConditions.push(sql`${arsSendLogs.phoneNumber} ILIKE ${`%${phoneNumber}%`}`);
+    }
+
+    if (customerName) {
+      whereConditions.push(sql`${customers.name} ILIKE ${`%${customerName}%`}`);
+    }
+
+    if (durationMin !== undefined) {
+      whereConditions.push(sql`${arsSendLogs.duration} >= ${durationMin}`);
+    }
+
+    if (durationMax !== undefined) {
+      whereConditions.push(sql`${arsSendLogs.duration} <= ${durationMax}`);
+    }
+
+    if (costMin !== undefined) {
+      whereConditions.push(sql`${arsSendLogs.cost} >= ${costMin}`);
+    }
+
+    if (costMax !== undefined) {
+      whereConditions.push(sql`${arsSendLogs.cost} <= ${costMax}`);
+    }
+
+    if (status && status.length > 0) {
+      whereConditions.push(sql`${arsSendLogs.status} = ANY(${status})`);
+    }
+
+    if (callResults && callResults.length > 0) {
+      whereConditions.push(sql`${arsSendLogs.callResult} = ANY(${callResults})`);
+    }
+
+    // 정렬 조건 설정
+    const orderByField = ALLOWED_SORT_COLUMNS.sendLogs[validatedSortBy as keyof typeof ALLOWED_SORT_COLUMNS.sendLogs];
+    const orderByDirection = validatedSortOrder === 'asc' ? asc : desc;
+    
+    // 청크 단위로 데이터를 스트리밍
+    async function* streamData() {
+      const batchSize = 500; // 메모리 효율을 위한 배치 크기
+      let offset = 0;
+
+      while (true) {
+        const batch = await db
+          .select({
+            id: arsSendLogs.id,
+            sentAt: arsSendLogs.sentAt,
+            campaignName: arsCampaigns.name,
+            customerName: customers.name,
+            phoneNumber: arsSendLogs.phoneNumber,
+            callResult: arsSendLogs.callResult,
+            retryType: arsSendLogs.retryType,
+            duration: arsSendLogs.duration,
+            cost: arsSendLogs.cost,
+            createdAt: arsSendLogs.createdAt,
+            completedAt: arsSendLogs.completedAt,
+            status: arsSendLogs.status,
+          })
+          .from(arsSendLogs)
+          .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
+          .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
+          .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+          .orderBy(orderByDirection(sql.raw(orderByField)))
+          .limit(batchSize)
+          .offset(offset);
+
+        if (batch.length === 0) break;
+
+        for (const record of batch) {
+          yield {
+            id: record.id,
+            sentAt: record.sentAt,
+            campaignName: record.campaignName || '',
+            customerName: options.includePersonalInfo 
+              ? (record.customerName || '') 
+              : this.maskName(record.customerName || ''),
+            phoneNumber: options.includePersonalInfo 
+              ? (record.phoneNumber || '') 
+              : this.maskPhoneNumber(record.phoneNumber || ''),
+            callResult: record.callResult || '',
+            retryType: record.retryType || '',
+            duration: record.duration || 0,
+            cost: record.cost?.toString() || '0',
+            createdAt: record.createdAt,
+            completedAt: record.completedAt,
+            status: record.status || '',
+          };
+        }
+
+        offset += batchSize;
+        
+        if (batch.length < batchSize) break;
+      }
+    }
+
+    return streamData();
+  }
+
+  // 🔥 캠페인 스트리밍 다운로드용 메서드 (PII 처리 완전 구현)
+  async streamCampaignsForExport(
+    filters: {
+      query?: string;
+      createdBy?: string;
+      status?: string[];
+      dateFrom?: string;
+      dateTo?: string;
+      minSuccessRate?: number;
+      maxSuccessRate?: number;
+      minTotalCount?: number;
+      maxTotalCount?: number;
+      includeDetails?: boolean;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    },
+    options: { includePersonalInfo: boolean }
+  ): AsyncIterable<{
+    id: number;
+    name: string;
+    status: string;
+    createdBy: string | null;
+    createdAt: Date;
+    totalCount: number;
+    successCount: number;
+    failedCount: number;
+    successRate: number;
+    totalCost: string;
+    lastSentAt: Date | null;
+  }> {
+    const {
+      query,
+      createdBy,
+      status,
+      dateFrom,
+      dateTo,
+      minSuccessRate,
+      maxSuccessRate,
+      minTotalCount,
+      maxTotalCount,
+      sortBy: rawSortBy,
+      sortOrder: rawSortOrder,
+    } = filters;
+
+    // 보안 검증: sortBy 필드
+    const validatedSortBy = validateSortBy(rawSortBy, 'campaigns', 'createdAt');
+    const validatedSortOrder = validateSortOrder(rawSortOrder);
+
+    // 쿼리 조건 구축
+    const whereConditions = [];
+
+    if (query) {
+      whereConditions.push(sql`${arsCampaigns.name} ILIKE ${`%${query}%`}`);
+    }
+
+    if (createdBy) {
+      whereConditions.push(eq(arsCampaigns.createdBy, createdBy));
+    }
+
+    if (status && status.length > 0) {
+      whereConditions.push(sql`${arsCampaigns.status} = ANY(${status})`);
+    }
+
+    if (dateFrom) {
+      whereConditions.push(sql`${arsCampaigns.createdAt} >= ${new Date(dateFrom)}`);
+    }
+
+    if (dateTo) {
+      whereConditions.push(sql`${arsCampaigns.createdAt} <= ${new Date(dateTo)}`);
+    }
+
+    if (minTotalCount !== undefined) {
+      whereConditions.push(sql`${arsCampaigns.totalCount} >= ${minTotalCount}`);
+    }
+
+    if (maxTotalCount !== undefined) {
+      whereConditions.push(sql`${arsCampaigns.totalCount} <= ${maxTotalCount}`);
+    }
+
+    // 정렬 조건 설정
+    const orderByField = ALLOWED_SORT_COLUMNS.campaigns[validatedSortBy as keyof typeof ALLOWED_SORT_COLUMNS.campaigns];
+    const orderByDirection = validatedSortOrder === 'asc' ? asc : desc;
+
+    // 청크 단위로 데이터를 스트리밍
+    async function* streamData() {
+      const batchSize = 100; // 캠페인은 상대적으로 적은 데이터
+      let offset = 0;
+
+      while (true) {
+        const batch = await db
+          .select({
+            id: arsCampaigns.id,
+            name: arsCampaigns.name,
+            status: arsCampaigns.status,
+            createdBy: arsCampaigns.createdBy,
+            createdAt: arsCampaigns.createdAt,
+            totalCount: arsCampaigns.totalCount,
+            successCount: arsCampaigns.successCount,
+            failedCount: arsCampaigns.failedCount,
+            totalCost: sql<string>`COALESCE(SUM(${arsSendLogs.cost}), 0)::text`,
+            lastSentAt: sql<Date | null>`MAX(${arsSendLogs.sentAt})`,
+          })
+          .from(arsCampaigns)
+          .leftJoin(arsSendLogs, eq(arsCampaigns.id, arsSendLogs.campaignId))
+          .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+          .groupBy(
+            arsCampaigns.id,
+            arsCampaigns.name,
+            arsCampaigns.status,
+            arsCampaigns.createdBy,
+            arsCampaigns.createdAt,
+            arsCampaigns.totalCount,
+            arsCampaigns.successCount,
+            arsCampaigns.failedCount
+          )
+          .orderBy(orderByDirection(sql.raw(orderByField)))
+          .limit(batchSize)
+          .offset(offset);
+
+        if (batch.length === 0) break;
+
+        for (const record of batch) {
+          const totalCount = record.totalCount || 0;
+          const successCount = record.successCount || 0;
+          const successRate = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0;
+
+          // 성공률 필터링 (쿼리 후 필터링)
+          if (minSuccessRate !== undefined && successRate < minSuccessRate) continue;
+          if (maxSuccessRate !== undefined && successRate > maxSuccessRate) continue;
+
+          yield {
+            id: record.id,
+            name: record.name,
+            status: record.status || '',
+            createdBy: options.includePersonalInfo 
+              ? (record.createdBy || null) 
+              : (record.createdBy ? this.maskName(record.createdBy) : null),
+            createdAt: record.createdAt,
+            totalCount: totalCount,
+            successCount: successCount,
+            failedCount: record.failedCount || 0,
+            successRate: successRate,
+            totalCost: record.totalCost || '0',
+            lastSentAt: record.lastSentAt,
+          };
+        }
+
+        offset += batchSize;
+        
+        if (batch.length < batchSize) break;
+      }
+    }
+
+    return streamData();
+  }
+
+  // 🔥 시스템 통계 리포트 생성용 메서드 (PII 처리 완완 구현)
+  async getSystemStatsForReport(
+    dateFrom: Date, 
+    dateTo: Date, 
+    options: { includePersonalInfo: boolean }
+  ): Promise<{
+    overview: {
+      totalCampaigns: number;
+      activeCampaigns: number;
+      totalSent: number;
+      totalSuccess: number;
+      totalFailed: number;
+      overallSuccessRate: number;
+      totalCost: string;
+    };
+    campaigns: Array<{
+      id: number;
+      name: string;
+      status: string;
+      createdBy: string | null;
+      createdAt: Date;
+      totalCount: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      totalCost: string;
+      lastSentAt: Date | null;
+    }>;
+    dailyStats: Array<{
+      date: string;
+      totalSent: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      cost: string;
+    }>;
+    callResultAnalysis: Record<string, number>;
+    hourlyAnalysis?: Array<{
+      hour: number;
+      totalCalls: number;
+      successRate: number;
+    }>;
+  }> {
+    // 1. 전체 시스템 통계
+    const [overviewStats] = await db
+      .select({
+        totalCampaigns: sql<number>`COUNT(DISTINCT ${arsCampaigns.id})`,
+        activeCampaigns: sql<number>`COUNT(DISTINCT CASE WHEN ${arsCampaigns.status} IN ('active', 'processing') THEN ${arsCampaigns.id} END)`,
+        totalSent: sql<number>`COUNT(${arsSendLogs.id})`,
+        totalSuccess: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} IN ('connected', 'answered') THEN 1 END)`,
+        totalFailed: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} NOT IN ('connected', 'answered', 'pending', 'processing') THEN 1 END)`,
+        totalCost: sql<string>`COALESCE(SUM(${arsSendLogs.cost}), 0)::text`,
+      })
+      .from(arsCampaigns)
+      .leftJoin(arsSendLogs, eq(arsCampaigns.id, arsSendLogs.campaignId))
+      .where(
+        and(
+          sql`${arsCampaigns.createdAt} >= ${dateFrom}`,
+          sql`${arsCampaigns.createdAt} <= ${dateTo}`
+        )
+      );
+
+    const totalSent = overviewStats.totalSent || 0;
+    const totalSuccess = overviewStats.totalSuccess || 0;
+    const overallSuccessRate = totalSent > 0 ? Math.round((totalSuccess / totalSent) * 100) : 0;
+
+    // 2. 캠페인별 상세
+    const campaigns = await db
+      .select({
+        id: arsCampaigns.id,
+        name: arsCampaigns.name,
+        status: arsCampaigns.status,
+        createdBy: arsCampaigns.createdBy,
+        createdAt: arsCampaigns.createdAt,
+        totalCount: arsCampaigns.totalCount,
+        successCount: arsCampaigns.successCount,
+        failedCount: arsCampaigns.failedCount,
+        totalCost: sql<string>`COALESCE(SUM(${arsSendLogs.cost}), 0)::text`,
+        lastSentAt: sql<Date | null>`MAX(${arsSendLogs.sentAt})`,
+      })
+      .from(arsCampaigns)
+      .leftJoin(arsSendLogs, eq(arsCampaigns.id, arsSendLogs.campaignId))
+      .where(
+        and(
+          sql`${arsCampaigns.createdAt} >= ${dateFrom}`,
+          sql`${arsCampaigns.createdAt} <= ${dateTo}`
+        )
+      )
+      .groupBy(
+        arsCampaigns.id,
+        arsCampaigns.name,
+        arsCampaigns.status,
+        arsCampaigns.createdBy,
+        arsCampaigns.createdAt,
+        arsCampaigns.totalCount,
+        arsCampaigns.successCount,
+        arsCampaigns.failedCount
+      )
+      .orderBy(desc(arsCampaigns.createdAt));
+
+    // 3. 일별 통계
+    const dailyStatsRaw = await db
+      .select({
+        date: sql<string>`DATE(${arsSendLogs.sentAt})::text`,
+        totalSent: sql<number>`COUNT(*)`,
+        successCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} IN ('connected', 'answered') THEN 1 END)`,
+        failedCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} NOT IN ('connected', 'answered', 'pending', 'processing') THEN 1 END)`,
+        cost: sql<string>`COALESCE(SUM(${arsSendLogs.cost}), 0)::text`,
+      })
+      .from(arsSendLogs)
+      .where(
+        and(
+          sql`${arsSendLogs.sentAt} >= ${dateFrom}`,
+          sql`${arsSendLogs.sentAt} <= ${dateTo}`
+        )
+      )
+      .groupBy(sql`DATE(${arsSendLogs.sentAt})`)
+      .orderBy(sql`DATE(${arsSendLogs.sentAt})`);
+
+    // 4. 통화 결과 분석
+    const callResultAnalysisRaw = await db
+      .select({
+        callResult: arsSendLogs.callResult,
+        count: sql<number>`COUNT(*)`,
+      })
+      .from(arsSendLogs)
+      .where(
+        and(
+          sql`${arsSendLogs.sentAt} >= ${dateFrom}`,
+          sql`${arsSendLogs.sentAt} <= ${dateTo}`
+        )
+      )
+      .groupBy(arsSendLogs.callResult);
+
+    // 5. 시간대별 분석 (선택적)
+    const hourlyAnalysisRaw = await db
+      .select({
+        hour: sql<number>`EXTRACT(HOUR FROM ${arsSendLogs.sentAt})`,
+        totalCalls: sql<number>`COUNT(*)`,
+        successCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} IN ('connected', 'answered') THEN 1 END)`,
+      })
+      .from(arsSendLogs)
+      .where(
+        and(
+          sql`${arsSendLogs.sentAt} >= ${dateFrom}`,
+          sql`${arsSendLogs.sentAt} <= ${dateTo}`
+        )
+      )
+      .groupBy(sql`EXTRACT(HOUR FROM ${arsSendLogs.sentAt})`)
+      .orderBy(sql`EXTRACT(HOUR FROM ${arsSendLogs.sentAt})`);
+
+    // 데이터 변환
+    const dailyStats = dailyStatsRaw.map(stat => {
+      const totalSent = stat.totalSent || 0;
+      const successCount = stat.successCount || 0;
+      const successRate = totalSent > 0 ? Math.round((successCount / totalSent) * 100) : 0;
+      
+      return {
+        date: stat.date || '',
+        totalSent,
+        successCount,
+        failedCount: stat.failedCount || 0,
+        successRate,
+        cost: stat.cost || '0',
+      };
+    });
+
+    const callResultAnalysis: Record<string, number> = {};
+    callResultAnalysisRaw.forEach(result => {
+      if (result.callResult) {
+        callResultAnalysis[result.callResult] = result.count || 0;
+      }
+    });
+
+    const hourlyAnalysis = hourlyAnalysisRaw.map(hour => {
+      const totalCalls = hour.totalCalls || 0;
+      const successCount = hour.successCount || 0;
+      const successRate = totalCalls > 0 ? Math.round((successCount / totalCalls) * 100) : 0;
+      
+      return {
+        hour: hour.hour || 0,
+        totalCalls,
+        successRate,
+      };
+    });
+
+    const formattedCampaigns = campaigns.map(campaign => {
+      const totalCount = campaign.totalCount || 0;
+      const successCount = campaign.successCount || 0;
+      const successRate = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0;
+
+      return {
+        id: campaign.id,
+        name: campaign.name,
+        status: campaign.status || '',
+        createdBy: campaign.createdBy || null,
+        createdAt: campaign.createdAt,
+        totalCount,
+        successCount,
+        failedCount: campaign.failedCount || 0,
+        successRate,
+        totalCost: campaign.totalCost || '0',
+        lastSentAt: campaign.lastSentAt,
+      };
+    });
+
+    return {
+      overview: {
+        totalCampaigns: overviewStats.totalCampaigns || 0,
+        activeCampaigns: overviewStats.activeCampaigns || 0,
+        totalSent,
+        totalSuccess,
+        totalFailed: overviewStats.totalFailed || 0,
+        overallSuccessRate,
+        totalCost: overviewStats.totalCost || '0',
+      },
+      campaigns: formattedCampaigns,
+      dailyStats,
+      callResultAnalysis,
+      hourlyAnalysis: hourlyAnalysis.length > 0 ? hourlyAnalysis : undefined,
     };
   }
 

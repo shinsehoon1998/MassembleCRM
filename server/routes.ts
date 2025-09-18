@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -19,6 +19,42 @@ import {
   secureLog,
   LogLevel
 } from "./securityUtils";
+import { stringify } from 'csv-stringify';
+import { pipeline } from 'stream/promises';
+import ExcelJS from 'exceljs';
+
+// ============================================
+// RBAC (Role-Based Access Control) Middleware
+// ============================================
+
+/**
+ * Role-based access control middleware for admin and manager roles only
+ * Critical for securing sensitive export operations
+ */
+const requireAdminOrManager = (req: any, res: any, next: any) => {
+  const user = req.user;
+  if (!user || (user.role !== 'admin' && user.role !== 'manager')) {
+    secureLog(LogLevel.WARNING, 'RBAC', 'Unauthorized export access attempt', {
+      userId: user?.id || 'unknown',
+      userRole: user?.role || 'none',
+      endpoint: req.path,
+      method: req.method
+    });
+    
+    return res.status(403).json({ 
+      success: false, 
+      message: '관리자 또는 매니저 권한이 필요합니다.' 
+    });
+  }
+  
+  secureLog(LogLevel.INFO, 'RBAC', 'Authorized export access', {
+    userId: user.id,
+    userRole: user.role,
+    endpoint: req.path
+  });
+  
+  next();
+};
 
 // ============================================
 // CSRF Protection Middleware
@@ -290,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 고객 데이터 CSV 내보내기 API (반드시 /:id 라우트보다 먼저 정의)
-  app.get('/api/customers/export', isAuthenticated, async (req: any, res) => {
+  app.get('/api/customers/export', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
     try {
       // 현재 검색 조건에 맞는 모든 고객 조회
       const searchParams = {
@@ -3457,6 +3493,522 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: '음원 업로드 중 오류가 발생했습니다.' 
       });
+    }
+  });
+
+  // ============================================
+  // 📊 Export/Download API Endpoints
+  // ============================================
+
+  // CSV/Excel generation libraries imported at top of file
+
+  // 1. 발송 로그 CSV 다운로드
+  app.get('/api/ars/send-logs/export/csv', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
+    // 🔥 Rate Limiting 완전 구현 (10분에 5회 제한)
+    const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_csv', 5, 600000);
+    if (!rateLimitResult.allowed) {
+      return res.status(429).json({ 
+        message: "CSV 다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
+        retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+      });
+    }
+    
+    try {
+      secureLog(LogLevel.INFO, 'EXPORT_CSV', 'Send logs CSV export requested', {
+        userId: req.user?.id,
+        campaignId: req.query.campaignId,
+        format: 'csv',
+        dateRange: req.query.dateFrom && req.query.dateTo ? 
+          `${req.query.dateFrom}~${req.query.dateTo}` : undefined,
+        includePersonalInfo: req.query.includePersonalInfo === 'true',
+        // phoneNumber, customerName 등 개인정보는 로깅하지 않음
+      }, requestId);
+
+      // Rate limiting for export requests (더 엄격한 제한)
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_csv', 5, 600000); // 5 requests per 10 minutes
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+        });
+      }
+
+      // Parse array parameters
+      const parseArrayParam = (param: string | string[] | undefined) => {
+        if (!param) return undefined;
+        if (Array.isArray(param)) return param;
+        return param.split(',').map(item => item.trim()).filter(Boolean);
+      };
+
+      // Validate query parameters using the export schema
+      const validation = sendLogsExportCsvSchema.safeParse({
+        campaignId: req.query.campaignId ? parseInt(req.query.campaignId as string) : undefined,
+        callResult: req.query.callResult,
+        retryType: req.query.retryType,
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+        phoneNumber: req.query.phoneNumber,
+        customerName: req.query.customerName,
+        durationMin: req.query.durationMin ? parseInt(req.query.durationMin as string) : undefined,
+        durationMax: req.query.durationMax ? parseInt(req.query.durationMax as string) : undefined,
+        costMin: req.query.costMin ? parseFloat(req.query.costMin as string) : undefined,
+        costMax: req.query.costMax ? parseFloat(req.query.costMax as string) : undefined,
+        status: parseArrayParam(req.query.status),
+        callResults: parseArrayParam(req.query.callResults),
+        sortBy: req.query.sortBy || 'sentAt',
+        sortOrder: req.query.sortOrder || 'desc',
+        includePersonalInfo: req.query.includePersonalInfo === 'true'
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const filters = validation.data;
+
+      // 개인정보 포함 권한 체크 강화
+      const canAccessPersonalInfo = (user: any, includePersonalInfo: boolean) => {
+        if (!includePersonalInfo) return false;
+        return user.role === 'admin'; // 관리자만 개인정보 접근 가능
+      };
+
+      const personalInfoAllowed = canAccessPersonalInfo(req.user, filters.includePersonalInfo);
+      
+      if (filters.includePersonalInfo && !personalInfoAllowed) {
+        secureLog(LogLevel.WARNING, 'EXPORT_CSV', 'Unauthorized personal info access attempt', {
+          userId: req.user?.id,
+          userRole: req.user?.role
+        }, requestId);
+        
+        return res.status(403).json({ 
+          success: false,
+          message: "개인정보를 포함한 다운로드는 관리자 권한이 필요합니다." 
+        });
+      }
+
+      // 강제 마스킹 플래그 - 기본값은 마스킹
+      const maskingRequired = !personalInfoAllowed;
+
+      // 🔥 한국어 파일명 및 UTF-8 BOM 완전 처리
+      const campaignName = req.query.campaignName as string || 'send_logs';
+      const today = new Date().toISOString().split('T')[0];
+      const fileName = `${campaignName}_${today}.csv`;
+
+      // CSV 헤더 설정 (한국어 파일명 지원)
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Pragma', 'no-cache');
+
+      // UTF-8 BOM 추가 (Excel에서 한글 깨짐 방지)
+      res.write('\uFEFF');
+
+      // 🔥 Storage 계층 완전 위임 - options 파라미터로 PII 처리 전달
+      const dataStream = storage.streamSendLogsForExport(filters, { 
+        includePersonalInfo: personalInfoAllowed 
+      });
+
+      // CSV 헤더 정의
+      const csvHeaders = [
+        '발송일시',
+        '캠페인명', 
+        '고객명',
+        '전화번호',
+        '통화결과',
+        '재발송유형',
+        '통화시간(초)',
+        '비용',
+        '생성일시',
+        '완료일시'
+      ];
+
+      // 스트리밍 CSV 생성을 위한 async generator
+      async function* csvRowGenerator() {
+        // 헤더 먼저 yield
+        yield csvHeaders;
+        
+        let recordCount = 0;
+        
+        // 데이터 스트림을 CSV 행으로 변환
+        for await (const record of dataStream) {
+          recordCount++;
+          
+          yield [
+            record.sentAt ? record.sentAt.toISOString().replace('T', ' ').slice(0, 19) : '',
+            record.campaignName || '',
+            record.customerName || '',
+            record.phoneNumber || '',
+            record.callResult || '',
+            record.retryType || '',
+            record.duration.toString(),
+            record.cost,
+            record.createdAt.toISOString().replace('T', ' ').slice(0, 19),
+            record.completedAt ? record.completedAt.toISOString().replace('T', ' ').slice(0, 19) : ''
+          ];
+        }
+        
+        // 레코드 카운트를 전역 변수에 저장하여 나중에 로깅에 사용
+        (req as any).recordCount = recordCount;
+      }
+
+      // csv-stringify pipeline을 사용한 스트리밍 CSV 생성
+      await pipeline(
+        csvRowGenerator(),
+        stringify({ 
+          header: false, // 헤더는 이미 generator에서 처리
+          encoding: 'utf-8'
+        }),
+        res
+      );
+
+      // 활동 로그 기록
+      const recordCount = (req as any).recordCount || 0;
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_sendlogs_csv_export",
+        description: `발송 로그 CSV 다운로드 (${recordCount}건, 개인정보: ${filters.includePersonalInfo ? 'O' : 'X'})`,
+      });
+
+      secureLog(LogLevel.INFO, 'EXPORT_CSV', 'Send logs CSV export completed', {
+        userId: req.user?.id,
+        recordCount,
+        fileName,
+        includePersonalInfo: filters.includePersonalInfo
+      }, requestId);
+
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'EXPORT_CSV', 'Send logs CSV export failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ message: "CSV 다운로드 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 2. 캠페인 통계 Excel 다운로드
+  app.get('/api/ars/campaigns/export/excel', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      secureLog(LogLevel.INFO, 'EXPORT_EXCEL', 'Campaign stats Excel export requested', {
+        userId: req.user?.id,
+        format: 'excel',
+        dateRange: req.query.dateFrom && req.query.dateTo ? 
+          `${req.query.dateFrom}~${req.query.dateTo}` : undefined,
+        includeDetails: req.query.includeDetails === 'true',
+        sortBy: req.query.sortBy || 'createdAt'
+      }, requestId);
+
+      // Rate limiting
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_excel', 3, 600000); // 3 requests per 10 minutes
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+        });
+      }
+
+      // Parse array parameters
+      const parseArrayParam = (param: string | string[] | undefined) => {
+        if (!param) return undefined;
+        if (Array.isArray(param)) return param;
+        return param.split(',').map(item => item.trim()).filter(Boolean);
+      };
+
+      // Validate query parameters
+      const validation = campaignsExportExcelSchema.safeParse({
+        query: req.query.query,
+        createdBy: req.query.createdBy,
+        status: parseArrayParam(req.query.status),
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+        minSuccessRate: req.query.minSuccessRate ? parseFloat(req.query.minSuccessRate as string) : undefined,
+        maxSuccessRate: req.query.maxSuccessRate ? parseFloat(req.query.maxSuccessRate as string) : undefined,
+        minTotalCount: req.query.minTotalCount ? parseInt(req.query.minTotalCount as string) : undefined,
+        maxTotalCount: req.query.maxTotalCount ? parseInt(req.query.maxTotalCount as string) : undefined,
+        includeDetails: req.query.includeDetails === 'true',
+        sortBy: req.query.sortBy || 'createdAt',
+        sortOrder: req.query.sortOrder || 'desc',
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const filters = validation.data;
+
+      // 파일명 생성
+      const today = new Date().toISOString().split('T')[0];
+      const fileName = `campaigns_${today}.xlsx`;
+
+      // Excel 응답 헤더 설정
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.setHeader('Cache-Control', 'no-cache');
+
+      // Excel 스트리밍 워크북 생성 (메모리 효율적)
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({
+        stream: res,
+        useStyles: false,
+        useSharedStrings: false
+      });
+
+      // 시트1: 캠페인 요약
+      const summarySheet = workbook.addWorksheet('캠페인 요약');
+      summarySheet.columns = [
+        { header: 'ID', key: 'id', width: 10 },
+        { header: '캠페인명', key: 'name', width: 30 },
+        { header: '상태', key: 'status', width: 15 },
+        { header: '생성자', key: 'createdBy', width: 15 },
+        { header: '생성일시', key: 'createdAt', width: 20 },
+        { header: '총 발송', key: 'totalCount', width: 12 },
+        { header: '성공', key: 'successCount', width: 12 },
+        { header: '실패', key: 'failedCount', width: 12 },
+        { header: '성공률(%)', key: 'successRate', width: 12 },
+        { header: '총 비용', key: 'totalCost', width: 15 },
+        { header: '최근 발송일', key: 'lastSentAt', width: 20 }
+      ];
+
+      // 🔥 Storage 계층 완전 위임 - options 파라미터로 PII 처리 전달
+      const campaignStream = storage.streamCampaignsForExport(filters, { 
+        includePersonalInfo: false // 캠페인 통계는 개인정보 불포함
+      });
+      const campaigns = [];
+
+      for await (const campaign of campaignStream) {
+        campaigns.push({
+          id: campaign.id,
+          name: campaign.name,
+          status: campaign.status,
+          createdBy: campaign.createdBy || '',
+          createdAt: campaign.createdAt.toISOString().slice(0, 19).replace('T', ' '),
+          totalCount: campaign.totalCount,
+          successCount: campaign.successCount,
+          failedCount: campaign.failedCount,
+          successRate: campaign.successRate,
+          totalCost: campaign.totalCost,
+          lastSentAt: campaign.lastSentAt ? campaign.lastSentAt.toISOString().slice(0, 19).replace('T', ' ') : ''
+        });
+      }
+
+      summarySheet.addRows(campaigns);
+
+      // 스트리밍 워크북 커밋 (자동으로 응답 스트림에 쓰기)
+      await workbook.commit();
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_campaigns_excel_export",
+        description: `캠페인 통계 Excel 다운로드 (${campaigns.length}개 캠페인)`,
+      });
+
+      secureLog(LogLevel.INFO, 'EXPORT_EXCEL', 'Campaign stats Excel export completed', {
+        userId: req.user?.id,
+        campaignCount: campaigns.length,
+        fileName
+      }, requestId);
+
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'EXPORT_EXCEL', 'Campaign stats Excel export failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ message: "Excel 다운로드 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 3. 통합 통계 리포트 다운로드
+  app.get('/api/ars/reports/export', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      secureLog(LogLevel.INFO, 'EXPORT_REPORT', 'System report export requested', {
+        userId: req.user?.id,
+        format: req.query.format,
+        reportType: req.query.reportType || 'summary',
+        dateRange: req.query.dateFrom && req.query.dateTo ? 
+          `${req.query.dateFrom}~${req.query.dateTo}` : undefined,
+        includeCharts: req.query.includeCharts === 'true',
+        includePersonalInfo: req.query.includePersonalInfo === 'true'
+      }, requestId);
+
+      // Rate limiting (가장 엄격한 제한)
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_report', 2, 600000); // 2 requests per 10 minutes
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "리포트 다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+        });
+      }
+
+      // Validate query parameters
+      const validation = reportsExportSchema.safeParse({
+        format: req.query.format,
+        reportType: req.query.reportType || 'summary',
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+        includeCharts: req.query.includeCharts === 'true',
+        includePersonalInfo: req.query.includePersonalInfo === 'true'
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const params = validation.data;
+
+      // 🔥 canAccessPersonalInfo 함수 사용하여 일관된 PII 처리
+      const canAccessPersonalInfo = (user: any, includePersonalInfo: boolean): boolean => {
+        if (!includePersonalInfo) return false;
+        return user?.role === 'admin';
+      };
+      
+      const canAccess = canAccessPersonalInfo(req.user, params.includePersonalInfo);
+      if (params.includePersonalInfo && !canAccess) {
+        return res.status(403).json({ 
+          message: "개인정보를 포함한 리포트는 관리자 권한이 필요합니다." 
+        });
+      }
+
+      // 날짜 파싱
+      const dateFrom = new Date(params.dateFrom);
+      const dateTo = new Date(params.dateTo);
+
+      // 🔥 Storage 계층 완전 위임 - options 파라미터로 PII 처리 전달
+      const canAccess = canAccessPersonalInfo(req.user, params.includePersonalInfo);
+      const reportData = await storage.getSystemStatsForReport(dateFrom, dateTo, { 
+        includePersonalInfo: canAccess 
+      });
+
+      // 파일명 생성
+      const fileName = generateExportFileName.systemReport(params.format, params.dateFrom, params.dateTo);
+
+      if (params.format === 'csv') {
+        // CSV 형식으로 리포트 생성
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+        res.setHeader('Cache-Control', 'no-cache');
+
+        // UTF-8 BOM
+        res.write('\uFEFF');
+
+        // 전체 요약 섹션
+        res.write('=== 시스템 전체 통계 ===\n');
+        res.write(`총 캠페인 수,${reportData.overview.totalCampaigns}\n`);
+        res.write(`활성 캠페인 수,${reportData.overview.activeCampaigns}\n`);
+        res.write(`총 발송 건수,${reportData.overview.totalSent}\n`);
+        res.write(`성공 건수,${reportData.overview.totalSuccess}\n`);
+        res.write(`실패 건수,${reportData.overview.totalFailed}\n`);
+        res.write(`전체 성공률(%),${reportData.overview.overallSuccessRate}\n`);
+        res.write(`총 비용,${reportData.overview.totalCost}\n\n`);
+
+        // 일별 통계
+        res.write('=== 일별 통계 ===\n');
+        res.write('날짜,발송건수,성공건수,실패건수,성공률(%),비용\n');
+        reportData.dailyStats.forEach(stat => {
+          res.write(`${stat.date},${stat.totalSent},${stat.successCount},${stat.failedCount},${stat.successRate},${stat.cost}\n`);
+        });
+
+        res.end();
+      } else {
+        // Excel 형식으로 리포트 생성
+        const workbook = new ExcelJS.Workbook();
+
+        // 시트1: 전체 요약
+        const overviewSheet = workbook.addWorksheet('전체 요약');
+        overviewSheet.columns = [
+          { header: '항목', key: 'item', width: 30 },
+          { header: '값', key: 'value', width: 20 }
+        ];
+
+        overviewSheet.addRows([
+          { item: '총 캠페인 수', value: reportData.overview.totalCampaigns },
+          { item: '활성 캠페인 수', value: reportData.overview.activeCampaigns },
+          { item: '총 발송 건수', value: reportData.overview.totalSent },
+          { item: '성공 건수', value: reportData.overview.totalSuccess },
+          { item: '실패 건수', value: reportData.overview.totalFailed },
+          { item: '전체 성공률(%)', value: reportData.overview.overallSuccessRate },
+          { item: '총 비용', value: reportData.overview.totalCost }
+        ]);
+
+        // 시트2: 일별 추이
+        const dailySheet = workbook.addWorksheet('일별 추이');
+        dailySheet.columns = [
+          { header: '날짜', key: 'date', width: 15 },
+          { header: '발송건수', key: 'totalSent', width: 15 },
+          { header: '성공건수', key: 'successCount', width: 15 },
+          { header: '실패건수', key: 'failedCount', width: 15 },
+          { header: '성공률(%)', key: 'successRate', width: 15 },
+          { header: '비용', key: 'cost', width: 15 }
+        ];
+
+        dailySheet.addRows(reportData.dailyStats);
+
+        // 시트3: 통화 결과 분석
+        const callResultSheet = workbook.addWorksheet('통화 결과 분석');
+        callResultSheet.columns = [
+          { header: '통화 결과', key: 'result', width: 20 },
+          { header: '건수', key: 'count', width: 15 }
+        ];
+
+        const callResultRows = Object.entries(reportData.callResultAnalysis).map(([result, count]) => ({
+          result,
+          count
+        }));
+        callResultSheet.addRows(callResultRows);
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+        res.setHeader('Cache-Control', 'no-cache');
+
+        await workbook.xlsx.write(res);
+        res.end();
+      }
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: null,
+        action: "ars_system_report_export",
+        description: `시스템 리포트 다운로드 (${params.format.toUpperCase()}, ${params.reportType})`,
+      });
+
+      secureLog(LogLevel.INFO, 'EXPORT_REPORT', 'System report export completed', {
+        userId: req.user?.id,
+        format: params.format,
+        reportType: params.reportType,
+        fileName
+      }, requestId);
+
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'EXPORT_REPORT', 'System report export failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ message: "리포트 다운로드 중 오류가 발생했습니다." });
     }
   });
 

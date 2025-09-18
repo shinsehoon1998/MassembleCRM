@@ -1023,3 +1023,128 @@ export type SendLogsSortBy = z.infer<typeof sendLogsSortByEnum>;
 export type CampaignsSortBy = z.infer<typeof campaignsSortByEnum>;
 export type CustomersSortBy = z.infer<typeof customersSortByEnum>;
 export type SortOrder = z.infer<typeof sortOrderEnum>;
+
+// ============================================
+// 📊 Export/Download Schemas
+// ============================================
+
+// 발송 로그 CSV 다운로드 스키마
+export const sendLogsExportCsvSchema = enhancedSendLogsFilterSchemaSecure.extend({
+  includePersonalInfo: z.boolean().default(false), // 개인정보 포함 여부
+}).omit({ page: true, limit: true }); // 페이징 제거 (전체 다운로드)
+
+// 캠페인 통계 Excel 다운로드 스키마  
+export const campaignsExportExcelSchema = campaignSearchFilterSchemaSecure.extend({
+  includeDetails: z.boolean().default(false), // 상세 통계 포함 여부
+}).omit({ page: true, limit: true }); // 페이징 제거
+
+// 통합 리포트 다운로드 스키마
+export const reportsExportSchema = z.object({
+  format: z.enum(['csv', 'excel']), // 다운로드 형식
+  reportType: z.enum(['summary', 'detailed', 'custom']), // 리포트 유형
+  dateFrom: z.string(), // 분석 기간 시작 (필수)
+  dateTo: z.string(),   // 분석 기간 종료 (필수)
+  includeCharts: z.boolean().default(false), // 차트 데이터 포함 (Excel만)
+  includePersonalInfo: z.boolean().default(false), // 개인정보 포함 여부
+});
+
+// Export용 데이터 타입 정의
+export type ArsSendLogExport = {
+  id: number;
+  sentAt: Date | null;
+  campaignName: string;
+  customerName: string;
+  phoneNumber: string;
+  callResult: string;
+  retryType: string;
+  duration: number;
+  cost: string;
+  createdAt: Date;
+  completedAt: Date | null;
+  status: string;
+};
+
+export type ArsCampaignExport = {
+  id: number;
+  name: string;
+  status: string;
+  createdBy: string | null;
+  createdAt: Date;
+  totalCount: number;
+  successCount: number;
+  failedCount: number;
+  successRate: number;
+  totalCost: string;
+  lastSentAt: Date | null;
+};
+
+export type SystemStatsReport = {
+  // 전체 시스템 통계
+  overview: {
+    totalCampaigns: number;
+    activeCampaigns: number;
+    totalSent: number;
+    totalSuccess: number;
+    totalFailed: number;
+    overallSuccessRate: number;
+    totalCost: string;
+  };
+  
+  // 캠페인별 상세
+  campaigns: ArsCampaignExport[];
+  
+  // 일별 추이 (요청 기간)
+  dailyStats: Array<{
+    date: string;
+    totalSent: number;
+    successCount: number;
+    failedCount: number;
+    successRate: number;
+    cost: string;
+  }>;
+  
+  // 통화 결과 분석
+  callResultAnalysis: Record<string, number>;
+  
+  // 시간대별 분석 (피크 시간 등)
+  hourlyAnalysis?: Array<{
+    hour: number;
+    totalCalls: number;
+    successRate: number;
+  }>;
+};
+
+// Export 파라미터 타입
+export type SendLogsExportCsv = z.infer<typeof sendLogsExportCsvSchema>;
+export type CampaignsExportExcel = z.infer<typeof campaignsExportExcelSchema>;
+export type ReportsExport = z.infer<typeof reportsExportSchema>;
+
+// 파일명 생성 유틸리티 함수들
+export const generateExportFileName = {
+  sendLogsCsv: (dateFrom?: string, dateTo?: string, campaignName?: string) => {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/[:\-T]/g, '');
+    const dateRange = dateFrom && dateTo 
+      ? `${dateFrom.slice(0, 10)}-to-${dateTo.slice(0, 10)}`
+      : now.toISOString().slice(0, 10);
+    const campaign = campaignName ? `-${campaignName.replace(/[^가-힣a-zA-Z0-9]/g, '')}` : '';
+    return `ars-send-logs${campaign}-${dateRange}-${timestamp}.csv`;
+  },
+  
+  campaignsExcel: (dateFrom?: string, dateTo?: string) => {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/[:\-T]/g, '');
+    const dateRange = dateFrom && dateTo 
+      ? `${dateFrom.slice(0, 10)}-to-${dateTo.slice(0, 10)}`
+      : now.toISOString().slice(0, 10);
+    return `campaign-stats-${dateRange}-${timestamp}.xlsx`;
+  },
+  
+  systemReport: (format: 'csv' | 'excel', dateFrom: string, dateTo: string) => {
+    const now = new Date();
+    const timestamp = now.toISOString().slice(0, 19).replace(/[:\-T]/g, '');
+    const dateRange = `${dateFrom.slice(0, 10)}-to-${dateTo.slice(0, 10)}`;
+    const extension = format === 'csv' ? 'csv' : 'xlsx';
+    return `system-report-${dateRange}-${timestamp}.${extension}`;
+  }
+};
