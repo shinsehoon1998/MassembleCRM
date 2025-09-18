@@ -2,8 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema } from "@shared/schema";
+import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -495,9 +495,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Dashboard routes
-  app.get('/api/dashboard/stats', isAuthenticated, async (req, res) => {
+  app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const stats = await storage.getDashboardStats();
+      const user = req.user;
+      const stats = await storage.getDashboardStats(user.id, user.role);
       res.json(stats);
     } catch (error) {
       secureLog(LogLevel.ERROR, 'DASHBOARD', 'Error fetching dashboard stats', {
@@ -507,10 +508,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/dashboard/recent-customers', isAuthenticated, async (req, res) => {
+  app.get('/api/dashboard/recent-customers', isAuthenticated, async (req: any, res) => {
     try {
+      const user = req.user;
       const limit = parseInt(req.query.limit as string) || 10;
-      const customers = await storage.getRecentCustomers(limit);
+      const customers = await storage.getRecentCustomers(limit, user.id, user.role);
       res.json(customers);
     } catch (error) {
       secureLog(LogLevel.ERROR, 'DASHBOARD', 'Error fetching recent customers', {
@@ -1818,7 +1820,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Note: Using arsBulkSendSchema from @shared/schema.ts
 
   // 1. POST /api/ars/calllist/add - 발송리스트 추가 (신규)
-  app.post('/api/ars/calllist/add', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ars/calllist/add', isAuthenticated, requireAdmin, async (req: any, res) => {
     const requestId = generateRequestId();
     
     try {
@@ -1887,7 +1889,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         setTimeout(async () => {
           try {
             console.log(`[AUTO_SYNC] 자동 결과 동기화 시작: ${result.historyKey}`);
-            const historyData = await atalkArsService.getCallHistory(result.historyKey, campaignName);
+            const historyData = await atalkArsService.getCallHistory(result.historyKey!, campaignName);
             if (historyData && historyData.data && historyData.data.length > 0) {
               const savedCount = await storage.saveSendLogs(historyData.data, campaignName);
               console.log(`[AUTO_SYNC_SUCCESS] ${savedCount.length}개 결과 자동 동기화 완료 (Campaign: ${campaignName})`);
@@ -2017,7 +2019,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // 대량 ARS 발송 (캠페인) - 통합 파이프라인 사용
-  app.post('/api/ars/send-bulk', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ars/send-bulk', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       // 디버깅을 위한 요청 데이터 로깅
       console.log('[ARS] 대량 발송 요청 데이터:', {
@@ -2309,7 +2311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 수동 캠페인명 설정 (동기화 대안책)
-  app.post('/api/ars/campaigns/manual', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ars/campaigns/manual', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { campaignName, scenarioId = 'marketing_consent' } = req.body;
       
@@ -2533,11 +2535,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestId = generateRequestId();
       
       // 🔥 보안 강화: Rate limiting 적용
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'send_logs', 30, 60000); // 30 requests per minute
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip);
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
-          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now() / 1000) / 60)
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
       
@@ -2637,11 +2639,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestId = generateRequestId();
       
       // 🔥 보안 강화: Rate limiting 적용
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'campaign_search', 30, 60000); // 30 requests per minute
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 30, 60); // 30 requests per minute
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
-          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now() / 1000) / 60)
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
       
@@ -2703,11 +2705,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestId = generateRequestId();
 
       // Rate limiting for search requests
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'quick_search', 30, 60000); // 30 requests per minute
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 30, 60); // 30 requests per minute
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "검색 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요.",
-          retryAfter: rateLimitResult.retryAfter 
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
 
@@ -2754,11 +2756,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const requestId = generateRequestId();
 
       // Rate limiting for autocomplete requests
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'autocomplete', 60, 60000); // 60 requests per minute
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 60, 60); // 60 requests per minute
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "자동완성 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요.",
-          retryAfter: rateLimitResult.retryAfter 
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
 
@@ -2850,7 +2852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 고객 정보를 포함한 발송 기록 조합
       const historyWithCustomers = await Promise.all(
         logs.logs.map(async (log) => {
-          const customer = await storage.getCustomer(log.customerId);
+          const customer = log.customerId ? await storage.getCustomer(log.customerId) : null;
           return {
             ...log,
             customerName: customer?.name || '알 수 없음',
@@ -2870,7 +2872,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ARS 캠페인 종료
-  app.post('/api/ars/campaigns/:campaignId/stop', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ars/campaigns/:campaignId/stop', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const campaignId = parseInt(req.params.campaignId);
       
@@ -2902,7 +2904,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 다중 캠페인 시작
-  app.post('/api/ars/campaigns/start-multiple', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ars/campaigns/start-multiple', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { campaignIds } = req.body;
 
@@ -2996,7 +2998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 다중 캠페인 재발송
-  app.post('/api/ars/campaigns/resend-multiple', isAuthenticated, async (req: any, res) => {
+  app.post('/api/ars/campaigns/resend-multiple', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { campaignIds } = req.body;
 
@@ -3277,7 +3279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 시나리오 생성
-  app.post('/api/ars/scenarios', isAuthenticated, async (req, res) => {
+  app.post('/api/ars/scenarios', isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const validatedData = insertArsScenarioSchema.parse(req.body);
       validatedData.createdBy = (req as any).user?.name || 'unknown';
@@ -3294,7 +3296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 시나리오 수정
-  app.put('/api/ars/scenarios/:id', isAuthenticated, async (req, res) => {
+  app.put('/api/ars/scenarios/:id', isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertArsScenarioSchema.partial().parse(req.body);
@@ -3315,7 +3317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 시나리오 삭제 (비활성화)
-  app.delete('/api/ars/scenarios/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/ars/scenarios/:id', isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -3362,7 +3364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 시나리오 생성 + 음원 업로드 + 아톡 연동
-  app.post('/api/ars/scenarios/create-with-audio', isAuthenticated, audioUpload.single('audioFile'), async (req: any, res) => {
+  app.post('/api/ars/scenarios/create-with-audio', isAuthenticated, requireAdmin, audioUpload.single('audioFile'), async (req: any, res) => {
     try {
       const { description, uploadToAtalk } = req.body;
       const audioFile = req.file;
@@ -3509,7 +3511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 고객 그룹 생성
-  app.post('/api/customer-groups', isAuthenticated, async (req: any, res) => {
+  app.post('/api/customer-groups', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const validatedData = insertCustomerGroupSchema.parse(req.body);
       validatedData.createdBy = req.user?.id || 'unknown';
@@ -3570,7 +3572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 고객 그룹 수정
-  app.put('/api/customer-groups/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/customer-groups/:id', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
       const validatedData = insertCustomerGroupSchema.partial().parse(req.body);
@@ -3599,7 +3601,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 고객 그룹 삭제
-  app.delete('/api/customer-groups/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/customer-groups/:id', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { id } = req.params;
       
@@ -3624,7 +3626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 그룹에 고객 추가
-  app.post('/api/customer-groups/:groupId/customers', isAuthenticated, async (req: any, res) => {
+  app.post('/api/customer-groups/:groupId/customers', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { groupId } = req.params;
       const { customerIds } = req.body;
@@ -3665,7 +3667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 그룹에서 고객 제거
-  app.delete('/api/customer-groups/:groupId/customers/:customerId', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/customer-groups/:groupId/customers/:customerId', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { groupId, customerId } = req.params;
       
@@ -3714,7 +3716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 고객 그룹 아톡 수동 동기화
-  app.post('/api/customer-groups/:groupId/sync-atalk', isAuthenticated, async (req: any, res) => {
+  app.post('/api/customer-groups/:groupId/sync-atalk', isAuthenticated, requireAdmin, async (req: any, res) => {
     try {
       const { groupId } = req.params;
       
@@ -3763,7 +3765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ============================================
   
   // 음원 파일 업로드
-  app.post('/api/ars/scenarios/upload-audio', isAuthenticated, (app as any).upload.single('audioFile'), async (req: any, res) => {
+  app.post('/api/ars/scenarios/upload-audio', isAuthenticated, requireAdmin, (app as any).upload.single('audioFile'), async (req: any, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: '음원 파일을 선택해주세요.' });
@@ -3821,15 +3823,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CSV/Excel generation libraries imported at top of file
 
   // 1. 발송 로그 CSV 다운로드
-  app.get('/api/ars/send-logs/export/csv', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+  app.get('/api/ars/send-logs/export/csv', isAuthenticated, requireAdmin, async (req: any, res) => {
     const requestId = generateRequestId();
     
     // 🔥 Rate Limiting 완전 구현 (10분에 5회 제한)
-    const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_csv', 5, 600000);
+    const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 5, 600);
     if (!rateLimitResult.allowed) {
       return res.status(429).json({ 
         message: "CSV 다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
-        retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+        retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
       });
     }
     
@@ -3845,11 +3847,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }, requestId);
 
       // Rate limiting for export requests (더 엄격한 제한)
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_csv', 5, 600000); // 5 requests per 10 minutes
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 5, 600); // 5 requests per 10 minutes
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
-          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
 
@@ -3948,8 +3950,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         '완료일시'
       ];
 
-      // 스트리밍 CSV 생성을 위한 async generator
-      async function* csvRowGenerator() {
+      // 스트리밍 CSV 생성을 위한 async generator - 함수 외부에 선언
+      const csvRowGenerator = async function* () {
         // 헤더 먼저 yield
         yield csvHeaders;
         
@@ -3975,7 +3977,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // 레코드 카운트를 전역 변수에 저장하여 나중에 로깅에 사용
         (req as any).recordCount = recordCount;
-      }
+      };
 
       // csv-stringify pipeline을 사용한 스트리밍 CSV 생성
       await pipeline(
@@ -4013,7 +4015,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 2. 캠페인 통계 Excel 다운로드
-  app.get('/api/ars/campaigns/export/excel', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+  app.get('/api/ars/campaigns/export/excel', isAuthenticated, requireAdmin, async (req: any, res) => {
     const requestId = generateRequestId();
     
     try {
@@ -4027,11 +4029,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }, requestId);
 
       // Rate limiting
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_excel', 3, 600000); // 3 requests per 10 minutes
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 3, 600); // 3 requests per 10 minutes
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
-          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
 
@@ -4153,7 +4155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 3. 통합 통계 리포트 다운로드
-  app.get('/api/ars/reports/export', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+  app.get('/api/ars/reports/export', isAuthenticated, requireAdmin, async (req: any, res) => {
     const requestId = generateRequestId();
     
     try {
@@ -4168,11 +4170,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }, requestId);
 
       // Rate limiting (가장 엄격한 제한)
-      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'export_report', 2, 600000); // 2 requests per 10 minutes
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 2, 600); // 2 requests per 10 minutes
       if (!rateLimitResult.allowed) {
         return res.status(429).json({ 
           message: "리포트 다운로드 요청 횟수를 초과했습니다. 10분 후 다시 시도해주세요.",
-          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 60000)
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
         });
       }
 
@@ -4293,7 +4295,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ];
 
         // 🔥 Critical Fix: Ultra-safe Object.entries call
-        let callResultRows = [];
+        let callResultRows: { result: string; count: any }[] = [];
         try {
           if (reportData && 
               reportData.callResultAnalysis && 

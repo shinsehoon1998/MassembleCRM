@@ -135,7 +135,7 @@ export function maskApiData(data: any): any {
   // 🔥 Critical Fix: Ultra-safe object property processing
   try {
     // Use Object.keys with safety checks instead of for...in loop
-    let objectKeys = [];
+    let objectKeys: string[] = [];
     try {
       if (masked && typeof masked === 'object' && masked !== null) {
         objectKeys = Object.keys(masked);

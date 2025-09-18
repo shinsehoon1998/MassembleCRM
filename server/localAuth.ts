@@ -80,3 +80,18 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
     res.status(500).json({ message: "인증 확인 중 오류가 발생했습니다." });
   }
 };
+
+/**
+ * Admin-only access control middleware
+ * Only allows users with 'admin' role to access protected endpoints
+ */
+export const requireAdmin: RequestHandler = (req, res, next) => {
+  const user = (req as any).user;
+  if (!user) {
+    return res.status(401).json({ message: '인증이 필요합니다.' });
+  }
+  if (user.role !== 'admin') {
+    return res.status(403).json({ message: '관리자 권한이 필요합니다.' });
+  }
+  next();
+};

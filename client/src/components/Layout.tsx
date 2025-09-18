@@ -144,38 +144,44 @@ export default function Layout({ children }: LayoutProps) {
             <span className="ml-3">데이터 관리</span>
           </Link>
 
-          <Link 
-            href="/ars-campaigns"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
-            }`} 
-            data-testid="nav-ars-campaigns"
-          >
-            <i className="fas fa-phone w-5"></i>
-            <span className="ml-3">ARS 캠페인</span>
-          </Link>
+          {user?.role === 'admin' && (
+            <Link 
+              href="/ars-campaigns"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-ars-campaigns"
+            >
+              <i className="fas fa-phone w-5"></i>
+              <span className="ml-3">ARS 캠페인</span>
+            </Link>
+          )}
 
-          <Link 
-            href="/scenario-management"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
-            }`} 
-            data-testid="nav-scenario-management"
-          >
-            <i className="fas fa-comments w-5"></i>
-            <span className="ml-3">시나리오 관리</span>
-          </Link>
+          {user?.role === 'admin' && (
+            <Link 
+              href="/scenario-management"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-scenario-management"
+            >
+              <i className="fas fa-comments w-5"></i>
+              <span className="ml-3">시나리오 관리</span>
+            </Link>
+          )}
 
-          <Link 
-            href="/customer-groups"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
-            }`} 
-            data-testid="nav-customer-groups"
-          >
-            <i className="fas fa-layer-group w-5"></i>
-            <span className="ml-3">고객 그룹</span>
-          </Link>
+          {user?.role === 'admin' && (
+            <Link 
+              href="/customer-groups"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-customer-groups"
+            >
+              <i className="fas fa-layer-group w-5"></i>
+              <span className="ml-3">고객 그룹</span>
+            </Link>
+          )}
           
           {user?.role === 'admin' && (
             <Link 

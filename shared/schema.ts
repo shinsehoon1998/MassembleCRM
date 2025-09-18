@@ -202,6 +202,7 @@ export const upsertUserSchema = createInsertSchema(users).pick({
   password: true,
   department: true,
   role: true,
+  isActive: true,
 });
 
 export const insertCustomerSchema = createInsertSchema(customers).omit({

@@ -286,7 +286,7 @@ export interface IStorage {
   deleteCustomer(id: string): Promise<boolean>;
 
   // Dashboard statistics
-  getDashboardStats(): Promise<{
+  getDashboardStats(userId?: string, userRole?: string): Promise<{
     todayNew: number;
     totalCustomers: number;
     inProgress: number;
@@ -295,7 +295,7 @@ export interface IStorage {
   }>;
 
   // Recent customers for dashboard
-  getRecentCustomers(limit: number): Promise<CustomerWithUser[]>;
+  getRecentCustomers(limit: number, userId?: string, userRole?: string): Promise<CustomerWithUser[]>;
 
   // Consultation operations
   getConsultations(customerId: string): Promise<ConsultationWithDetails[]>;
@@ -916,35 +916,51 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async getDashboardStats(): Promise<{
+  async getDashboardStats(userId?: string, userRole?: string): Promise<{
     todayNew: number;
     totalCustomers: number;
     inProgress: number;
     completed: number;
     statusBreakdown: { status: string; count: number }[];
   }> {
+    // Build base conditions for counselor role-based filtering
+    const conditions = [];
+    if (userId && userRole === 'counselor') {
+      conditions.push(
+        sql`(${customers.assignedUserId} = ${userId} OR ${customers.secondaryUserId} = ${userId})`
+      );
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     // Today's new customers
+    const todayConditions = [...conditions];
+    todayConditions.push(sql`DATE(${customers.createdAt}) = CURRENT_DATE`);
     const [todayNewResult] = await db
       .select({ count: count() })
       .from(customers)
-      .where(sql`DATE(${customers.createdAt}) = CURRENT_DATE`);
+      .where(todayConditions.length > 0 ? and(...todayConditions) : sql`DATE(${customers.createdAt}) = CURRENT_DATE`);
 
     // Total customers
     const [totalResult] = await db
       .select({ count: count() })
-      .from(customers);
+      .from(customers)
+      .where(whereClause);
 
     // In progress customers
+    const inProgressConditions = [...conditions];
+    inProgressConditions.push(sql`${customers.status} IN ('수수', '접수', '작업')`);
     const [inProgressResult] = await db
       .select({ count: count() })
       .from(customers)
-      .where(sql`${customers.status} IN ('수수', '접수', '작업')`);
+      .where(inProgressConditions.length > 0 ? and(...inProgressConditions) : sql`${customers.status} IN ('수수', '접수', '작업')`);
 
     // Completed customers
+    const completedConditions = [...conditions];
+    completedConditions.push(eq(customers.status, '완료'));
     const [completedResult] = await db
       .select({ count: count() })
       .from(customers)
-      .where(eq(customers.status, '완료'));
+      .where(completedConditions.length > 0 ? and(...completedConditions) : eq(customers.status, '완료'));
 
     // Status breakdown
     const statusBreakdown = await db
@@ -953,6 +969,7 @@ export class DatabaseStorage implements IStorage {
         count: count(),
       })
       .from(customers)
+      .where(whereClause)
       .groupBy(customers.status);
 
     return {
@@ -967,7 +984,16 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getRecentCustomers(limit: number): Promise<CustomerWithUser[]> {
+  async getRecentCustomers(limit: number, userId?: string, userRole?: string): Promise<CustomerWithUser[]> {
+    // Build conditions for counselor role-based filtering
+    const conditions = [];
+    if (userId && userRole === 'counselor') {
+      conditions.push(
+        sql`(${customers.assignedUserId} = ${userId} OR ${customers.secondaryUserId} = ${userId})`
+      );
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
     const recentCustomers = await db
       .select({
         id: customers.id,
@@ -987,6 +1013,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(customers)
       .leftJoin(users, eq(customers.assignedUserId, users.id))
+      .where(whereClause)
       .orderBy(desc(customers.createdAt))
       .limit(limit);
 
@@ -1233,7 +1260,7 @@ export class DatabaseStorage implements IStorage {
       .where(whereClause);
 
     // 페이징된 로그 조회 - customers와 조인 필요
-    const logs = await db
+    const logsWithCustomers = await db
       .select()
       .from(arsSendLogs)
       .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
@@ -1241,6 +1268,9 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(arsSendLogs.createdAt))
       .limit(limit)
       .offset((page - 1) * limit);
+
+    // Transform joined data to ArsSendLog format
+    const logs = logsWithCustomers.map(row => row.ars_send_logs);
 
     return {
       logs,
