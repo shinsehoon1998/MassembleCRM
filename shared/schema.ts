@@ -776,3 +776,78 @@ export type ArsBatchJobWithDetails = ArsBatchJob & {
   campaign?: ArsCampaign;
   creator?: User;
 };
+
+// Campaign Statistics API Response Schemas
+export const campaignStatsOverviewSchema = z.object({
+  totalCampaigns: z.number(),
+  activeCampaigns: z.number(),
+  totalSent: z.number(),
+  totalSuccess: z.number(),
+  totalFailed: z.number(),
+  successRate: z.number(),
+  campaigns: z.array(z.object({
+    id: z.number(),
+    name: z.string(),
+    status: z.string(),
+    totalCount: z.number(),
+    successCount: z.number(),
+    failedCount: z.number(),
+    successRate: z.number(),
+    lastSentAt: z.string().nullable(),
+    createdAt: z.string(),
+  }))
+});
+
+export const campaignDetailedStatsSchema = z.object({
+  campaignId: z.number(),
+  campaignName: z.string(),
+  summary: z.object({
+    totalCount: z.number(),
+    sentCount: z.number(),
+    completedCount: z.number(),
+    pendingCount: z.number(),
+  }),
+  callResults: z.record(z.string(), z.number()),
+  retryStats: z.object({
+    initial: z.number(),
+    manual_retry: z.number(),
+    auto_retry: z.number(),
+  }),
+  costAnalysis: z.object({
+    totalCost: z.number(),
+    averageCost: z.number(),
+    totalBillingUnits: z.number(),
+  }),
+  timeAnalysis: z.object({
+    averageDuration: z.number(),
+    totalDuration: z.number(),
+    peakHour: z.string(),
+  }),
+});
+
+export const timelineStatsSchema = z.object({
+  period: z.enum(['daily', 'hourly']),
+  data: z.array(z.object({
+    date: z.string(),
+    totalSent: z.number(),
+    successCount: z.number(),
+    failedCount: z.number(),
+    successRate: z.number(),
+  }))
+});
+
+export const sendLogsFilterSchema = z.object({
+  campaignId: z.number().optional(),
+  callResult: z.string().optional(),
+  retryType: z.enum(['initial', 'manual_retry', 'auto_retry']).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(20),
+});
+
+// API Response types
+export type CampaignStatsOverview = z.infer<typeof campaignStatsOverviewSchema>;
+export type CampaignDetailedStats = z.infer<typeof campaignDetailedStatsSchema>;
+export type TimelineStats = z.infer<typeof timelineStatsSchema>;
+export type SendLogsFilter = z.infer<typeof sendLogsFilterSchema>;

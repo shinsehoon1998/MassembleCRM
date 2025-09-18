@@ -11,6 +11,9 @@ import {
   audioFiles,
   customerGroups,
   customerGroupMappings,
+  arsCampaignStats,
+  arsDailyStats,
+  arsHourlyStats,
   type User,
   type UpsertUser,
   type Customer,
@@ -38,6 +41,9 @@ import {
   type InsertCustomerGroup,
   type CustomerGroupMapping,
   type InsertCustomerGroupMapping,
+  type ArsCampaignStats,
+  type ArsDailyStats,
+  type ArsHourlyStats,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
@@ -155,6 +161,83 @@ export interface IStorage {
   
   // ARS 마케팅 대상 관련 메서드들
   getAllMarketingTargetIds(): Promise<string[]>;
+
+  // Campaign statistics methods
+  getCampaignStatsOverview(): Promise<{
+    totalCampaigns: number;
+    activeCampaigns: number;
+    totalSent: number;
+    totalSuccess: number;
+    totalFailed: number;
+    successRate: number;
+    campaigns: Array<{
+      id: number;
+      name: string;
+      status: string;
+      totalCount: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      lastSentAt: Date | null;
+      createdAt: Date;
+    }>;
+  }>;
+
+  getCampaignDetailedStats(campaignId: number): Promise<{
+    campaignId: number;
+    campaignName: string;
+    summary: {
+      totalCount: number;
+      sentCount: number;
+      completedCount: number;
+      pendingCount: number;
+    };
+    callResults: Record<string, number>;
+    retryStats: {
+      initial: number;
+      manual_retry: number;
+      auto_retry: number;
+    };
+    costAnalysis: {
+      totalCost: number;
+      averageCost: number;
+      totalBillingUnits: number;
+    };
+    timeAnalysis: {
+      averageDuration: number;
+      totalDuration: number;
+      peakHour: string;
+    };
+  } | null>;
+
+  getTimelineStats(params: {
+    period: 'daily' | 'hourly';
+    days: number;
+    campaignId?: number;
+  }): Promise<{
+    period: string;
+    data: Array<{
+      date: string;
+      totalSent: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+    }>;
+  }>;
+
+  getFilteredSendLogs(params: {
+    campaignId?: number;
+    callResult?: string;
+    retryType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    logs: ArsSendLog[];
+    total: number;
+    totalPages: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -916,6 +999,343 @@ export class DatabaseStorage implements IStorage {
       );
     
     return marketingTargets.map(target => target.id);
+  }
+
+  // Campaign statistics implementation
+  async getCampaignStatsOverview(): Promise<{
+    totalCampaigns: number;
+    activeCampaigns: number;
+    totalSent: number;
+    totalSuccess: number;
+    totalFailed: number;
+    successRate: number;
+    campaigns: Array<{
+      id: number;
+      name: string;
+      status: string;
+      totalCount: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      lastSentAt: Date | null;
+      createdAt: Date;
+    }>;
+  }> {
+    // Get total campaigns count
+    const [totalCampaignsResult] = await db
+      .select({ count: count() })
+      .from(arsCampaigns);
+
+    // Get active campaigns count
+    const [activeCampaignsResult] = await db
+      .select({ count: count() })
+      .from(arsCampaigns)
+      .where(eq(arsCampaigns.status, 'active'));
+
+    // Get overall stats from send logs
+    const [overallStats] = await db
+      .select({
+        totalSent: count(),
+        totalSuccess: sql<number>`COUNT(CASE WHEN call_result IN ('connected', 'answered') THEN 1 END)`,
+        totalFailed: sql<number>`COUNT(CASE WHEN call_result NOT IN ('connected', 'answered') THEN 1 END)`,
+      })
+      .from(arsSendLogs);
+
+    const successRate = overallStats.totalSent > 0 ? 
+      Number(((overallStats.totalSuccess / overallStats.totalSent) * 100).toFixed(1)) : 0;
+
+    // Get campaigns with their stats
+    const campaignStats = await db
+      .select({
+        id: arsCampaigns.id,
+        name: arsCampaigns.name,
+        status: arsCampaigns.status,
+        createdAt: arsCampaigns.createdAt,
+        totalCount: sql<number>`COUNT(${arsSendLogs.id})`,
+        successCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} IN ('connected', 'answered') THEN 1 END)`,
+        failedCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} NOT IN ('connected', 'answered') THEN 1 END)`,
+        lastSentAt: sql<Date | null>`MAX(${arsSendLogs.sentAt})`,
+      })
+      .from(arsCampaigns)
+      .leftJoin(arsSendLogs, eq(arsCampaigns.id, arsSendLogs.campaignId))
+      .groupBy(arsCampaigns.id, arsCampaigns.name, arsCampaigns.status, arsCampaigns.createdAt)
+      .orderBy(desc(arsCampaigns.createdAt));
+
+    const campaigns = campaignStats.map(campaign => ({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status || 'unknown',
+      totalCount: campaign.totalCount || 0,
+      successCount: campaign.successCount || 0,
+      failedCount: campaign.failedCount || 0,
+      successRate: campaign.totalCount > 0 ? 
+        Number(((campaign.successCount / campaign.totalCount) * 100).toFixed(1)) : 0,
+      lastSentAt: campaign.lastSentAt,
+      createdAt: campaign.createdAt || new Date(),
+    }));
+
+    return {
+      totalCampaigns: totalCampaignsResult.count,
+      activeCampaigns: activeCampaignsResult.count,
+      totalSent: overallStats.totalSent || 0,
+      totalSuccess: overallStats.totalSuccess || 0,
+      totalFailed: overallStats.totalFailed || 0,
+      successRate,
+      campaigns,
+    };
+  }
+
+  async getCampaignDetailedStats(campaignId: number): Promise<{
+    campaignId: number;
+    campaignName: string;
+    summary: {
+      totalCount: number;
+      sentCount: number;
+      completedCount: number;
+      pendingCount: number;
+    };
+    callResults: Record<string, number>;
+    retryStats: {
+      initial: number;
+      manual_retry: number;
+      auto_retry: number;
+    };
+    costAnalysis: {
+      totalCost: number;
+      averageCost: number;
+      totalBillingUnits: number;
+    };
+    timeAnalysis: {
+      averageDuration: number;
+      totalDuration: number;
+      peakHour: string;
+    };
+  } | null> {
+    // Get campaign info
+    const [campaign] = await db
+      .select()
+      .from(arsCampaigns)
+      .where(eq(arsCampaigns.id, campaignId));
+
+    if (!campaign) return null;
+
+    // Get summary stats
+    const [summaryStats] = await db
+      .select({
+        totalCount: count(),
+        sentCount: sql<number>`COUNT(CASE WHEN sent_at IS NOT NULL THEN 1 END)`,
+        completedCount: sql<number>`COUNT(CASE WHEN status IN ('completed', 'answered', 'connected') THEN 1 END)`,
+        pendingCount: sql<number>`COUNT(CASE WHEN status = 'pending' THEN 1 END)`,
+      })
+      .from(arsSendLogs)
+      .where(eq(arsSendLogs.campaignId, campaignId));
+
+    // Get call results breakdown
+    const callResultsData = await db
+      .select({
+        callResult: arsSendLogs.callResult,
+        count: count(),
+      })
+      .from(arsSendLogs)
+      .where(eq(arsSendLogs.campaignId, campaignId))
+      .groupBy(arsSendLogs.callResult);
+
+    const callResults: Record<string, number> = {};
+    callResultsData.forEach(row => {
+      if (row.callResult) {
+        callResults[row.callResult] = row.count;
+      }
+    });
+
+    // Get retry stats
+    const retryStatsData = await db
+      .select({
+        retryType: arsSendLogs.retryType,
+        count: count(),
+      })
+      .from(arsSendLogs)
+      .where(eq(arsSendLogs.campaignId, campaignId))
+      .groupBy(arsSendLogs.retryType);
+
+    const retryStats = {
+      initial: 0,
+      manual_retry: 0,
+      auto_retry: 0,
+    };
+    retryStatsData.forEach(row => {
+      if (row.retryType) {
+        retryStats[row.retryType as keyof typeof retryStats] = row.count;
+      }
+    });
+
+    // Get cost and time analysis
+    const [costTimeStats] = await db
+      .select({
+        totalCost: sql<number>`COALESCE(SUM(CAST(cost AS DECIMAL)), 0)`,
+        totalBillingUnits: sql<number>`COALESCE(SUM(billing_units), 0)`,
+        totalDuration: sql<number>`COALESCE(SUM(duration), 0)`,
+        avgDuration: sql<number>`COALESCE(AVG(duration), 0)`,
+      })
+      .from(arsSendLogs)
+      .where(eq(arsSendLogs.campaignId, campaignId));
+
+    // Get peak hour
+    const peakHourData = await db
+      .select({
+        hour: sql<string>`EXTRACT(HOUR FROM sent_at)`,
+        count: count(),
+      })
+      .from(arsSendLogs)
+      .where(
+        and(
+          eq(arsSendLogs.campaignId, campaignId),
+          sql`sent_at IS NOT NULL`
+        )
+      )
+      .groupBy(sql`EXTRACT(HOUR FROM sent_at)`)
+      .orderBy(desc(count()))
+      .limit(1);
+
+    const peakHour = peakHourData[0]?.hour ? `${peakHourData[0].hour}:00` : '00:00';
+
+    return {
+      campaignId,
+      campaignName: campaign.name,
+      summary: {
+        totalCount: summaryStats.totalCount || 0,
+        sentCount: summaryStats.sentCount || 0,
+        completedCount: summaryStats.completedCount || 0,
+        pendingCount: summaryStats.pendingCount || 0,
+      },
+      callResults,
+      retryStats,
+      costAnalysis: {
+        totalCost: costTimeStats.totalCost || 0,
+        averageCost: summaryStats.totalCount > 0 ? 
+          Number(((costTimeStats.totalCost || 0) / summaryStats.totalCount).toFixed(2)) : 0,
+        totalBillingUnits: costTimeStats.totalBillingUnits || 0,
+      },
+      timeAnalysis: {
+        averageDuration: Number((costTimeStats.avgDuration || 0).toFixed(1)),
+        totalDuration: costTimeStats.totalDuration || 0,
+        peakHour,
+      },
+    };
+  }
+
+  async getTimelineStats(params: {
+    period: 'daily' | 'hourly';
+    days: number;
+    campaignId?: number;
+  }): Promise<{
+    period: string;
+    data: Array<{
+      date: string;
+      totalSent: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+    }>;
+  }> {
+    const { period, days, campaignId } = params;
+    
+    const conditions = [
+      sql`sent_at >= CURRENT_DATE - INTERVAL '${days} days'`,
+    ];
+    
+    if (campaignId) {
+      conditions.push(eq(arsSendLogs.campaignId, campaignId));
+    }
+
+    const dateFormat = period === 'daily' 
+      ? sql`DATE(sent_at)` 
+      : sql`DATE(sent_at) || ' ' || LPAD(EXTRACT(HOUR FROM sent_at)::TEXT, 2, '0') || ':00'`;
+
+    const timelineData = await db
+      .select({
+        date: sql<string>`${dateFormat}`,
+        totalSent: count(),
+        successCount: sql<number>`COUNT(CASE WHEN call_result IN ('connected', 'answered') THEN 1 END)`,
+        failedCount: sql<number>`COUNT(CASE WHEN call_result NOT IN ('connected', 'answered') THEN 1 END)`,
+      })
+      .from(arsSendLogs)
+      .where(and(...conditions))
+      .groupBy(sql`${dateFormat}`)
+      .orderBy(sql`${dateFormat}`);
+
+    const data = timelineData.map(row => ({
+      date: row.date,
+      totalSent: row.totalSent,
+      successCount: row.successCount || 0,
+      failedCount: row.failedCount || 0,
+      successRate: row.totalSent > 0 ? 
+        Number(((row.successCount / row.totalSent) * 100).toFixed(1)) : 0,
+    }));
+
+    return {
+      period,
+      data,
+    };
+  }
+
+  async getFilteredSendLogs(params: {
+    campaignId?: number;
+    callResult?: string;
+    retryType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    logs: ArsSendLog[];
+    total: number;
+    totalPages: number;
+  }> {
+    const { campaignId, callResult, retryType, dateFrom, dateTo, page = 1, limit = 20 } = params;
+    const conditions = [];
+
+    if (campaignId) {
+      conditions.push(eq(arsSendLogs.campaignId, campaignId));
+    }
+
+    if (callResult) {
+      conditions.push(eq(arsSendLogs.callResult, callResult as any));
+    }
+
+    if (retryType) {
+      conditions.push(eq(arsSendLogs.retryType, retryType as any));
+    }
+
+    if (dateFrom) {
+      conditions.push(sql`sent_at >= ${dateFrom}`);
+    }
+
+    if (dateTo) {
+      conditions.push(sql`sent_at <= ${dateTo}`);
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const [{ count: total }] = await db
+      .select({ count: count() })
+      .from(arsSendLogs)
+      .where(whereClause);
+
+    // Get logs with pagination
+    const logs = await db
+      .select()
+      .from(arsSendLogs)
+      .where(whereClause)
+      .orderBy(desc(arsSendLogs.sentAt))
+      .limit(limit)
+      .offset((page - 1) * limit);
+
+    return {
+      logs,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 }
 

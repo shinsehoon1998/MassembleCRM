@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -2097,6 +2097,169 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error getting ARS logs:", error);
       res.status(500).json({ message: "ARS 로그 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // ============================================
+  // Campaign Statistics API Endpoints
+  // ============================================
+
+  // 1. 캠페인 통계 요약 API
+  app.get('/api/ars/campaign-stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const requestId = generateRequestId();
+      
+      secureLog(LogLevel.INFO, 'CAMPAIGN_STATS', 'Campaign stats overview requested', {
+        userId: req.user?.id
+      }, requestId);
+
+      const stats = await storage.getCampaignStatsOverview();
+      
+      // Format dates for response
+      const formattedStats = {
+        ...stats,
+        campaigns: stats.campaigns.map(campaign => ({
+          ...campaign,
+          lastSentAt: campaign.lastSentAt?.toISOString() || null,
+          createdAt: campaign.createdAt.toISOString(),
+        }))
+      };
+
+      res.json(formattedStats);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'CAMPAIGN_STATS', 'Error getting campaign stats overview', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "캠페인 통계 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 2. 캠페인별 상세 통계 API
+  app.get('/api/ars/campaign-stats/:campaignId', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaignId = parseInt(req.params.campaignId);
+      const requestId = generateRequestId();
+      
+      if (isNaN(campaignId)) {
+        return res.status(400).json({ message: '유효하지 않은 캠페인 ID입니다.' });
+      }
+
+      secureLog(LogLevel.INFO, 'CAMPAIGN_STATS', 'Campaign detailed stats requested', {
+        userId: req.user?.id,
+        campaignId
+      }, requestId);
+
+      const stats = await storage.getCampaignDetailedStats(campaignId);
+      
+      if (!stats) {
+        return res.status(404).json({ message: '캠페인을 찾을 수 없습니다.' });
+      }
+
+      res.json(stats);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'CAMPAIGN_STATS', 'Error getting campaign detailed stats', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        campaignId: req.params.campaignId
+      });
+      res.status(500).json({ message: "캠페인 상세 통계 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 3. 일별/시간별 통계 API
+  app.get('/api/ars/stats/timeline', isAuthenticated, async (req: any, res) => {
+    try {
+      const requestId = generateRequestId();
+      
+      // Validate query parameters using Zod schema
+      const validation = timelineStatsSchema.omit({ data: true }).extend({
+        period: z.enum(['daily', 'hourly']).default('daily'),
+        days: z.string().transform(val => parseInt(val)).pipe(z.number().min(1).max(365)).default('7'),
+        campaignId: z.string().transform(val => parseInt(val)).pipe(z.number()).optional(),
+      }).safeParse({
+        period: req.query.period || 'daily',
+        days: req.query.days || '7',
+        campaignId: req.query.campaignId,
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const { period, days, campaignId } = validation.data;
+
+      secureLog(LogLevel.INFO, 'TIMELINE_STATS', 'Timeline stats requested', {
+        userId: req.user?.id,
+        period,
+        days,
+        campaignId
+      }, requestId);
+
+      const stats = await storage.getTimelineStats({ period, days, campaignId });
+      res.json(stats);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'TIMELINE_STATS', 'Error getting timeline stats', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "시간별 통계 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 4. 발송 로그 필터링 API (기존 개선)
+  app.get('/api/ars/send-logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const requestId = generateRequestId();
+      
+      // Validate query parameters using Zod schema
+      const validation = sendLogsFilterSchema.safeParse({
+        campaignId: req.query.campaignId ? parseInt(req.query.campaignId as string) : undefined,
+        callResult: req.query.callResult,
+        retryType: req.query.retryType,
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const params = validation.data;
+
+      secureLog(LogLevel.INFO, 'SEND_LOGS', 'Filtered send logs requested', {
+        userId: req.user?.id,
+        ...maskApiData(params)
+      }, requestId);
+
+      const logs = await storage.getFilteredSendLogs(params);
+      
+      // Mask sensitive data in response
+      const maskedLogs = {
+        ...logs,
+        logs: logs.logs.map(log => ({
+          ...log,
+          phone: maskPhoneNumber(log.phone || ''),
+        }))
+      };
+
+      res.json(maskedLogs);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SEND_LOGS', 'Error getting filtered send logs', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "발송 로그 조회 중 오류가 발생했습니다." });
     }
   });
 
