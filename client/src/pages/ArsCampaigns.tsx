@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -106,8 +106,8 @@ export default function ArsCampaigns() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
   // 선택된 그룹의 고객 수 조회
-  const { data: groupCustomers, isLoading: groupCustomersLoading } = useQuery({
-    queryKey: [`/api/customer-groups/${selectedGroupId}/customers`],
+  const { data: groupCustomers, isLoading: groupCustomersLoading, error: groupCustomersError } = useQuery({
+    queryKey: ['/api/customer-groups', selectedGroupId, 'customers'],
     enabled: !!selectedGroupId && selectedTargetType === "group",
   });
 
@@ -156,9 +156,16 @@ export default function ArsCampaigns() {
     });
   };
 
+  // targetCount 계산을 더 안전하게 수정
   const targetCount = selectedTargetType === "all" 
     ? (marketingTargets as any)?.targets?.length || 0
-    : (groupCustomers as any)?.length || 0;
+    : (Array.isArray(groupCustomers) ? groupCustomers.length : 0);
+
+  // 디버깅 코드 제거 (문제 해결 완료 후 정리)
+  // useEffect(() => {
+  //   console.log('=== ARS Campaign Debug ===');
+  //   ...
+  // }, [...]);
 
   return (
     <div className="space-y-6">
@@ -259,9 +266,17 @@ export default function ArsCampaigns() {
                           </SelectContent>
                         </Select>
                         {selectedGroupId && (
-                          <p className="text-sm text-muted-foreground mt-2" data-testid="text-selected-group-count">
-                            선택된 그룹: {targetCount}명
-                          </p>
+                          <div className="mt-2">
+                            <p className="text-sm text-muted-foreground" data-testid="text-selected-group-count">
+                              선택된 그룹: {targetCount}명
+                            </p>
+                            {groupCustomersLoading && (
+                              <p className="text-sm text-blue-600">고객 정보 로딩 중...</p>
+                            )}
+                            {groupCustomersError && (
+                              <p className="text-sm text-red-600">오류: {(groupCustomersError as any)?.message || '고객 정보를 불러올 수 없습니다'}</p>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
@@ -288,7 +303,8 @@ export default function ArsCampaigns() {
                       sendArsMutation.isPending || 
                       targetCount === 0 || 
                       marketingTargetsLoading || 
-                      (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading))
+                      (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading)) ||
+                      !form.watch('campaignName')?.trim()
                     }
                     data-testid="button-send"
                   >
