@@ -1317,27 +1317,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 🔥 필수 필드 검증
-      if (!sendNumber || !targetPhone) {
+      if (!targetPhone) {
         secureLog(LogLevel.WARNING, 'ARS_ROUTE', '필수 필드 누락', {
           requestId,
-          hasSendNumber: !!sendNumber,
           hasTargetPhone: !!targetPhone
         });
         
         return res.status(400).json({ 
           success: false,
-          message: '발신번호와 수신번호는 필수입니다.' 
+          message: '수신번호는 필수입니다.' 
         });
       }
 
       secureLog(LogLevel.INFO, 'ARS_ROUTE', '발송리스트 추가 요청', {
         requestId,
-        sendNumber: maskPhoneNumber(sendNumber),
         targetPhone: maskPhoneNumber(targetPhone),
         userId: req.user?.id
       });
 
-      const result = await atalkArsService.addCallList(sendNumber, targetPhone);
+      const result = await atalkArsService.addCallList(targetPhone, process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블');
       
       // 🔥 PHP 패턴: success 상태에 따른 HTTP 상태 코드 설정
       const httpStatus = getHttpStatusFromServiceResponse(result);
@@ -1348,7 +1346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId: req.user.id,
           customerId: null,
           action: "ars_calllist_added",
-          description: `발송리스트 추가 완료 (발신번호: ${maskPhoneNumber(sendNumber)})`,
+          description: `발송리스트 추가 완료 (수신번호: ${maskPhoneNumber(targetPhone)})`,
         });
         
         secureLog(LogLevel.INFO, 'ARS_ROUTE', '발송리스트 추가 성공', {
@@ -1450,7 +1448,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const result = await atalkArsService.uploadAudioFile(
         req.file.buffer,
-        req.file.originalname
+        req.file.originalname,
+        process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블'
       );
       
       // 🔥 PHP 패턴: success 상태에 따른 HTTP 상태 코드 설정
@@ -2701,7 +2700,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           atalkResult = await atalkArsService.uploadAudioFile(
             audioFile.buffer,
-            audioFile.originalname
+            audioFile.originalname,
+            process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블'
           );
 
           console.log(`[음원 업로드] 아톡비즈 연동 성공: ${atalkResult.fileName}`);
@@ -3089,7 +3089,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 아톡 음원 업로드 API 호출 (개선된 구현)
       const uploadResult = await atalkArsService.uploadAudioFile(
         file.buffer,
-        file.originalname
+        file.originalname,
+        process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블'
       );
 
       // 활동 로그 기록

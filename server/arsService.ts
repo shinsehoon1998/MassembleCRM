@@ -16,50 +16,66 @@ import {
   LogLevel
 } from './securityUtils';
 
-// 🔥 보안 강화: HTTPS 강제 및 환경변수 검증 (다중 명명 규칙 지원)
+// 🔥 ATALK API 고정 설정 - API 문서 기준 + HTTPS 보안 강화
 function validateAndSecureConfig() {
-  // 환경변수 명명 규칙 유연성 지원
-  const baseUrl = process.env.ATALK_API_BASE_URL || process.env.ATALK_API_URL;
   const token = process.env.ATALK_API_TOKEN || process.env.ATALK_API_KEY;
-  const company = process.env.ATALK_COMPANY;
-  const userId = process.env.ATALK_USER_ID;
+  const company = '627923';  // API 문서 고정값
+  const userId = 'bWI2Mjc5MjM=';  // API 문서 고정값
+  
+  // 🔥 보안 강화: HTTPS 강제, 개발환경에서만 HTTP 허용
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowInsecure = process.env.ALLOW_INSECURE_ATALK === 'true';
+  
+  let baseUrl: string;
+  
+  if (isProduction) {
+    // 프로덕션에서는 HTTPS 필수
+    baseUrl = 'https://101.202.45.50:8080/thirdparty/v1';
+    secureLog(LogLevel.INFO, 'CONFIG', '프로덕션 환경: HTTPS 강제 적용', {
+      protocol: 'https',
+      environment: 'production'
+    });
+  } else if (allowInsecure) {
+    // 개발환경에서 ALLOW_INSECURE_ATALK=true인 경우만 HTTP 허용
+    baseUrl = 'http://101.202.45.50:8080/thirdparty/v1';
+    secureLog(LogLevel.WARNING, 'CONFIG', '개발 환경: HTTP 사용 허용', {
+      protocol: 'http',
+      environment: 'development',
+      insecureAllowed: true
+    });
+  } else {
+    // 개발환경이라도 기본적으로 HTTPS 사용
+    baseUrl = 'https://101.202.45.50:8080/thirdparty/v1';
+    secureLog(LogLevel.INFO, 'CONFIG', '개발 환경: HTTPS 사용 (보안 권장)', {
+      protocol: 'https',
+      environment: 'development',
+      recommendation: 'ALLOW_INSECURE_ATALK=true 설정시 HTTP 허용 가능'
+    });
+  }
 
-  // 🔥 중요: 필수 환경변수 검증 - 모든 환경에서 강제
-  if (!baseUrl || !token || !company || !userId) {
-    const missing = [];
-    if (!baseUrl) missing.push('ATALK_API_BASE_URL 또는 ATALK_API_URL');
-    if (!token) missing.push('ATALK_API_TOKEN 또는 ATALK_API_KEY');
-    if (!company) missing.push('ATALK_COMPANY');
-    if (!userId) missing.push('ATALK_USER_ID');
-    
-    // 개발 모드에서 더 친화적인 메시지 제공
-    const isDevelopment = process.env.NODE_ENV !== 'production';
+  // 🔥 중요: 토큰 검증
+  if (!token) {
+    const isDevelopment = !isProduction;
     const friendlyMessage = isDevelopment 
-      ? `🛠️ ARS 기능을 사용하려면 다음 환경변수를 설정해주세요:\n\n현재 누락된 환경변수:\n${missing.map(m => `- ${m}`).join('\n')}\n\n예시 설정:\n- ATALK_API_BASE_URL=https://api.example.com\n- ATALK_API_TOKEN=your_token_here\n- ATALK_COMPANY=your_company\n- ATALK_USER_ID=your_user_id\n\n관리자에게 문의하여 정확한 값을 받으세요.`
-      : `ARS 서비스 설정 오류: 관리자에게 문의하세요 (환경변수 누락: ${missing.join(', ')})`;
+      ? `🛠️ ARS 기능을 사용하려면 다음 환경변수를 설정해주세요:\n\n누락된 환경변수:\n- ATALK_API_TOKEN 또는 ATALK_API_KEY\n\n예시 설정:\n- ATALK_API_TOKEN=your_token_here\n\n관리자에게 문의하여 정확한 토큰 값을 받으세요.`
+      : `ARS 서비스 설정 오류: 관리자에게 문의하세요 (ATALK API 토큰 누락)`;
     
-    secureLog(LogLevel.ERROR, 'CONFIG', '치명적 오류: 필수 ATALK API 환경변수가 설정되지 않았습니다', {
-      missing: missing.join(', '),
-      message: '서버를 시작하려면 모든 ATALK API 환경변수를 설정해야 합니다.',
+    secureLog(LogLevel.ERROR, 'CONFIG', '치명적 오류: ATALK API 토큰이 설정되지 않았습니다', {
+      message: 'ATALK_API_TOKEN 또는 ATALK_API_KEY 환경변수를 설정해야 합니다.',
       development: isDevelopment
     });
     throw new Error(friendlyMessage);
   }
 
-  // 🔥 보안: HTTPS 강제 (프로덕션)
-  if (process.env.NODE_ENV === 'production' && !baseUrl.startsWith('https://')) {
-    secureLog(LogLevel.ERROR, 'CONFIG', '보안 오류: 프로덕션 환경에서는 HTTPS가 필수입니다', {
-      currentUrl: baseUrl
-    });
-    throw new Error('프로덕션 환경에서는 HTTPS URL이 필요합니다');
-  }
-
-  // 개발 환경에서 HTTP 사용시 경고
-  if (baseUrl.startsWith('http://')) {
-    secureLog(LogLevel.WARNING, 'CONFIG', 'HTTP 사용 중 - Bearer 토큰이 평문으로 전송됩니다', {
-      message: '프로덕션에서는 반드시 HTTPS를 사용하세요.'
-    });
-  }
+  // 설정 완료 로그
+  secureLog(LogLevel.INFO, 'CONFIG', 'ATALK API 보안 설정 완료', {
+    baseUrl,
+    company,
+    userId,
+    isProduction,
+    protocol: baseUrl.startsWith('https') ? 'https' : 'http',
+    message: 'API 문서 기준 + 보안 강화 설정 적용'
+  });
 
   return { baseUrl, token, company, userId };
 }
@@ -86,14 +102,14 @@ function getAtalkConfig() {
   try {
     const secureConfig = validateAndSecureConfig();
     
-    // 🔥 실제 ATALK API 설정만 사용
+    // 🔥 ATALK API 설정 - 고정값 사용
     ATALK_API_CONFIG = {
       baseUrl: secureConfig.baseUrl,
       token: secureConfig.token,
       company: secureConfig.company,
       userId: secureConfig.userId,
       campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-      page: 'A'
+      page: 'A'  // API 문서 고정값
     };
     
     // 검증 성공 결과 캐시
@@ -128,7 +144,7 @@ function validateSecurityConfig() {
   return {
     ...config,
     campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-    page: 'A'
+    page: 'A'  // API 문서 고정값
   };
 }
 
@@ -144,14 +160,13 @@ export interface AtalkApiResponse {
   data?: any;
 }
 
-// 발송리스트 추가 요청
+// 발송리스트 추가 요청 - ATALK API 문서 기준
 export interface AddCallListRequest {
-  text_send_no: string;
-  company: string;
-  user_id: string;
-  text_campaign_name: string;
-  text_page: string;
-  callee: string;
+  text_send_no: string;  // 발신번호 (콤마로 최대 20개 구분)
+  company: string;       // 회사 (고정값: 627923)
+  user_id: string;       // 등록요청자 아이디 (Base64, 고정값: bWI2Mjc5MjM=)
+  text_campaign_name: string; // 캠페인명
+  text_page: string;     // A 고정
 }
 
 // 음성파일 업로드 요청
@@ -307,11 +322,12 @@ export class AtalkArsService {
   }
 
   /**
-   * 1. 발송리스트 추가 - API 가이드 기반 단순 구현
+   * 1. 발송리스트 추가 - API 가이드 기반 + 환경설정 개선
    */
   async addCallList(
-    sendNumber: string,
-    targetPhone: string
+    targetPhone: string,
+    campaignName: string,
+    page: string = 'A'
   ): Promise<{ success: boolean; historyKey?: string; message: string }> {
     const requestId = generateRequestId();
     
@@ -379,48 +395,35 @@ export class AtalkArsService {
         };
       }
       
-      // 🔥 발신번호 검증
-      if (!isValidPhoneNumber(sendNumber)) {
-        secureLog(LogLevel.WARNING, 'ARS', '잘못된 발신번호 형식', {
-          sendNumber: maskPhoneNumber(sendNumber)
-        });
-        
-        return {
-          success: false,
-          message: `❌ 잘못된 발신번호 형식: ${maskPhoneNumber(sendNumber)}`,
-        };
-      }
       
       // 🔥 캠페인명 검증
-      if (!isValidCampaignName(config.campaignName)) {
+      if (!isValidCampaignName(campaignName)) {
         secureLog(LogLevel.ERROR, 'ARS', '잘못된 캠페인명', {
-          campaignName: config.campaignName
+          campaignName: campaignName
         });
         
         return {
           success: false,
-          message: '❌ 캠페인명이 유효하지 않습니다. 관리자에게 문의하세요.',
+          message: '❌ 캠페인명이 유효하지 않습니다.',
         };
       }
       
       // 🔥 입력값 정제 (PHP 패턴)
-      // 발신번호는 숫자만 허용 (아톡비즈 API 요구사항)
-      const cleanSendNumber = sendNumber.replace(/[^0-9]/g, '');
+      // targetPhone은 이미 위에서 cleanPhone으로 정제됨
       
+      // 🔥 ATALK API 문서에 따른 정확한 파라미터 구성
+      // text_send_no: 발신번호(ARS를 받을 번호들, 즉 수신번호)를 콤마로 구분
       const callData: AddCallListRequest = {
-        text_send_no: cleanSendNumber,
+        text_send_no: cleanPhone, // 수신번호 (ARS를 받을 번호)
         company: sanitizeInput(config.company),
         user_id: sanitizeInput(config.userId),
-        text_campaign_name: sanitizeInput(config.campaignName),
-        text_page: sanitizeInput(config.page),
-        callee: cleanPhone
+        text_campaign_name: sanitizeInput(campaignName),
+        text_page: sanitizeInput(page)
       };
       
       secureLog(LogLevel.INFO, 'ARS', '발송리스트 추가 시도', {
         originalPhone: maskPhoneNumber(targetPhone),
         cleanPhone: maskPhoneNumber(cleanPhone),
-        originalSendNumber: sendNumber,
-        cleanSendNumber: cleanSendNumber,
         requestData: maskApiData(callData)
       }, requestId);
       
@@ -511,19 +514,227 @@ export class AtalkArsService {
   }
 
   /**
-   * 2. 음성파일 업로드 - API 가이드 기반 단순 구현
+   * 1-2. 발송리스트 배치 추가 - API 명세 준수 (콤마로 최대 20개 번호 지원)
+   */
+  async addCallListBatch(
+    targetPhones: string[],
+    campaignName: string,
+    page: string = 'A'
+  ): Promise<{ success: boolean; historyKey?: string; message: string; processedCount: number }> {
+    const requestId = generateRequestId();
+    
+    try {
+      // 🔥 배치 크기 검증 (API 문서에 따라 최대 20개)
+      if (targetPhones.length === 0) {
+        return {
+          success: false,
+          message: '❌ 발송할 전화번호가 없습니다.',
+          processedCount: 0
+        };
+      }
+      
+      if (targetPhones.length > 20) {
+        secureLog(LogLevel.WARNING, 'ARS', '배치 크기 초과', {
+          requestedCount: targetPhones.length,
+          maxAllowed: 20
+        });
+        return {
+          success: false,
+          message: `❌ 배치 크기 초과: 최대 20개까지 가능 (요청: ${targetPhones.length}개)`,
+          processedCount: 0
+        };
+      }
+
+      // 🔥 환경변수 및 보안 검증
+      let config;
+      try {
+        config = validateSecurityConfig();
+      } catch (configError) {
+        const errorMessage = configError instanceof Error ? configError.message : 'ATALK API 설정 오류';
+        secureLog(LogLevel.ERROR, 'ARS', '환경변수 설정 오류', {
+          error: errorMessage,
+          batchSize: targetPhones.length
+        });
+        
+        if (errorMessage.includes('필수 환경변수 누락')) {
+          return {
+            success: false,
+            message: '⚠️ ATALK API 설정이 완료되지 않았습니다. 관리자에게 문의하세요. (환경변수 누락)',
+            processedCount: 0
+          };
+        } else if (errorMessage.includes('HTTPS가 필수')) {
+          return {
+            success: false,
+            message: '🔒 보안 오류: 프로덕션 환경에서는 HTTPS 설정이 필요합니다.',
+            processedCount: 0
+          };
+        } else {
+          return {
+            success: false,
+            message: `🔧 ATALK API 설정 오류: ${errorMessage}`,
+            processedCount: 0
+          };
+        }
+      }
+
+      // 🔥 전화번호 형식 검증 및 정제
+      const validPhones: string[] = [];
+      const invalidPhones: string[] = [];
+      
+      for (const phone of targetPhones) {
+        const cleanPhone = phone.replace(/[^0-9]/g, '');
+        if (isValidPhoneNumber(phone)) {
+          validPhones.push(cleanPhone);
+        } else {
+          invalidPhones.push(phone);
+        }
+      }
+      
+      if (invalidPhones.length > 0) {
+        secureLog(LogLevel.WARNING, 'ARS', '유효하지 않은 전화번호 발견', {
+          invalidCount: invalidPhones.length,
+          totalCount: targetPhones.length,
+          invalidPhones: invalidPhones.map(p => maskPhoneNumber(p))
+        });
+      }
+      
+      if (validPhones.length === 0) {
+        return {
+          success: false,
+          message: `❌ 유효한 전화번호가 없습니다. (무효: ${invalidPhones.length}개)`,
+          processedCount: 0
+        };
+      }
+      
+      // 🔥 캠페인명 검증
+      if (!isValidCampaignName(campaignName)) {
+        secureLog(LogLevel.ERROR, 'ARS', '잘못된 캠페인명', {
+          campaignName: campaignName
+        });
+        
+        return {
+          success: false,
+          message: '❌ 캠페인명이 유효하지 않습니다.',
+          processedCount: 0
+        };
+      }
+
+      // 🔥 ATALK API 문서에 따른 배치 요청 구성
+      const callData: AddCallListRequest = {
+        text_send_no: validPhones.join(','), // 수신번호들을 콤마로 구분
+        company: sanitizeInput(config.company),
+        user_id: sanitizeInput(config.userId),
+        text_campaign_name: sanitizeInput(campaignName),
+        text_page: sanitizeInput(page)
+      };
+      
+      secureLog(LogLevel.INFO, 'ARS', '배치 발송리스트 추가 시도', {
+        validCount: validPhones.length,
+        invalidCount: invalidPhones.length,
+        campaignName: campaignName,
+        requestData: maskApiData(callData)
+      }, requestId);
+      
+      const response = await this.makeApiCall('/calllist/add', callData, 'POST', requestId);
+
+      // 🔥 성공/실패 판단 로직
+      secureLog(LogLevel.INFO, 'ARS', '배치 발송리스트 추가 응답 상세', {
+        code: response.code,
+        result: response.result,
+        historyKey: response.history_key,
+        validPhonesCount: validPhones.length,
+        fullResponse: maskApiData(response)
+      }, requestId);
+
+      const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
+      const isSuccessResult = !response.result || 
+                              response.result === '성공' || 
+                              response.result === 'SUCCESS' || 
+                              response.result.includes('성공') ||
+                              response.result.toLowerCase().includes('success');
+
+      if (isSuccessCode && isSuccessResult) {
+        secureLog(LogLevel.INFO, 'ARS', '배치 발송리스트 추가 성공', {
+          processedCount: validPhones.length,
+          historyKey: response.history_key
+        }, requestId);
+        
+        const successMessage = invalidPhones.length > 0 
+          ? `✅ ${validPhones.length}개 번호 발송리스트 추가 완료 (${invalidPhones.length}개 무효번호 제외)`
+          : `✅ ${validPhones.length}개 번호 발송리스트 추가 완료`;
+        
+        return {
+          success: true,
+          historyKey: response.history_key,
+          message: successMessage,
+          processedCount: validPhones.length
+        };
+      } else {
+        const errorMessage = response.result || 
+                            response.data?.error || 
+                            response.data?.message ||
+                            `배치 발송리스트 추가 실패 (응답코드: ${response.code})`;
+        
+        secureLog(LogLevel.WARNING, 'ARS', '배치 발송리스트 추가 실패', {
+          validCount: validPhones.length,
+          error: errorMessage,
+          responseCode: response.code,
+          result: response.result
+        }, requestId);
+        
+        throw new Error(`❌ ${errorMessage}`);
+      }
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'ARS', '배치 발송리스트 추가 예외', {
+        batchSize: targetPhones.length,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('fetch')) {
+          return {
+            success: false,
+            message: '🌐 네트워크 연결 오류: ATALK API 서버에 접속할 수 없습니다.',
+            processedCount: 0
+          };
+        } else if (error.message.includes('HTTP')) {
+          return {
+            success: false,
+            message: `🚫 API 호출 실패: ${error.message}`,
+            processedCount: 0
+          };
+        } else {
+          return {
+            success: false,
+            message: error.message.startsWith('❌') ? error.message : `❌ ${error.message}`,
+            processedCount: 0
+          };
+        }
+      }
+      
+      return {
+        success: false,
+        message: '❌ 배치 발송리스트 추가 중 알 수 없는 오류가 발생했습니다.',
+        processedCount: 0
+      };
+    }
+  }
+
+  /**
+   * 2. 음성파일 업로드 - API 가이드 기준 + 환경설정 개선
    */
   async uploadAudioFile(
     fileBuffer: Buffer,
-    fileName: string
+    fileName: string,
+    campaignName: string
   ): Promise<{ success: boolean; message: string; fileName?: string }> {
     try {
-      const config = getAtalkConfig();
+      const config = validateSecurityConfig();
       
       const formData = new FormData();
       
       // 필수 필드 추가
-      formData.append('text_campaign_name', config.campaignName);
+      formData.append('text_campaign_name', sanitizeInput(campaignName));
       formData.append('company', config.company);
       formData.append('user_id', config.userId);
       formData.append('file_title_name', fileName.replace(/\.[^/.]+$/, "")); // 확장자 제거
@@ -580,7 +791,7 @@ export class AtalkArsService {
         
         await this.logApiCall('/resource/upload', 'POST', {
           fileName,
-          campaignName: config.campaignName
+          campaignName: campaignName
         }, errorResult, response.status, requestId);
         
         throw new Error(`음성파일 업로드 실패 (HTTP ${response.status}): ${response.statusText}`);
@@ -606,7 +817,7 @@ export class AtalkArsService {
       // 로그 저장
       await this.logApiCall('/resource/upload', 'POST', {
         fileName,
-        campaignName: config.campaignName
+        campaignName: campaignName
       }, result, response.status, requestId);
 
       // 🔥 수정: 더 정교한 성공/실패 판단 로직
@@ -658,37 +869,40 @@ export class AtalkArsService {
     }
   }
 
-  /**
-   * 3. 캠페인 시작 - 발송 즉시 시작 API 사용
-   */
-  async startCampaign(
-    historyKey?: string
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      const config = getAtalkConfig();
-      
-      const requestId = generateRequestId();
-      
-      if (!historyKey) {
-        secureLog(LogLevel.WARNING, 'ARS', 'historyKey 없이 캠페인 시작 시도', {}, requestId);
-      }
 
-      const startData = {
+  /**
+   * 3. 발송 결과 조회 - calllist/history API 구현 + 환경설정 개선
+   */
+  async getCallHistory(
+    historyKey: string,
+    campaignName: string,
+    page: string = 'A'
+  ): Promise<{ success: boolean; data?: any[]; message: string }> {
+    const requestId = generateRequestId();
+    
+    try {
+      const config = validateSecurityConfig();
+      const historyData = {
+        history_key: historyKey,
         company: config.company,
         user_id: config.userId,
-        text_campaign_name: config.campaignName,
-        text_page: config.page,
-        ...(historyKey && { history_key: historyKey })
+        text_campaign_name: sanitizeInput(campaignName),
+        text_page: sanitizeInput(page),
       };
 
-      const response = await this.makeApiCall('/calllist/start', startData, 'POST', requestId);
+      secureLog(LogLevel.INFO, 'ARS', '발송 결과 조회 시도', {
+        historyKey: historyKey,
+        requestData: maskApiData(historyData)
+      }, requestId);
+
+      const response = await this.makeApiCall('/calllist/history', historyData, 'POST', requestId);
       
       // 🔥 수정: 더 정교한 성공/실패 판단 로직
-      secureLog(LogLevel.INFO, 'ARS', '캠페인 시작 응답 분석', {
+      secureLog(LogLevel.INFO, 'ARS', '발송 결과 조회 응답 분석', {
         code: response.code,
         result: response.result,
         hasData: !!response.data,
-        hasHistoryKey: !!response.history_key
+        dataLength: Array.isArray(response.data) ? response.data.length : 0
       }, requestId);
 
       const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
@@ -696,106 +910,47 @@ export class AtalkArsService {
                               response.result === '성공' || 
                               response.result === 'SUCCESS' || 
                               response.result.includes('성공') ||
-                              response.result.toLowerCase().includes('success');
-      const hasValidData = !response.data || typeof response.data === 'object';
+                              response.result.toLowerCase().includes('success') ||
+                              response.result.includes('조회하였습니다');
 
-      // 성공 조건: 응답 코드가 성공이고 result가 에러가 아닌 경우
       if (isSuccessCode && isSuccessResult) {
-        secureLog(LogLevel.INFO, 'ARS', '캠페인 시작 성공 확인', {
-          responseCode: response.code,
-          result: response.result
+        secureLog(LogLevel.INFO, 'ARS', '발송 결과 조회 성공', {
+          historyKey: historyKey,
+          resultCount: Array.isArray(response.data) ? response.data.length : 0
         }, requestId);
+        
         return {
           success: true,
-          message: '캠페인이 성공적으로 시작되었습니다.',
+          data: response.data || [],
+          message: '발송 결과를 성공적으로 조회했습니다.',
         };
       } else {
-        // 실패 조건들을 상세히 로깅
-        const failReasons = [];
-        if (!isSuccessCode) failReasons.push(`잘못된 코드: ${response.code}`);
-        if (!isSuccessResult) failReasons.push(`결과 에러: ${response.result}`);
-        if (!hasValidData) failReasons.push(`데이터 문제: ${JSON.stringify(response.data)}`);
-        
-        secureLog(LogLevel.WARNING, 'ARS', '캠페인 시작 실패', {
-          failReasons: failReasons.join(', '),
-          responseCode: response.code,
-          result: response.result
-        }, requestId);
-        
         const errorMessage = response.result || 
                             response.data?.error || 
                             response.data?.message ||
-                            `캠페인 시작 실패 (코드: ${response.code})`;
+                            `발송 결과 조회 실패 (코드: ${response.code})`;
+        
+        secureLog(LogLevel.WARNING, 'ARS', '발송 결과 조회 실패', {
+          historyKey: historyKey,
+          error: errorMessage,
+          responseCode: response.code
+        }, requestId);
         
         throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error(`[ARS] 캠페인 시작 예외:`, error);
+      secureLog(LogLevel.ERROR, 'ARS', '발송 결과 조회 예외', {
+        historyKey: historyKey,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
       return {
         success: false,
-        message: error instanceof Error ? error.message : '캠페인 시작에 실패했습니다.',
+        message: error instanceof Error ? error.message : '발송 결과 조회에 실패했습니다.',
       };
     }
   }
 
-  /**
-   * 4. 캠페인 상태 조회 - historyKey로 상태 확인
-   */
-  async getCampaignStatus(
-    historyKey: string
-  ): Promise<{ success: boolean; status?: string; message: string }> {
-    try {
-      const config = getAtalkConfig();
-      const historyData = {
-        history_key: historyKey,
-        company: config.company,
-        user_id: config.userId,
-        text_campaign_name: config.campaignName,
-        text_page: config.page,
-      };
-
-      const response = await this.makeApiCall('/calllist/status', historyData);
-      
-      if (response.code === '200') {
-        return {
-          success: true,
-          status: response.data?.status || 'unknown',
-          message: '캠페인 상태를 성공적으로 조회했습니다.',
-        };
-      } else {
-        throw new Error(response.result || '캠페인 상태 조회 실패');
-      }
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : '캠페인 상태 조회에 실패했습니다.',
-      };
-    }
-  }
-
-  /**
-   * 5. 캠페인 중단 - 캠페인 종료 (스텁 구현)
-   */
-  async stopCampaign(
-    campaignId: number
-  ): Promise<{ success: boolean; message: string }> {
-    try {
-      console.log(`[ATALK API] 캠페인 중단 요청: ${campaignId}`);
-      
-      // TODO: 실제 ATALK API 캠페인 중단 기능 구현 필요
-      // 현재는 스텁으로 성공 응답만 반환
-      
-      return {
-        success: true,
-        message: '캠페인이 중단되었습니다. (스텁 구현)',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : '캠페인 중단에 실패했습니다.',
-      };
-    }
-  }
 
   /**
    * 6. 고객 그룹을 ATALK 발송리스트에 동기화 (스텁 구현)
@@ -826,225 +981,9 @@ export class AtalkArsService {
     }
   }
 
-  /**
-   * 7. 신규 캠페인 발송 통합 파이프라인
-   * 고객 그룹 → 발송리스트 추가 → 음성파일 업로드 → 캠페인 시작
-   */
-  async executeNewCampaignPipeline(params: {
-    campaignName: string;
-    customerPhones: string[];
-    audioFileBuffer?: Buffer;
-    audioFileName?: string;
-    sendNumber: string;
-    scenarioId?: string;
-  }): Promise<{
-    success: boolean;
-    message: string;
-    results: {
-      callListAdded: number;
-      callListFailed: number;
-      audioUploaded: boolean;
-      campaignStarted: boolean;
-      historyKeys: string[];
-    };
-  }> {
-    const requestId = generateRequestId();
-    const results = {
-      callListAdded: 0,
-      callListFailed: 0,
-      audioUploaded: false,
-      campaignStarted: false,
-      historyKeys: [] as string[],
-    };
-
-    try {
-      
-      secureLog(LogLevel.INFO, 'ARS_PIPELINE', '신규 캠페인 시작', {
-        campaignName: params.campaignName,
-        targetCount: params.customerPhones.length
-      }, requestId);
-
-      // Step 1: 음성파일 업로드 (있는 경우)
-      if (params.audioFileBuffer && params.audioFileName) {
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '음성파일 업로드 시도', {
-          fileName: params.audioFileName
-        }, requestId);
-        const uploadResult = await this.uploadAudioFile(params.audioFileBuffer, params.audioFileName);
-        results.audioUploaded = uploadResult.success;
-        
-        if (!uploadResult.success) {
-          return {
-            success: false,
-            message: `음성파일 업로드 실패: ${uploadResult.message}`,
-            results,
-          };
-        }
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '음성파일 업로드 완료', {}, requestId);
-      } else if (params.scenarioId && params.scenarioId !== 'marketing_consent') {
-        // 🔥 Fallback 메커니즘: 오디오 파일이 없어도 아톡비즈 기본 음원으로 발송 진행
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '시나리오 오디오 파일 없음 - 아톡비즈 기본 음원 사용', {
-          scenarioId: params.scenarioId,
-          fallbackMode: 'atalk_default_audio'
-        }, requestId);
-        
-        // 🔥 오디오 없어도 발송 허용: 아톡비즈 관리자페이지 기본 음원 자동 사용
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '아톡비즈 기본 음원으로 발송 계속 진행', {
-          message: 'CRM 오디오 미업로드 상태이지만 아톡비즈 관리자페이지 음원설정으로 자동 처리'
-        }, requestId);
-      } else if (!params.audioFileBuffer) {
-        // 🔥 모든 경우에서 오디오 파일 없으면 아톡비즈 기본 음원 사용
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '오디오 파일 없음 - 아톡비즈 기본 음원 사용', {
-          fallbackMode: 'atalk_default_audio'
-        }, requestId);
-      }
-
-      // Step 2: 발송리스트 추가 (배치 처리)
-      secureLog(LogLevel.INFO, 'ARS_PIPELINE', '발송리스트 추가 시작', {
-        totalPhones: params.customerPhones.length
-      }, requestId);
-      const batchSize = 5; // 동시 처리 제한
-      const historyKeys: string[] = [];
-
-      for (let i = 0; i < params.customerPhones.length; i += batchSize) {
-        const batch = params.customerPhones.slice(i, i + batchSize);
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '배치 처리 중', {
-          batchNumber: Math.floor(i / batchSize) + 1,
-          totalBatches: Math.ceil(params.customerPhones.length / batchSize),
-          batchSize: batch.length
-        }, requestId);
-        
-        const batchPromises = batch.map(phone => 
-          this.addCallList(params.sendNumber, phone)
-        );
-
-        const batchResults = await Promise.allSettled(batchPromises);
-        
-        // 🔥 개선: 배치 결과 상세 분석
-        let batchSuccess = 0;
-        let batchFailed = 0;
-        
-        for (let j = 0; j < batchResults.length; j++) {
-          const result = batchResults[j];
-          const phone = batch[j];
-          
-          if (result.status === 'fulfilled' && result.value.success) {
-            results.callListAdded++;
-            batchSuccess++;
-            if (result.value.historyKey) {
-              historyKeys.push(result.value.historyKey);
-              secureLog(LogLevel.INFO, 'ARS_PIPELINE', '발송 성공', {
-                phone: maskPhoneNumber(phone),
-                historyKey: result.value.historyKey
-              }, requestId);
-            } else {
-              secureLog(LogLevel.WARNING, 'ARS_PIPELINE', '성공했지만 historyKey 없음', {
-                phone: maskPhoneNumber(phone)
-              }, requestId);
-            }
-          } else {
-            results.callListFailed++;
-            batchFailed++;
-            const errorMsg = result.status === 'fulfilled' 
-              ? result.value.message 
-              : result.reason?.message || 'Unknown error';
-            secureLog(LogLevel.ERROR, 'ARS_PIPELINE', '발송 실패', {
-              phone: maskPhoneNumber(phone),
-              error: errorMsg
-            }, requestId);
-          }
-        }
-        
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '배치 완료', {
-          batchNumber: Math.floor(i / batchSize) + 1,
-          success: batchSuccess,
-          failed: batchFailed
-        }, requestId);
-
-        // 배치 간 지연 (API 과부하 방지)
-        if (i + batchSize < params.customerPhones.length) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-
-      results.historyKeys = historyKeys;
-      secureLog(LogLevel.INFO, 'ARS_PIPELINE', '발송리스트 추가 완료', {
-        success: results.callListAdded,
-        failed: results.callListFailed
-      }, requestId);
-
-      // Step 3: 캠페인 시작 - 모든 historyKeys에 대해 처리
-      if (results.callListAdded > 0 && historyKeys.length > 0) {
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '캠페인 시작 시도', {
-          historyKeysCount: historyKeys.length
-        }, requestId);
-        
-        // 🔥 수정: 모든 historyKeys에 대해 캠페인 시작
-        let startedCount = 0;
-        const startErrors: string[] = [];
-        
-        // 첫 번째 방법: 개별 historyKey로 각각 시작
-        for (const historyKey of historyKeys) {
-          const startResult = await this.startCampaign(historyKey);
-          if (startResult.success) {
-            startedCount++;
-          } else {
-            startErrors.push(`historyKey ${historyKey}: ${startResult.message}`);
-          }
-        }
-        
-        results.campaignStarted = startedCount > 0;
-        
-        if (startedCount === 0) {
-          return {
-            success: false,
-            message: `모든 캠페인 시작 실패: ${startErrors.join(', ')}`,
-            results,
-          };
-        }
-        
-        if (startedCount < historyKeys.length) {
-          secureLog(LogLevel.WARNING, 'ARS_PIPELINE', '일부 캠페인만 시작됨', {
-            started: startedCount,
-            total: historyKeys.length
-          }, requestId);
-        }
-        
-        secureLog(LogLevel.INFO, 'ARS_PIPELINE', '캠페인 시작 완료', {
-          success: startedCount,
-          total: historyKeys.length
-        }, requestId);
-      }
-
-      const successRate = (results.callListAdded / params.customerPhones.length) * 100;
-      
-      // 🔥 트랜잭션 안전성: 최종 결과 검증 및 로깅
-      const finalSuccess = results.callListAdded > 0;
-      const detailedMessage = `캠페인 "${params.campaignName}" 발송 ${finalSuccess ? '완료' : '실패'} - 성공: ${results.callListAdded}명 (${successRate.toFixed(1)}%), 실패: ${results.callListFailed}명, 오디오: ${results.audioUploaded ? '업로드 성공' : '업로드 없음'}, 캠페인 시작: ${results.campaignStarted ? '성공' : '실패'}`;
-      
-      secureLog(LogLevel.INFO, 'ARS_PIPELINE', '파이프라인 최종 결과', {
-        message: detailedMessage
-      }, requestId);
-      
-      return {
-        success: finalSuccess,
-        message: detailedMessage,
-        results,
-      };
-
-    } catch (error) {
-      secureLog(LogLevel.ERROR, 'ARS_PIPELINE', '파이프라인 에러', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }, requestId);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : '캠페인 발송 중 오류가 발생했습니다.',
-        results,
-      };
-    }
-  }
 
   /**
-   * 8. 기존 캠페인 재발송 파이프라인
+   * 7. 기존 캠페인 재발송 파이프라인
    * 이전 설정을 사용하여 동일한 대상자들에게 재발송
    */
   async executeResendCampaignPipeline(params: {
@@ -1059,14 +998,12 @@ export class AtalkArsService {
     results: {
       callListAdded: number;
       callListFailed: number;
-      campaignStarted: boolean;
       historyKeys: string[];
     };
   }> {
     const results = {
       callListAdded: 0,
       callListFailed: 0,
-      campaignStarted: false,
       historyKeys: [] as string[],
     };
 
@@ -1076,7 +1013,7 @@ export class AtalkArsService {
       // Step 1: 음성파일 재업로드 (있는 경우)
       if (params.audioFileBuffer && params.audioFileName) {
         console.log(`[ARS 재발송] 음성파일 재업로드: ${params.audioFileName}`);
-        const uploadResult = await this.uploadAudioFile(params.audioFileBuffer, params.audioFileName);
+        const uploadResult = await this.uploadAudioFile(params.audioFileBuffer, params.audioFileName, process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블');
         
         if (!uploadResult.success) {
           console.warn(`[ARS 재발송] 음성파일 업로드 실패 - 아톡비즈 기본 음원으로 재발송 진행: ${uploadResult.message}`);
@@ -1096,7 +1033,7 @@ export class AtalkArsService {
       for (let i = 0; i < params.customerPhones.length; i += batchSize) {
         const batch = params.customerPhones.slice(i, i + batchSize);
         const batchPromises = batch.map(phone => 
-          this.addCallList(params.sendNumber, phone)
+          this.addCallList(phone, process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블', 'A')
         );
 
         const batchResults = await Promise.allSettled(batchPromises);
@@ -1120,45 +1057,15 @@ export class AtalkArsService {
       results.historyKeys = historyKeys;
       console.log(`[ARS 재발송] 발송리스트 재추가 완료 - 성공: ${results.callListAdded}, 실패: ${results.callListFailed}`);
 
-      // Step 3: 캠페인 재시작 - 모든 historyKeys에 대해 처리
-      if (results.callListAdded > 0 && historyKeys.length > 0) {
-        console.log(`[ARS 재발송] 캠페인 재시작 - ${historyKeys.length}개 historyKey 처리`);
-        
-        // 🔥 수정: 모든 historyKeys에 대해 캠페인 시작
-        let startedCount = 0;
-        const startErrors: string[] = [];
-        
-        for (const historyKey of historyKeys) {
-          const startResult = await this.startCampaign(historyKey);
-          if (startResult.success) {
-            startedCount++;
-          } else {
-            startErrors.push(`historyKey ${historyKey}: ${startResult.message}`);
-          }
-        }
-        
-        results.campaignStarted = startedCount > 0;
-        
-        if (startedCount === 0) {
-          return {
-            success: false,
-            message: `모든 캠페인 재시작 실패: ${startErrors.join(', ')}`,
-            results,
-          };
-        }
-        
-        if (startedCount < historyKeys.length) {
-          console.warn(`[ARS 재발송] 일부 캠페인만 재시작됨: ${startedCount}/${historyKeys.length}`);
-        }
-        
-        console.log(`[ARS 재발송] 캠페인 재시작 완룼 - ${startedCount}/${historyKeys.length}개 성공`);
-      }
+      // API 문서에 따라 캠페인 자동 시작/생성 기능은 제거됨
+      // 발송리스트 재추가만 수행하고 historyKey만 반환
+      console.log(`[ARS 재발송] 발송리스트 재추가 완료 - historyKeys: ${historyKeys.length}개, ATALK API 문서에 따라 발송리스트 추가만 수행`);
 
       const successRate = (results.callListAdded / params.customerPhones.length) * 100;
       
       return {
         success: results.callListAdded > 0,
-        message: `캠페인 재발송 완료 - 성공: ${results.callListAdded}명 (${successRate.toFixed(1)}%), 실패: ${results.callListFailed}명`,
+        message: `캠페인 재발송 리스트 추가 완료 - 성공: ${results.callListAdded}명 (${successRate.toFixed(1)}%), 실패: ${results.callListFailed}명`,
         results,
       };
 
