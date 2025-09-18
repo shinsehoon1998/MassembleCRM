@@ -47,6 +47,137 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
+import { maskPhoneNumber, maskName } from "./securityUtils";
+
+// ============================================
+// Security: SortBy Validation Whitelist
+// ============================================
+
+/**
+ * 허용된 정렬 필드 화이트리스트 - SQL Injection 방지
+ * 각 컨텍스트별로 정확한 필드명과 매핑 정의
+ */
+const ALLOWED_SORT_COLUMNS = {
+  // ArsSendLogs 관련 정렬
+  sendLogs: {
+    'sentAt': 'sent_at',
+    'createdAt': 'created_at', 
+    'duration': 'duration',
+    'cost': 'cost',
+    'callResult': 'call_result',
+    'customerName': 'customer_name',
+    'phoneNumber': 'phone_number',
+    'status': 'status',
+    'retryType': 'retry_type',
+    'completedAt': 'completed_at'
+  } as const,
+  
+  // ArsCampaigns 관련 정렬
+  campaigns: {
+    'name': 'name',
+    'status': 'status',
+    'createdAt': 'created_at',
+    'updatedAt': 'updated_at',
+    'totalCount': 'total_count',
+    'successRate': 'success_rate',
+    'lastSentAt': 'last_sent_at',
+    'successCount': 'success_count',
+    'failedCount': 'failed_count',
+    'totalCost': 'total_cost'
+  } as const,
+
+  // Customers 관련 정렬
+  customers: {
+    'name': 'name',
+    'phone': 'phone',
+    'createdAt': 'created_at',
+    'updatedAt': 'updated_at',
+    'status': 'status'
+  } as const
+} as const;
+
+type SortContext = keyof typeof ALLOWED_SORT_COLUMNS;
+type SortField<T extends SortContext> = keyof typeof ALLOWED_SORT_COLUMNS[T];
+
+/**
+ * sortBy 파라미터 검증 함수 - SQL Injection 방지
+ * @param sortBy 사용자 입력 정렬 필드
+ * @param context 정렬 컨텍스트 (sendLogs, campaigns, customers)
+ * @param defaultSort 기본 정렬 필드
+ * @returns 검증된 정렬 필드
+ */
+function validateSortBy<T extends SortContext>(
+  sortBy: string | undefined, 
+  context: T,
+  defaultSort: SortField<T>
+): SortField<T> {
+  if (!sortBy) {
+    return defaultSort;
+  }
+  
+  const allowedFields = ALLOWED_SORT_COLUMNS[context];
+  
+  if (!(sortBy in allowedFields)) {
+    // 보안 로그: 잘못된 sortBy 시도
+    console.warn(`[SECURITY] Invalid sortBy attempted: ${sortBy} for context: ${context}`);
+    return defaultSort;
+  }
+  
+  return sortBy as SortField<T>;
+}
+
+/**
+ * sortOrder 파라미터 검증 함수
+ * @param sortOrder 사용자 입력 정렬 순서
+ * @returns 검증된 정렬 순서
+ */
+function validateSortOrder(sortOrder: string | undefined): 'asc' | 'desc' {
+  if (sortOrder === 'asc' || sortOrder === 'desc') {
+    return sortOrder;
+  }
+  return 'desc'; // 기본값
+}
+
+/**
+ * 개인정보 마스킹을 위한 헬퍼 함수
+ * 모든 응답에서 일관성 있는 마스킹 적용
+ */
+function applyPersonalInfoMasking<T extends Record<string, any>>(data: T): T {
+  if (!data || typeof data !== 'object') return data;
+
+  const masked = { ...data };
+  
+  // 이름 필드 마스킹
+  if (masked.name && typeof masked.name === 'string') {
+    masked.name = maskName(masked.name);
+  }
+  if (masked.customerName && typeof masked.customerName === 'string') {
+    masked.customerName = maskName(masked.customerName);
+  }
+  
+  // 전화번호 필드 마스킹
+  if (masked.phone && typeof masked.phone === 'string') {
+    masked.phone = maskPhoneNumber(masked.phone);
+  }
+  if (masked.phoneNumber && typeof masked.phoneNumber === 'string') {
+    masked.phoneNumber = maskPhoneNumber(masked.phoneNumber);
+  }
+  if (masked.secondaryPhone && typeof masked.secondaryPhone === 'string') {
+    masked.secondaryPhone = maskPhoneNumber(masked.secondaryPhone);
+  }
+  if (masked.customerPhone && typeof masked.customerPhone === 'string') {
+    masked.customerPhone = maskPhoneNumber(masked.customerPhone);
+  }
+
+  return masked;
+}
+
+/**
+ * 배열 데이터에 개인정보 마스킹 적용
+ */
+function applyPersonalInfoMaskingToArray<T extends Record<string, any>>(data: T[]): T[] {
+  return data.map(item => applyPersonalInfoMasking(item));
+}
 
 export interface IStorage {
   // User operations (required for Replit Auth)
@@ -238,6 +369,125 @@ export interface IStorage {
     total: number;
     totalPages: number;
   }>;
+
+  // 고급 필터링을 위한 확장된 send logs 조회 메서드
+  getEnhancedSendLogs(params: {
+    // 기존 필터
+    campaignId?: number;
+    callResult?: string;
+    retryType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    page?: number;
+    limit?: number;
+    // 새로운 고급 필터
+    phoneNumber?: string;
+    customerName?: string;
+    durationMin?: number;
+    durationMax?: number;
+    costMin?: number;
+    costMax?: number;
+    status?: string[];
+    callResults?: string[];
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<{
+    logs: (ArsSendLog & { 
+      customerName?: string; 
+      customerPhone?: string; 
+      campaignName?: string;
+    })[];
+    total: number;
+    totalPages: number;
+  }>;
+
+  // 캠페인 검색 메서드
+  searchCampaigns(params: {
+    query?: string;
+    createdBy?: string;
+    status?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    minSuccessRate?: number;
+    maxSuccessRate?: number;
+    minTotalCount?: number;
+    maxTotalCount?: number;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<{
+    campaigns: Array<{
+      id: number;
+      name: string;
+      status: string;
+      createdBy?: string;
+      createdAt: Date;
+      updatedAt?: Date;
+      totalCount: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      totalCost?: number;
+      lastSentAt?: Date | null;
+    }>;
+    total: number;
+    totalPages: number;
+    currentPage: number;
+  }>;
+
+  // 빠른 통합 검색 메서드
+  quickSearch(params: {
+    q: string;
+    type?: 'all' | 'campaigns' | 'customers' | 'logs';
+    limit?: number;
+  }): Promise<{
+    query: string;
+    results: {
+      campaigns: Array<{
+        id: number;
+        name: string;
+        type: 'campaign';
+        matchField: string;
+        status?: string;
+        createdAt?: string;
+      }>;
+      customers: Array<{
+        id: string;
+        name: string;
+        type: 'customer';
+        matchField: string;
+        phone?: string;
+        status?: string;
+      }>;
+      sendLogs: Array<{
+        id: number;
+        campaignName: string;
+        customerName: string;
+        type: 'sendLog';
+        matchField: string;
+        phoneNumber?: string;
+        sentAt?: string;
+      }>;
+    };
+    totalResults: number;
+  }>;
+
+  // 자동완성 메서드
+  getAutocomplete(params: {
+    q: string;
+    field: 'campaign' | 'customer' | 'phone';
+    limit?: number;
+  }): Promise<{
+    query: string;
+    field: string;
+    suggestions: Array<{
+      value: string;
+      label: string;
+      count?: number;
+      type?: string;
+    }>;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -343,11 +593,14 @@ export class DatabaseStorage implements IStorage {
       .limit(limit)
       .offset((page - 1) * limit);
 
+    // 🔒 개인정보 마스킹 적용
+    const maskedCustomers = customersData.map(row => ({
+      ...row,
+      assignedUser: row.assignedUser,
+    })) as CustomerWithUser[];
+
     return {
-      customers: customersData.map(row => ({
-        ...row,
-        assignedUser: row.assignedUser,
-      })) as CustomerWithUser[],
+      customers: applyPersonalInfoMaskingToArray(maskedCustomers),
       total,
       totalPages: Math.ceil(total / limit),
     };
@@ -517,10 +770,13 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(customers.createdAt))
       .limit(limit);
 
-    return recentCustomers.map(row => ({
+    // 🔒 개인정보 마스킹 적용
+    const maskedCustomers = recentCustomers.map(row => ({
       ...row,
       assignedUser: row.assignedUser,
     })) as CustomerWithUser[];
+
+    return applyPersonalInfoMaskingToArray(maskedCustomers);
   }
 
   async getConsultations(customerId: string): Promise<ConsultationWithDetails[]> {
@@ -1336,6 +1592,625 @@ export class DatabaseStorage implements IStorage {
       total,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  // 고급 필터링을 위한 확장된 send logs 조회 메서드
+  async getEnhancedSendLogs(params: {
+    // 기존 필터
+    campaignId?: number;
+    callResult?: string;
+    retryType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    page?: number;
+    limit?: number;
+    // 새로운 고급 필터
+    phoneNumber?: string;
+    customerName?: string;
+    durationMin?: number;
+    durationMax?: number;
+    costMin?: number;
+    costMax?: number;
+    status?: string[];
+    callResults?: string[];
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<{
+    logs: (ArsSendLog & { 
+      customerName?: string; 
+      customerPhone?: string; 
+      campaignName?: string;
+    })[];
+    total: number;
+    totalPages: number;
+  }> {
+    const { 
+      campaignId, callResult, retryType, dateFrom, dateTo, 
+      phoneNumber, customerName, durationMin, durationMax, 
+      costMin, costMax, status, callResults,
+      page = 1, limit = 20
+    } = params;
+    
+    // 🔥 보안 강화: sortBy/sortOrder 파라미터 검증
+    const validatedSortBy = validateSortBy(params.sortBy, 'sendLogs', 'sentAt');
+    const validatedSortOrder = validateSortOrder(params.sortOrder);
+    
+    const conditions = [];
+
+    // 기존 필터
+    if (campaignId) {
+      conditions.push(eq(arsSendLogs.campaignId, campaignId));
+    }
+
+    if (callResult) {
+      conditions.push(eq(arsSendLogs.callResult, callResult as any));
+    }
+
+    if (retryType) {
+      conditions.push(eq(arsSendLogs.retryType, retryType as any));
+    }
+
+    if (dateFrom) {
+      conditions.push(sql`${arsSendLogs.sentAt} >= ${dateFrom}`);
+    }
+
+    if (dateTo) {
+      conditions.push(sql`${arsSendLogs.sentAt} <= ${dateTo}`);
+    }
+
+    // 새로운 고급 필터
+    if (phoneNumber) {
+      conditions.push(sql`${arsSendLogs.phoneNumber} ILIKE ${`%${phoneNumber}%`}`);
+    }
+
+    if (customerName) {
+      conditions.push(sql`${customers.name} ILIKE ${`%${customerName}%`}`);
+    }
+
+    if (durationMin !== undefined) {
+      conditions.push(sql`${arsSendLogs.duration} >= ${durationMin}`);
+    }
+
+    if (durationMax !== undefined) {
+      conditions.push(sql`${arsSendLogs.duration} <= ${durationMax}`);
+    }
+
+    if (costMin !== undefined) {
+      conditions.push(sql`CAST(${arsSendLogs.cost} AS DECIMAL) >= ${costMin}`);
+    }
+
+    if (costMax !== undefined) {
+      conditions.push(sql`CAST(${arsSendLogs.cost} AS DECIMAL) <= ${costMax}`);
+    }
+
+    if (status && status.length > 0) {
+      conditions.push(sql`${arsSendLogs.status} = ANY(${status})`);
+    }
+
+    if (callResults && callResults.length > 0) {
+      conditions.push(sql`${arsSendLogs.callResult} = ANY(${callResults})`);
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // 🔥 보안 강화: 검증된 정렬 조건 설정
+    let orderByClause;
+    const orderDirection = validatedSortOrder === 'asc' ? asc : desc;
+    
+    switch (validatedSortBy) {
+      case 'createdAt':
+        orderByClause = orderDirection(arsSendLogs.createdAt);
+        break;
+      case 'duration':
+        orderByClause = orderDirection(arsSendLogs.duration);
+        break;
+      case 'cost':
+        orderByClause = orderDirection(sql`CAST(${arsSendLogs.cost} AS DECIMAL)`);
+        break;
+      case 'customerName':
+        orderByClause = orderDirection(customers.name);
+        break;
+      case 'phoneNumber':
+        orderByClause = orderDirection(arsSendLogs.phoneNumber);
+        break;
+      case 'callResult':
+        orderByClause = orderDirection(arsSendLogs.callResult);
+        break;
+      case 'status':
+        orderByClause = orderDirection(arsSendLogs.status);
+        break;
+      case 'retryType':
+        orderByClause = orderDirection(arsSendLogs.retryType);
+        break;
+      case 'completedAt':
+        orderByClause = orderDirection(arsSendLogs.completedAt);
+        break;
+      default: // sentAt
+        orderByClause = orderDirection(arsSendLogs.sentAt);
+    }
+
+    // Get total count
+    const [{ count: total }] = await db
+      .select({ count: count() })
+      .from(arsSendLogs)
+      .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
+      .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
+      .where(whereClause);
+
+    // Get logs with joins and pagination
+    const logsWithDetails = await db
+      .select({
+        // ArsSendLog fields
+        id: arsSendLogs.id,
+        campaignId: arsSendLogs.campaignId,
+        customerId: arsSendLogs.customerId,
+        phoneNumber: arsSendLogs.phoneNumber,
+        callResult: arsSendLogs.callResult,
+        duration: arsSendLogs.duration,
+        cost: arsSendLogs.cost,
+        status: arsSendLogs.status,
+        retryType: arsSendLogs.retryType,
+        retryCount: arsSendLogs.retryCount,
+        sentAt: arsSendLogs.sentAt,
+        completedAt: arsSendLogs.completedAt,
+        failureReason: arsSendLogs.failureReason,
+        responseData: arsSendLogs.responseData,
+        billingUnits: arsSendLogs.billingUnits,
+        createdAt: arsSendLogs.createdAt,
+        updatedAt: arsSendLogs.updatedAt,
+        // Join fields
+        customerName: customers.name,
+        customerPhone: customers.phone,
+        campaignName: arsCampaigns.name,
+      })
+      .from(arsSendLogs)
+      .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
+      .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
+      .where(whereClause)
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset((page - 1) * limit);
+
+    // 🔒 개인정보 마스킹 적용
+    const maskedLogs = applyPersonalInfoMaskingToArray(logsWithDetails);
+
+    return {
+      logs: maskedLogs,
+      total,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  // 캠페인 검색 메서드
+  async searchCampaigns(params: {
+    query?: string;
+    createdBy?: string;
+    status?: string[];
+    dateFrom?: string;
+    dateTo?: string;
+    minSuccessRate?: number;
+    maxSuccessRate?: number;
+    minTotalCount?: number;
+    maxTotalCount?: number;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<{
+    campaigns: Array<{
+      id: number;
+      name: string;
+      status: string;
+      createdBy?: string;
+      createdAt: Date;
+      updatedAt?: Date;
+      totalCount: number;
+      successCount: number;
+      failedCount: number;
+      successRate: number;
+      totalCost?: number;
+      lastSentAt?: Date | null;
+    }>;
+    total: number;
+    totalPages: number;
+    currentPage: number;
+  }> {
+    const { 
+      query, createdBy, status, dateFrom, dateTo,
+      minSuccessRate, maxSuccessRate, minTotalCount, maxTotalCount,
+      page = 1, limit = 20
+    } = params;
+    
+    // 🔥 보안 강화: sortBy/sortOrder 파라미터 검증
+    const validatedSortBy = validateSortBy(params.sortBy, 'campaigns', 'createdAt');
+    const validatedSortOrder = validateSortOrder(params.sortOrder);
+
+    const conditions = [];
+
+    // 캠페인명 부분 검색
+    if (query) {
+      conditions.push(sql`${arsCampaigns.name} ILIKE ${`%${query}%`}`);
+    }
+
+    // 생성자로 검색
+    if (createdBy) {
+      conditions.push(eq(arsCampaigns.createdBy, createdBy));
+    }
+
+    // 복수 상태 검색
+    if (status && status.length > 0) {
+      conditions.push(sql`${arsCampaigns.status} = ANY(${status})`);
+    }
+
+    // 날짜 범위 검색
+    if (dateFrom) {
+      conditions.push(sql`${arsCampaigns.createdAt} >= ${dateFrom}`);
+    }
+
+    if (dateTo) {
+      conditions.push(sql`${arsCampaigns.createdAt} <= ${dateTo}`);
+    }
+
+    // 캠페인 통계 서브쿼리
+    const campaignStatsSubquery = db
+      .select({
+        campaignId: arsSendLogs.campaignId,
+        totalCount: count().as('totalCount'),
+        successCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} IN ('connected', 'answered') THEN 1 END)`.as('successCount'),
+        failedCount: sql<number>`COUNT(CASE WHEN ${arsSendLogs.callResult} NOT IN ('connected', 'answered') THEN 1 END)`.as('failedCount'),
+        totalCost: sql<number>`COALESCE(SUM(CAST(${arsSendLogs.cost} AS DECIMAL)), 0)`.as('totalCost'),
+        lastSentAt: sql<Date | null>`MAX(${arsSendLogs.sentAt})`.as('lastSentAt'),
+      })
+      .from(arsSendLogs)
+      .groupBy(arsSendLogs.campaignId)
+      .as('campaign_stats');
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get campaigns with stats
+    const campaignsWithStats = await db
+      .select({
+        id: arsCampaigns.id,
+        name: arsCampaigns.name,
+        status: arsCampaigns.status,
+        createdBy: arsCampaigns.createdBy,
+        createdAt: arsCampaigns.createdAt,
+        updatedAt: arsCampaigns.updatedAt,
+        totalCount: campaignStatsSubquery.totalCount,
+        successCount: campaignStatsSubquery.successCount,
+        failedCount: campaignStatsSubquery.failedCount,
+        totalCost: campaignStatsSubquery.totalCost,
+        lastSentAt: campaignStatsSubquery.lastSentAt,
+      })
+      .from(arsCampaigns)
+      .leftJoin(campaignStatsSubquery, eq(arsCampaigns.id, campaignStatsSubquery.campaignId))
+      .where(whereClause);
+
+    // 통계 기반 필터링
+    let filteredCampaigns = campaignsWithStats.filter(campaign => {
+      const successRate = campaign.totalCount && campaign.totalCount > 0 ? 
+        (campaign.successCount / campaign.totalCount) * 100 : 0;
+
+      // 성공률 필터
+      if (minSuccessRate !== undefined && successRate < minSuccessRate) return false;
+      if (maxSuccessRate !== undefined && successRate > maxSuccessRate) return false;
+
+      // 발송 건수 필터
+      if (minTotalCount !== undefined && (campaign.totalCount || 0) < minTotalCount) return false;
+      if (maxTotalCount !== undefined && (campaign.totalCount || 0) > maxTotalCount) return false;
+
+      return true;
+    });
+
+    // 🔥 보안 강화: 검증된 정렬 적용
+    const orderDirection = validatedSortOrder === 'asc' ? 1 : -1;
+    filteredCampaigns.sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (validatedSortBy) {
+        case 'name':
+          aValue = a.name || '';
+          bValue = b.name || '';
+          break;
+        case 'status':
+          aValue = a.status || '';
+          bValue = b.status || '';
+          break;
+        case 'totalCount':
+          aValue = a.totalCount || 0;
+          bValue = b.totalCount || 0;
+          break;
+        case 'successRate':
+          aValue = a.totalCount ? (a.successCount / a.totalCount) * 100 : 0;
+          bValue = b.totalCount ? (b.successCount / b.totalCount) * 100 : 0;
+          break;
+        case 'lastSentAt':
+          aValue = a.lastSentAt ? new Date(a.lastSentAt).getTime() : 0;
+          bValue = b.lastSentAt ? new Date(b.lastSentAt).getTime() : 0;
+          break;
+        default: // createdAt
+          aValue = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          bValue = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      }
+
+      if (aValue < bValue) return -1 * orderDirection;
+      if (aValue > bValue) return 1 * orderDirection;
+      return 0;
+    });
+
+    // 페이지네이션
+    const total = filteredCampaigns.length;
+    const totalPages = Math.ceil(total / limit);
+    const start = (page - 1) * limit;
+    const end = start + limit;
+    const paginatedCampaigns = filteredCampaigns.slice(start, end);
+
+    // 결과 포맷팅
+    const formattedCampaigns = paginatedCampaigns.map(campaign => ({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status || 'unknown',
+      createdBy: campaign.createdBy || undefined,
+      createdAt: campaign.createdAt || new Date(),
+      updatedAt: campaign.updatedAt || undefined,
+      totalCount: campaign.totalCount || 0,
+      successCount: campaign.successCount || 0,
+      failedCount: campaign.failedCount || 0,
+      successRate: campaign.totalCount && campaign.totalCount > 0 ? 
+        Number(((campaign.successCount / campaign.totalCount) * 100).toFixed(1)) : 0,
+      totalCost: campaign.totalCost || undefined,
+      lastSentAt: campaign.lastSentAt || null,
+    }));
+
+    return {
+      campaigns: formattedCampaigns,
+      total,
+      totalPages,
+      currentPage: page,
+    };
+  }
+
+  // 빠른 통합 검색 메서드
+  async quickSearch(params: {
+    q: string;
+    type?: 'all' | 'campaigns' | 'customers' | 'logs';
+    limit?: number;
+  }): Promise<{
+    query: string;
+    results: {
+      campaigns: Array<{
+        id: number;
+        name: string;
+        type: 'campaign';
+        matchField: string;
+        status?: string;
+        createdAt?: string;
+      }>;
+      customers: Array<{
+        id: string;
+        name: string;
+        type: 'customer';
+        matchField: string;
+        phone?: string;
+        status?: string;
+      }>;
+      sendLogs: Array<{
+        id: number;
+        campaignName: string;
+        customerName: string;
+        type: 'sendLog';
+        matchField: string;
+        phoneNumber?: string;
+        sentAt?: string;
+      }>;
+    };
+    totalResults: number;
+  }> {
+    const { q, type = 'all', limit = 10 } = params;
+    const results = {
+      campaigns: [] as any[],
+      customers: [] as any[],
+      sendLogs: [] as any[],
+    };
+
+    // 캠페인 검색
+    if (type === 'all' || type === 'campaigns') {
+      const campaigns = await db
+        .select({
+          id: arsCampaigns.id,
+          name: arsCampaigns.name,
+          status: arsCampaigns.status,
+          createdAt: arsCampaigns.createdAt,
+        })
+        .from(arsCampaigns)
+        .where(sql`${arsCampaigns.name} ILIKE ${`%${q}%`}`)
+        .limit(limit);
+
+      results.campaigns = campaigns.map(campaign => ({
+        id: campaign.id,
+        name: campaign.name,
+        type: 'campaign' as const,
+        matchField: 'name',
+        status: campaign.status || undefined,
+        createdAt: campaign.createdAt?.toISOString(),
+      }));
+    }
+
+    // 고객 검색
+    if (type === 'all' || type === 'customers') {
+      const customerResults = await db
+        .select({
+          id: customers.id,
+          name: customers.name,
+          phone: customers.phone,
+          status: customers.status,
+        })
+        .from(customers)
+        .where(
+          sql`${customers.name} ILIKE ${`%${q}%`} OR ${customers.phone} ILIKE ${`%${q}%`}`
+        )
+        .limit(limit);
+
+      results.customers = customerResults.map(customer => ({
+        id: customer.id,
+        name: this.maskName(customer.name),
+        type: 'customer' as const,
+        matchField: customer.name.includes(q) ? 'name' : 'phone',
+        phone: customer.phone ? this.maskPhoneNumber(customer.phone) : undefined,
+        status: customer.status || undefined,
+      }));
+    }
+
+    // 발송 로그 검색
+    if (type === 'all' || type === 'logs') {
+      const sendLogsResults = await db
+        .select({
+          id: arsSendLogs.id,
+          phoneNumber: arsSendLogs.phoneNumber,
+          sentAt: arsSendLogs.sentAt,
+          campaignName: arsCampaigns.name,
+          customerName: customers.name,
+        })
+        .from(arsSendLogs)
+        .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
+        .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
+        .where(
+          sql`${arsCampaigns.name} ILIKE ${`%${q}%`} OR 
+              ${customers.name} ILIKE ${`%${q}%`} OR 
+              ${arsSendLogs.phoneNumber} ILIKE ${`%${q}%`}`
+        )
+        .limit(limit);
+
+      results.sendLogs = sendLogsResults.map(log => {
+        let matchField = 'campaignName';
+        if (log.customerName && log.customerName.includes(q)) matchField = 'customerName';
+        if (log.phoneNumber && log.phoneNumber.includes(q)) matchField = 'phoneNumber';
+
+        return {
+          id: log.id,
+          campaignName: log.campaignName || '',
+          customerName: log.customerName ? this.maskName(log.customerName) : '',
+          type: 'sendLog' as const,
+          matchField,
+          phoneNumber: log.phoneNumber ? this.maskPhoneNumber(log.phoneNumber) : undefined,
+          sentAt: log.sentAt?.toISOString(),
+        };
+      });
+    }
+
+    const totalResults = results.campaigns.length + results.customers.length + results.sendLogs.length;
+
+    return {
+      query: q,
+      results,
+      totalResults,
+    };
+  }
+
+  // 자동완성 메서드
+  async getAutocomplete(params: {
+    q: string;
+    field: 'campaign' | 'customer' | 'phone';
+    limit?: number;
+  }): Promise<{
+    query: string;
+    field: string;
+    suggestions: Array<{
+      value: string;
+      label: string;
+      count?: number;
+      type?: string;
+    }>;
+  }> {
+    const { q, field, limit = 10 } = params;
+    let suggestions: Array<{ value: string; label: string; count?: number; type?: string }> = [];
+
+    switch (field) {
+      case 'campaign':
+        const campaigns = await db
+          .select({
+            name: arsCampaigns.name,
+            status: arsCampaigns.status,
+            count: sql<number>`COUNT(${arsSendLogs.id})`,
+          })
+          .from(arsCampaigns)
+          .leftJoin(arsSendLogs, eq(arsCampaigns.id, arsSendLogs.campaignId))
+          .where(sql`${arsCampaigns.name} ILIKE ${`%${q}%`}`)
+          .groupBy(arsCampaigns.name, arsCampaigns.status)
+          .orderBy(desc(count()))
+          .limit(limit);
+
+        suggestions = campaigns.map(campaign => ({
+          value: campaign.name,
+          label: campaign.name,
+          count: campaign.count || 0,
+          type: campaign.status || undefined,
+        }));
+        break;
+
+      case 'customer':
+        const customerSuggestions = await db
+          .select({
+            name: customers.name,
+            status: customers.status,
+          })
+          .from(customers)
+          .where(sql`${customers.name} ILIKE ${`%${q}%`}`)
+          .orderBy(customers.name)
+          .limit(limit);
+
+        suggestions = customerSuggestions.map(customer => ({
+          value: customer.name,
+          label: this.maskName(customer.name),
+          type: customer.status || undefined,
+        }));
+        break;
+
+      case 'phone':
+        const phoneSuggestions = await db
+          .select({
+            phoneNumber: arsSendLogs.phoneNumber,
+            count: count(),
+          })
+          .from(arsSendLogs)
+          .where(sql`${arsSendLogs.phoneNumber} ILIKE ${`%${q}%`}`)
+          .groupBy(arsSendLogs.phoneNumber)
+          .orderBy(desc(count()))
+          .limit(limit);
+
+        suggestions = phoneSuggestions.map(phone => ({
+          value: phone.phoneNumber || '',
+          label: phone.phoneNumber ? this.maskPhoneNumber(phone.phoneNumber) : '',
+          count: phone.count || 0,
+        }));
+        break;
+    }
+
+    return {
+      query: q,
+      field,
+      suggestions,
+    };
+  }
+
+  // 개인정보 마스킹 헬퍼 메서드들
+  private maskPhoneNumber(phone: string): string {
+    if (!phone || phone.length < 8) return phone;
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length === 11) {
+      return cleanPhone.replace(/(\d{3})(\d{4})(\d{4})/, '$1-****-$3');
+    } else if (cleanPhone.length === 10) {
+      return cleanPhone.replace(/(\d{3})(\d{3})(\d{4})/, '$1-***-$3');
+    }
+    return phone.substring(0, 3) + '****' + phone.substring(phone.length - 4);
+  }
+
+  private maskName(name: string): string {
+    if (!name || name.length < 2) return name;
+    if (name.length === 2) {
+      return name[0] + '*';
+    }
+    return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1];
   }
 }
 

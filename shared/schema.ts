@@ -836,6 +836,7 @@ export const timelineStatsSchema = z.object({
   }))
 });
 
+// 기존 기본 필터 스키마 (호환성 유지)
 export const sendLogsFilterSchema = z.object({
   campaignId: z.number().optional(),
   callResult: z.string().optional(),
@@ -846,8 +847,179 @@ export const sendLogsFilterSchema = z.object({
   limit: z.number().min(1).max(100).default(20),
 });
 
+// 고급 필터링을 위한 확장된 send logs 필터 스키마
+export const enhancedSendLogsFilterSchema = z.object({
+  // 기존 필터 (호환성 유지)
+  campaignId: z.number().optional(),
+  callResult: z.string().optional(),
+  retryType: z.enum(['initial', 'manual_retry', 'auto_retry']).optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(20),
+  
+  // 새로 추가된 고급 필터
+  phoneNumber: z.string().optional(), // 전화번호 부분 검색
+  customerName: z.string().optional(), // 고객명 부분 검색
+  durationMin: z.number().min(0).optional(), // 최소 통화 시간 (초)
+  durationMax: z.number().min(0).optional(), // 최대 통화 시간 (초)
+  costMin: z.number().min(0).optional(), // 최소 비용
+  costMax: z.number().min(0).optional(), // 최대 비용
+  status: z.array(z.string()).optional(), // 복수 상태 선택
+  callResults: z.array(z.string()).optional(), // 복수 통화 결과 선택
+  sortBy: z.enum(['createdAt', 'sentAt', 'duration', 'cost', 'customerName', 'phoneNumber']).default('sentAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+// 캠페인 검색 필터 스키마
+export const campaignSearchFilterSchema = z.object({
+  query: z.string().optional(), // 캠페인명 부분 검색
+  createdBy: z.string().optional(), // 생성자로 검색
+  status: z.array(z.string()).optional(), // 캠페인 상태 복수 선택
+  dateFrom: z.string().optional(), // 생성일 시작
+  dateTo: z.string().optional(), // 생성일 종료
+  minSuccessRate: z.number().min(0).max(100).optional(), // 최소 성공률 (%)
+  maxSuccessRate: z.number().min(0).max(100).optional(), // 최대 성공률 (%)
+  minTotalCount: z.number().min(0).optional(), // 최소 발송 건수
+  maxTotalCount: z.number().min(0).optional(), // 최대 발송 건수
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(20),
+  sortBy: z.enum(['name', 'createdAt', 'status', 'totalCount', 'successRate', 'lastSentAt']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+// 빠른 검색 스키마
+export const quickSearchSchema = z.object({
+  q: z.string().min(1), // 검색어 (필수)
+  type: z.enum(['all', 'campaigns', 'customers', 'logs']).default('all'), // 검색 범위
+  limit: z.number().min(1).max(50).default(10), // 결과 개수 제한
+});
+
+// 자동완성 스키마
+export const autocompleteSchema = z.object({
+  q: z.string().min(2), // 검색어 (최소 2글자)
+  field: z.enum(['campaign', 'customer', 'phone']), // 자동완성 대상 필드
+  limit: z.number().min(1).max(20).default(10), // 제안 개수 (기본 10개)
+});
+
+// 빠른 검색 결과 응답 스키마
+export const quickSearchResultSchema = z.object({
+  query: z.string(),
+  results: z.object({
+    campaigns: z.array(z.object({
+      id: z.number(),
+      name: z.string(),
+      type: z.literal('campaign'),
+      matchField: z.string(),
+      status: z.string().optional(),
+      createdAt: z.string().optional(),
+    })),
+    customers: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      type: z.literal('customer'),
+      matchField: z.string(),
+      phone: z.string().optional(),
+      status: z.string().optional(),
+    })),
+    sendLogs: z.array(z.object({
+      id: z.number(),
+      campaignName: z.string(),
+      customerName: z.string(),
+      type: z.literal('sendLog'),
+      matchField: z.string(),
+      phoneNumber: z.string().optional(),
+      sentAt: z.string().optional(),
+    })),
+  }),
+  totalResults: z.number(),
+});
+
+// 자동완성 결과 응답 스키마
+export const autocompleteResultSchema = z.object({
+  query: z.string(),
+  field: z.string(),
+  suggestions: z.array(z.object({
+    value: z.string(),
+    label: z.string(),
+    count: z.number().optional(), // 해당 항목의 개수
+    type: z.string().optional(), // 추가 컨텍스트
+  })),
+});
+
+// 캠페인 검색 결과 응답 스키마
+export const campaignSearchResultSchema = z.object({
+  campaigns: z.array(z.object({
+    id: z.number(),
+    name: z.string(),
+    status: z.string(),
+    createdBy: z.string().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string().optional(),
+    totalCount: z.number(),
+    successCount: z.number(),
+    failedCount: z.number(),
+    successRate: z.number(),
+    totalCost: z.number().optional(),
+    lastSentAt: z.string().nullable(),
+  })),
+  total: z.number(),
+  totalPages: z.number(),
+  currentPage: z.number(),
+});
+
 // API Response types
 export type CampaignStatsOverview = z.infer<typeof campaignStatsOverviewSchema>;
 export type CampaignDetailedStats = z.infer<typeof campaignDetailedStatsSchema>;
 export type TimelineStats = z.infer<typeof timelineStatsSchema>;
 export type SendLogsFilter = z.infer<typeof sendLogsFilterSchema>;
+
+// 새로운 필터링 및 검색 관련 타입
+export type EnhancedSendLogsFilter = z.infer<typeof enhancedSendLogsFilterSchema>;
+export type CampaignSearchFilter = z.infer<typeof campaignSearchFilterSchema>;
+export type QuickSearch = z.infer<typeof quickSearchSchema>;
+export type Autocomplete = z.infer<typeof autocompleteSchema>;
+export type QuickSearchResult = z.infer<typeof quickSearchResultSchema>;
+export type AutocompleteResult = z.infer<typeof autocompleteResultSchema>;
+export type CampaignSearchResult = z.infer<typeof campaignSearchResultSchema>;
+
+// ============================================
+// 🔥 보안 강화: SortBy 필드 Enum 제약
+// ============================================
+
+// Send Logs 정렬 필드 Enum
+export const sendLogsSortByEnum = z.enum([
+  'sentAt', 'createdAt', 'duration', 'cost', 'callResult', 
+  'customerName', 'phoneNumber', 'status', 'retryType', 'completedAt'
+]);
+
+// Campaigns 정렬 필드 Enum
+export const campaignsSortByEnum = z.enum([
+  'name', 'status', 'createdAt', 'updatedAt', 'totalCount', 
+  'successRate', 'lastSentAt', 'successCount', 'failedCount', 'totalCost'
+]);
+
+// Customers 정렬 필드 Enum
+export const customersSortByEnum = z.enum([
+  'name', 'phone', 'createdAt', 'updatedAt', 'status'
+]);
+
+// 정렬 순서 Enum
+export const sortOrderEnum = z.enum(['asc', 'desc']);
+
+// 강화된 스키마 - 기존 스키마 업데이트
+export const enhancedSendLogsFilterSchemaSecure = enhancedSendLogsFilterSchema.extend({
+  sortBy: sendLogsSortByEnum.optional(),
+  sortOrder: sortOrderEnum.optional(),
+});
+
+export const campaignSearchFilterSchemaSecure = campaignSearchFilterSchema.extend({
+  sortBy: campaignsSortByEnum.optional(),
+  sortOrder: sortOrderEnum.optional(),
+});
+
+// 타입 export
+export type SendLogsSortBy = z.infer<typeof sendLogsSortByEnum>;
+export type CampaignsSortBy = z.infer<typeof campaignsSortByEnum>;
+export type CustomersSortBy = z.infer<typeof customersSortByEnum>;
+export type SortOrder = z.infer<typeof sortOrderEnum>;

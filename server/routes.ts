@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -2210,18 +2210,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // 4. 발송 로그 필터링 API (기존 개선)
+  // 4. 발송 로그 필터링 API (고급 필터링으로 개선)
   app.get('/api/ars/send-logs', isAuthenticated, async (req: any, res) => {
     try {
       const requestId = generateRequestId();
       
-      // Validate query parameters using Zod schema
-      const validation = sendLogsFilterSchema.safeParse({
+      // 🔥 보안 강화: Rate limiting 적용
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'send_logs', 30, 60000); // 30 requests per minute
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now() / 1000) / 60)
+        });
+      }
+      
+      // Parse array parameters
+      const parseArrayParam = (param: string | string[] | undefined) => {
+        if (!param) return undefined;
+        if (Array.isArray(param)) return param;
+        return param.split(',').map(item => item.trim()).filter(Boolean);
+      };
+
+      // Validate query parameters using enhanced Zod schema
+      const validation = enhancedSendLogsFilterSchema.safeParse({
         campaignId: req.query.campaignId ? parseInt(req.query.campaignId as string) : undefined,
         callResult: req.query.callResult,
         retryType: req.query.retryType,
         dateFrom: req.query.dateFrom,
         dateTo: req.query.dateTo,
+        phoneNumber: req.query.phoneNumber,
+        customerName: req.query.customerName,
+        durationMin: req.query.durationMin ? parseInt(req.query.durationMin as string) : undefined,
+        durationMax: req.query.durationMax ? parseInt(req.query.durationMax as string) : undefined,
+        costMin: req.query.costMin ? parseFloat(req.query.costMin as string) : undefined,
+        costMax: req.query.costMax ? parseFloat(req.query.costMax as string) : undefined,
+        status: parseArrayParam(req.query.status),
+        callResults: parseArrayParam(req.query.callResults),
+        sortBy: req.query.sortBy || 'sentAt',
+        sortOrder: req.query.sortOrder || 'desc',
         page: req.query.page ? parseInt(req.query.page as string) : 1,
         limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
       });
@@ -2238,28 +2264,188 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const params = validation.data;
 
-      secureLog(LogLevel.INFO, 'SEND_LOGS', 'Filtered send logs requested', {
+      secureLog(LogLevel.INFO, 'SEND_LOGS', 'Enhanced filtered send logs requested', {
         userId: req.user?.id,
         ...maskApiData(params)
       }, requestId);
 
-      const logs = await storage.getFilteredSendLogs(params);
+      const logs = await storage.getEnhancedSendLogs(params);
       
-      // Mask sensitive data in response
-      const maskedLogs = {
-        ...logs,
-        logs: logs.logs.map(log => ({
-          ...log,
-          phone: maskPhoneNumber(log.phone || ''),
-        }))
-      };
-
-      res.json(maskedLogs);
+      // Logs are already masked in the storage layer
+      res.json(logs);
     } catch (error) {
-      secureLog(LogLevel.ERROR, 'SEND_LOGS', 'Error getting filtered send logs', {
+      secureLog(LogLevel.ERROR, 'SEND_LOGS', 'Error getting enhanced filtered send logs', {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       res.status(500).json({ message: "발송 로그 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 5. 캠페인 검색 API
+  app.get('/api/ars/campaigns/search', isAuthenticated, async (req: any, res) => {
+    try {
+      const requestId = generateRequestId();
+      
+      // 🔥 보안 강화: Rate limiting 적용
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'campaign_search', 30, 60000); // 30 requests per minute
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+          retryAfter: Math.ceil((rateLimitResult.resetTime - Date.now() / 1000) / 60)
+        });
+      }
+      
+      // Parse array parameters
+      const parseArrayParam = (param: string | string[] | undefined) => {
+        if (!param) return undefined;
+        if (Array.isArray(param)) return param;
+        return param.split(',').map(item => item.trim()).filter(Boolean);
+      };
+
+      // Validate query parameters using campaign search schema
+      const validation = campaignSearchFilterSchema.safeParse({
+        query: req.query.query,
+        createdBy: req.query.createdBy,
+        status: parseArrayParam(req.query.status),
+        dateFrom: req.query.dateFrom,
+        dateTo: req.query.dateTo,
+        minSuccessRate: req.query.minSuccessRate ? parseFloat(req.query.minSuccessRate as string) : undefined,
+        maxSuccessRate: req.query.maxSuccessRate ? parseFloat(req.query.maxSuccessRate as string) : undefined,
+        minTotalCount: req.query.minTotalCount ? parseInt(req.query.minTotalCount as string) : undefined,
+        maxTotalCount: req.query.maxTotalCount ? parseInt(req.query.maxTotalCount as string) : undefined,
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        sortBy: req.query.sortBy || 'createdAt',
+        sortOrder: req.query.sortOrder || 'desc',
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const params = validation.data;
+
+      secureLog(LogLevel.INFO, 'CAMPAIGN_SEARCH', 'Campaign search requested', {
+        userId: req.user?.id,
+        ...maskApiData(params)
+      }, requestId);
+
+      const result = await storage.searchCampaigns(params);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'CAMPAIGN_SEARCH', 'Error searching campaigns', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "캠페인 검색 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 6. 빠른 통합 검색 API
+  app.get('/api/ars/quick-search', isAuthenticated, async (req: any, res) => {
+    try {
+      const requestId = generateRequestId();
+
+      // Rate limiting for search requests
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'quick_search', 30, 60000); // 30 requests per minute
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "검색 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요.",
+          retryAfter: rateLimitResult.retryAfter 
+        });
+      }
+
+      // Validate query parameters using quick search schema
+      const validation = quickSearchSchema.safeParse({
+        q: req.query.q,
+        type: req.query.type || 'all',
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const params = validation.data;
+
+      secureLog(LogLevel.INFO, 'QUICK_SEARCH', 'Quick search requested', {
+        userId: req.user?.id,
+        query: params.q.substring(0, 50), // Log only first 50 chars for privacy
+        type: params.type,
+        limit: params.limit
+      }, requestId);
+
+      const result = await storage.quickSearch(params);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'QUICK_SEARCH', 'Error performing quick search', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "통합 검색 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 7. 자동완성 API
+  app.get('/api/ars/autocomplete', isAuthenticated, async (req: any, res) => {
+    try {
+      const requestId = generateRequestId();
+
+      // Rate limiting for autocomplete requests
+      const rateLimitResult = checkRateLimit(req.user?.id || req.ip, 'autocomplete', 60, 60000); // 60 requests per minute
+      if (!rateLimitResult.allowed) {
+        return res.status(429).json({ 
+          message: "자동완성 요청 횟수를 초과했습니다. 잠시 후 다시 시도해주세요.",
+          retryAfter: rateLimitResult.retryAfter 
+        });
+      }
+
+      // Validate query parameters using autocomplete schema
+      const validation = autocompleteSchema.safeParse({
+        q: req.query.q,
+        field: req.query.field,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 10,
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "잘못된 요청 파라미터입니다.",
+          errors: validation.error.issues.map(issue => ({
+            field: issue.path.join('.'),
+            message: issue.message
+          }))
+        });
+      }
+
+      const params = validation.data;
+
+      secureLog(LogLevel.INFO, 'AUTOCOMPLETE', 'Autocomplete requested', {
+        userId: req.user?.id,
+        query: params.q.substring(0, 20), // Log only first 20 chars for privacy
+        field: params.field,
+        limit: params.limit
+      }, requestId);
+
+      const result = await storage.getAutocomplete(params);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'AUTOCOMPLETE', 'Error getting autocomplete suggestions', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "자동완성 조회 중 오류가 발생했습니다." });
     }
   });
 
