@@ -2,7 +2,8 @@
 process.env.ATALK_API_TOKEN = "NjI3OTIz";
 process.env.ATALK_COMPANY = "627923";
 process.env.ATALK_USER_ID = "mb627923";
-console.log('✅ ATALK API 환경변수 설정 완료');
+process.env.ATALK_CAMPAIGN_NAME = "테스트4";  // 성공 확인된 캠페인명
+console.log('✅ ATALK API 환경변수 설정 완료 (캠페인명: 테스트4)');
 
 import express, { type Request, Response, NextFunction } from "express";
 import multer from 'multer';

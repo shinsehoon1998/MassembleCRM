@@ -46,7 +46,7 @@ export default function ArsCampaigns() {
   const form = useForm<ArsCallListAdd>({
     resolver: zodResolver(arsCallListAddSchema),
     defaultValues: {
-      campaignName: "",
+      campaignName: "테스트4",  // 성공 확인된 기본 캠페인명
       page: "A",
       phones: [],
     },
@@ -117,6 +117,17 @@ export default function ArsCampaigns() {
       toast({
         title: "캠페인명 필요",
         description: "아톡비즈에서 생성된 캠페인명을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // 알려진 유효한 캠페인명 목록
+    const validCampaigns = ["테스트4", "주식회사마셈블"];
+    if (!validCampaigns.includes(data.campaignName.trim())) {
+      toast({
+        title: "캠페인명 확인 필요",
+        description: `현재 사용 가능한 캠페인: ${validCampaigns.join(", ")}. 다른 캠페인명은 ATALK 서버에서 400 오류가 발생할 수 있습니다.`,
         variant: "destructive",
       });
       return;
