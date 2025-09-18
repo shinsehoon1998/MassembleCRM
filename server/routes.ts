@@ -856,9 +856,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Username is required" });
       }
 
+      // Hash password before storing (required for new users)
+      if (!password || !password.trim()) {
+        return res.status(400).json({ message: "Password is required for new users" });
+      }
+      
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
       const newUser = await storage.upsertUser({
         username,
-        password,
+        password: hashedPassword,
         name: name || username, // Use username as name if name not provided
         email: req.body.email,
         firstName: req.body.firstName,
