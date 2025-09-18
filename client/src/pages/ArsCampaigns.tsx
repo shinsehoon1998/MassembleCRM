@@ -7,12 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Phone, Users, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Phone, Users, Send, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -39,32 +38,9 @@ import {
 } from "@/components/ui/form";
 import { arsCallListAddSchema, type ArsCallListAdd } from "@shared/schema";
 
-interface ArsHistoryItem {
-  id: string;
-  customerId: string;
-  customerName: string;
-  phone: string;
-  status: string;
-  sentAt: string;
-  result: string;
-}
-
-interface ArsHistoryResult {
-  historyKey: string;
-  campaignName: string;
-  totalCount: number;
-  successCount: number;
-  failedCount: number;
-  completedCount: number;
-  pendingCount: number;
-  items: ArsHistoryItem[];
-}
-
 export default function ArsCampaigns() {
   const { toast } = useToast();
-  const [showBulkModal, setShowBulkModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedHistoryKey, setSelectedHistoryKey] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
   // 새로운 ARS 발송 폼
   const form = useForm<ArsCallListAdd>({
@@ -77,38 +53,19 @@ export default function ArsCampaigns() {
   });
 
   // 마케팅 대상 고객 조회
-  const { data: marketingTargets } = useQuery({
+  const { data: marketingTargets, isLoading: marketingTargetsLoading } = useQuery({
     queryKey: ["/api/ars/marketing-targets"],
   });
 
   // 고객 그룹 목록 조회
-  const { data: customerGroups } = useQuery({
+  const { data: customerGroups, isLoading: customerGroupsLoading } = useQuery({
     queryKey: ["/api/customer-groups"],
   });
 
-  // 기존 캠페인 기록 조회 (참고용)
+  // 캠페인 기록 조회
   const { data: campaigns, isLoading: campaignsLoading } = useQuery({
     queryKey: ["/api/ars/campaigns"],
   });
-
-  // 선택된 historyKey의 상세 결과 조회
-  const { data: historyResponse, isLoading: historyDetailLoading } = useQuery<any>({
-    queryKey: ["/api/ars/calllist/history", selectedHistoryKey],
-    enabled: !!selectedHistoryKey && showDetailModal,
-    refetchInterval: showDetailModal ? 5000 : false, // 5초마다 자동 갱신
-  });
-
-  // 백엔드 응답에서 실제 history data 추출 및 fallback 처리
-  const historyDetail: ArsHistoryResult | null = historyResponse?.data ? {
-    historyKey: (historyResponse as any).historyKey || '',
-    campaignName: (historyResponse as any).campaignName || '',
-    totalCount: (historyResponse as any).totalCount || 0,
-    successCount: (historyResponse as any).data?.successCount || 0,
-    failedCount: (historyResponse as any).data?.failedCount || 0,
-    completedCount: (historyResponse as any).data?.completedCount || 0,
-    pendingCount: (historyResponse as any).data?.pendingCount || 0,
-    items: Array.isArray((historyResponse as any).data?.items) ? (historyResponse as any).data.items : Array.isArray((historyResponse as any).data?.data) ? (historyResponse as any).data.data : []
-  } : null;
 
   // 새로운 ARS 발송 API 호출
   const sendArsMutation = useMutation({
@@ -123,13 +80,7 @@ export default function ArsCampaigns() {
           description: `캠페인 '${response.campaignName || 'Unknown'}'이 성공적으로 발송되었습니다. (총 ${response.totalCount || 0}명)`,
         });
         
-        // 발송 성공 시 결과 조회를 위해 historyKey 저장
-        if (response.historyKey) {
-          setSelectedHistoryKey(response.historyKey);
-          setShowDetailModal(true);
-        }
-        
-        setShowBulkModal(false);
+        setShowModal(false);
         form.reset();
       } else {
         toast({
@@ -155,7 +106,7 @@ export default function ArsCampaigns() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
   // 선택된 그룹의 고객 수 조회
-  const { data: groupCustomers } = useQuery({
+  const { data: groupCustomers, isLoading: groupCustomersLoading } = useQuery({
     queryKey: [`/api/customer-groups/${selectedGroupId}/customers`],
     enabled: !!selectedGroupId && selectedTargetType === "group",
   });
@@ -205,26 +156,8 @@ export default function ArsCampaigns() {
     });
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed": return "bg-green-500";
-      case "failed": return "bg-red-500"; 
-      case "pending": return "bg-yellow-500";
-      default: return "bg-gray-500";
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "completed": return "완료";
-      case "failed": return "실패";
-      case "pending": return "대기중";
-      default: return "알 수 없음";
-    }
-  };
-
   const targetCount = selectedTargetType === "all" 
-    ? (marketingTargets as any)?.count || 0
+    ? (marketingTargets as any)?.targets?.length || 0
     : (groupCustomers as any)?.length || 0;
 
   return (
@@ -235,7 +168,7 @@ export default function ArsCampaigns() {
           <h1 className="text-3xl font-bold">ARS 캠페인</h1>
           <p className="text-muted-foreground">ARS 발송 캠페인을 관리하고 실행합니다</p>
         </div>
-        <Dialog open={showBulkModal} onOpenChange={setShowBulkModal}>
+        <Dialog open={showModal} onOpenChange={setShowModal}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-campaign">
               <Send className="mr-2 h-4 w-4" />
@@ -274,28 +207,6 @@ export default function ArsCampaigns() {
                   )}
                 />
 
-                {/* Page 필드 */}
-                <FormField
-                  control={form.control}
-                  name="page"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>페이지</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="A" 
-                          data-testid="input-page"
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        기본값: A
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
                 {/* 발송 대상 선택 */}
                 <div className="space-y-4">
                   <Label>발송 대상 선택</Label>
@@ -311,7 +222,7 @@ export default function ArsCampaigns() {
                         <Users className="h-4 w-4" />
                         <span>전체 마케팅 동의 고객</span>
                         <Badge variant="secondary" data-testid="badge-all-count">
-                          {(marketingTargets as any)?.count || 0}명
+                          {(marketingTargets as any)?.targets?.length || 0}명
                         </Badge>
                       </Label>
                     </div>
@@ -324,67 +235,61 @@ export default function ArsCampaigns() {
                         data-testid="checkbox-target-group"
                       />
                       <Label htmlFor="target-group" className="flex items-center space-x-2">
-                        <TrendingUp className="h-4 w-4" />
+                        <Phone className="h-4 w-4" />
                         <span>특정 고객 그룹</span>
                       </Label>
                     </div>
                     
                     {selectedTargetType === "group" && (
                       <div className="ml-6">
-                        <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                          <SelectTrigger data-testid="select-customer-group">
+                        <Select
+                          value={selectedGroupId}
+                          onValueChange={setSelectedGroupId}
+                          data-testid="select-customer-group"
+                        >
+                          <SelectTrigger>
                             <SelectValue placeholder="고객 그룹을 선택하세요" />
                           </SelectTrigger>
                           <SelectContent>
-                            {(customerGroups as any[])?.map((group) => (
-                              <SelectItem key={group.id} value={group.id}>
-                                <div className="flex items-center space-x-2">
-                                  <div 
-                                    className="w-3 h-3 rounded-full" 
-                                    style={{ backgroundColor: group.color }}
-                                  />
-                                  <span>{group.name}</span>
-                                </div>
+                            {customerGroups && Array.isArray(customerGroups) ? customerGroups.map((group: any) => (
+                              <SelectItem key={group.id} value={group.id} data-testid={`select-item-${group.id}`}>
+                                {group.name}
                               </SelectItem>
-                            ))}
+                            )) : null}
                           </SelectContent>
                         </Select>
                         {selectedGroupId && (
-                          <Badge variant="outline" className="mt-2" data-testid="badge-group-count">
-                            선택된 그룹: {(groupCustomers as any)?.length || 0}명
-                          </Badge>
+                          <p className="text-sm text-muted-foreground mt-2" data-testid="text-selected-group-count">
+                            선택된 그룹: {targetCount}명
+                          </p>
                         )}
                       </div>
                     )}
                   </div>
+                  
+                  <div className="text-sm font-medium">
+                    발송 대상: <span className="text-primary">{targetCount}명</span>
+                  </div>
                 </div>
 
-                {/* 발송 요약 */}
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Phone className="h-4 w-4" />
-                        <span>발송 대상</span>
-                      </div>
-                      <Badge data-testid="badge-target-count">{targetCount}명</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* 발송 버튼 */}
-                <div className="flex justify-end space-x-2">
+                {/* 버튼 */}
+                <div className="flex justify-end space-x-4">
                   <Button 
                     type="button" 
                     variant="outline" 
-                    onClick={() => setShowBulkModal(false)}
+                    onClick={() => setShowModal(false)}
                     data-testid="button-cancel"
                   >
                     취소
                   </Button>
                   <Button 
                     type="submit" 
-                    disabled={sendArsMutation.isPending || targetCount === 0}
+                    disabled={
+                      sendArsMutation.isPending || 
+                      targetCount === 0 || 
+                      marketingTargetsLoading || 
+                      (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading))
+                    }
                     data-testid="button-send"
                   >
                     {sendArsMutation.isPending ? (
@@ -395,7 +300,7 @@ export default function ArsCampaigns() {
                     ) : (
                       <>
                         <Send className="mr-2 h-4 w-4" />
-                        발송 시작
+                        발송하기
                       </>
                     )}
                   </Button>
@@ -406,8 +311,8 @@ export default function ArsCampaigns() {
         </Dialog>
       </div>
 
-      {/* 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      {/* 간단한 통계 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">마케팅 동의 고객</CardTitle>
@@ -415,7 +320,7 @@ export default function ArsCampaigns() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-marketing-targets">
-              {(marketingTargets as any)?.count || 0}
+              {(marketingTargets as any)?.targets?.length || 0}
             </div>
             <p className="text-xs text-muted-foreground">
               ARS 발송 가능 대상
@@ -426,7 +331,7 @@ export default function ArsCampaigns() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">총 캠페인</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <Send className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold" data-testid="text-total-campaigns">
@@ -452,95 +357,48 @@ export default function ArsCampaigns() {
             </p>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">발송 성공률</CardTitle>
-            <Phone className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600" data-testid="text-success-rate">
-              {campaigns && (campaigns as any[]).length > 0 
-                ? Math.round(
-                    ((campaigns as any[]).reduce((sum: number, c: any) => sum + (c.successCount || 0), 0) /
-                    (campaigns as any[]).reduce((sum: number, c: any) => sum + (c.totalCount || 0), 1)) * 100
-                  )
-                : 0}%
-            </div>
-            <p className="text-xs text-muted-foreground">
-              전체 캠페인 평균
-            </p>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* 캠페인 기록 테이블 */}
+      {/* 캠페인 목록 */}
       <Card>
         <CardHeader>
           <CardTitle>캠페인 기록</CardTitle>
         </CardHeader>
         <CardContent>
           {campaignsLoading ? (
-            <div className="text-center py-4">로딩 중...</div>
+            <p>로딩 중...</p>
+          ) : !campaigns || (Array.isArray(campaigns) && campaigns.length === 0) ? (
+            <p className="text-muted-foreground text-center py-8">
+              아직 발송된 캠페인이 없습니다. 새 캠페인을 발송해보세요.
+            </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>캠페인명</TableHead>
-                  <TableHead>대상 수</TableHead>
-                  <TableHead>성공/실패</TableHead>
+                  <TableHead>발송일시</TableHead>
+                  <TableHead>총 발송</TableHead>
+                  <TableHead>성공</TableHead>
+                  <TableHead>실패</TableHead>
                   <TableHead>상태</TableHead>
-                  <TableHead>생성일</TableHead>
-                  <TableHead>작업</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(campaigns as any[])?.map((campaign) => (
-                  <TableRow key={campaign.id}>
-                    <TableCell className="font-medium" data-testid={`text-campaign-name-${campaign.id}`}>
-                      {campaign.name}
-                    </TableCell>
-                    <TableCell data-testid={`text-target-count-${campaign.id}`}>
-                      {campaign.totalCount || 0}
-                    </TableCell>
+                {Array.isArray(campaigns) && campaigns.map((campaign: any) => (
+                  <TableRow key={campaign.id} data-testid={`row-campaign-${campaign.id}`}>
+                    <TableCell className="font-medium">{campaign.name}</TableCell>
                     <TableCell>
-                      <div className="flex space-x-2">
-                        <Badge variant="outline" className="bg-green-50">
-                          <CheckCircle className="mr-1 h-3 w-3 text-green-600" />
-                          {campaign.successCount || 0}
-                        </Badge>
-                        <Badge variant="outline" className="bg-red-50">
-                          <XCircle className="mr-1 h-3 w-3 text-red-600" />
-                          {campaign.failedCount || 0}
-                        </Badge>
-                      </div>
+                      {campaign.createdAt ? new Date(campaign.createdAt).toLocaleString() : '-'}
                     </TableCell>
+                    <TableCell>{campaign.totalCount || 0}</TableCell>
+                    <TableCell className="text-green-600">{campaign.successCount || 0}</TableCell>
+                    <TableCell className="text-red-600">{campaign.failedCount || 0}</TableCell>
                     <TableCell>
-                      <Badge 
-                        className={getStatusColor(campaign.status)}
-                        data-testid={`badge-status-${campaign.id}`}
-                      >
-                        {getStatusText(campaign.status)}
+                      <Badge variant={campaign.status === 'completed' ? 'default' : campaign.status === 'failed' ? 'destructive' : 'secondary'}>
+                        {campaign.status === 'completed' ? '완료' : 
+                         campaign.status === 'failed' ? '실패' : 
+                         campaign.status === 'running' ? '진행중' : '대기'}
                       </Badge>
-                    </TableCell>
-                    <TableCell data-testid={`text-created-at-${campaign.id}`}>
-                      {new Date(campaign.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          if (campaign.historyKey) {
-                            setSelectedHistoryKey(campaign.historyKey);
-                            setShowDetailModal(true);
-                          }
-                        }}
-                        data-testid={`button-view-detail-${campaign.id}`}
-                        disabled={!campaign.historyKey}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -549,111 +407,6 @@ export default function ArsCampaigns() {
           )}
         </CardContent>
       </Card>
-
-      {/* 캠페인 상세 모달 */}
-      <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>캠페인 상세 결과</DialogTitle>
-            <DialogDescription>
-              {historyDetail?.campaignName && `캠페인: ${historyDetail.campaignName}`}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {historyDetailLoading ? (
-            <div className="text-center py-8">결과를 불러오는 중...</div>
-          ) : historyDetail ? (
-            <div className="space-y-6">
-              {/* 진행률 */}
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>진행률</span>
-                  <span>
-                    {historyDetail.completedCount} / {historyDetail.totalCount}
-                  </span>
-                </div>
-                <Progress 
-                  value={historyDetail.totalCount > 0 ? (historyDetail.completedCount / historyDetail.totalCount) * 100 : 0} 
-                  data-testid="progress-campaign"
-                />
-              </div>
-
-              {/* 결과 요약 */}
-              <div className="grid grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600" data-testid="text-detail-total">
-                    {historyDetail.totalCount}
-                  </div>
-                  <div className="text-sm text-muted-foreground">총 대상</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600" data-testid="text-detail-success">
-                    {historyDetail.successCount}
-                  </div>
-                  <div className="text-sm text-muted-foreground">성공</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600" data-testid="text-detail-failed">
-                    {historyDetail.failedCount}
-                  </div>
-                  <div className="text-sm text-muted-foreground">실패</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-yellow-600" data-testid="text-detail-pending">
-                    {historyDetail.pendingCount}
-                  </div>
-                  <div className="text-sm text-muted-foreground">대기중</div>
-                </div>
-              </div>
-
-              {/* 상세 리스트 */}
-              <div className="max-h-96 overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>고객명</TableHead>
-                      <TableHead>전화번호</TableHead>
-                      <TableHead>상태</TableHead>
-                      <TableHead>발송시간</TableHead>
-                      <TableHead>결과</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {historyDetail.items?.map((item: ArsHistoryItem) => (
-                      <TableRow key={item.id}>
-                        <TableCell data-testid={`text-customer-name-${item.id}`}>
-                          {item.customerName}
-                        </TableCell>
-                        <TableCell data-testid={`text-phone-${item.id}`}>
-                          {item.phone}
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            className={getStatusColor(item.status)}
-                            data-testid={`badge-item-status-${item.id}`}
-                          >
-                            {getStatusText(item.status)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell data-testid={`text-sent-at-${item.id}`}>
-                          {item.sentAt ? new Date(item.sentAt).toLocaleString() : '-'}
-                        </TableCell>
-                        <TableCell data-testid={`text-result-${item.id}`}>
-                          {item.result || '-'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              결과 데이터를 불러올 수 없습니다.
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
