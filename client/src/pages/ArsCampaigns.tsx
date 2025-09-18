@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Phone, Users, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock, Play, RotateCcw, TestTube, StopCircle } from "lucide-react";
+import { Phone, Users, TrendingUp, Send, RefreshCw, Eye, CheckCircle, XCircle, Clock } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -26,58 +28,57 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { arsCallListAddSchema, type ArsCallListAdd } from "@shared/schema";
 
-// 사용자 제안 솔루션에 따른 ARS 상태 타입 정의
-interface ArsState {
-  callListAdded: boolean;
-  campaignId: string | null;
-  totalTargets: number;
+interface ArsHistoryItem {
+  id: string;
+  customerId: string;
+  customerName: string;
+  phone: string;
+  status: string;
+  sentAt: string;
+  result: string;
+}
+
+interface ArsHistoryResult {
+  historyKey: string;
+  campaignName: string;
+  totalCount: number;
   successCount: number;
-  audioUploaded: boolean;
-  campaignStarted: boolean;
-  errorMessage: string | null;
+  failedCount: number;
+  completedCount: number;
+  pendingCount: number;
+  items: ArsHistoryItem[];
 }
 
 export default function ArsCampaigns() {
   const { toast } = useToast();
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
-  const [selectedCampaignIds, setSelectedCampaignIds] = useState<number[]>([]);
-  
-  // 사용자 제안에 따른 ARS 상태 관리 통합
-  const [arsState, setArsState] = useState<ArsState>({
-    callListAdded: false,
-    campaignId: null,
-    totalTargets: 0,
-    successCount: 0,
-    audioUploaded: false,
-    campaignStarted: false,
-    errorMessage: null,
-  });
-  
-  const [bulkCampaignData, setBulkCampaignData] = useState({
-    campaignName: "",
-    scenarioId: "", // 동적으로 첫 번째 시나리오로 설정
-    targetType: "all", // "all" 또는 "group"
-    groupId: "",
-    targetCount: 0,
-  });
+  const [selectedHistoryKey, setSelectedHistoryKey] = useState<string | null>(null);
 
-  // ARS 캠페인 목록 조회
-  const { data: campaigns, isLoading: campaignsLoading } = useQuery({
-    queryKey: ["/api/ars/campaigns"],
+  // 새로운 ARS 발송 폼
+  const form = useForm<ArsCallListAdd>({
+    resolver: zodResolver(arsCallListAddSchema),
+    defaultValues: {
+      campaignName: "",
+      page: "A",
+      phones: [],
+    },
   });
-
 
   // 마케팅 대상 고객 조회
   const { data: marketingTargets } = useQuery({
     queryKey: ["/api/ars/marketing-targets"],
-  });
-
-  // 시나리오 목록 조회
-  const { data: scenarios } = useQuery({
-    queryKey: ["/api/ars/scenarios"],
   });
 
   // 고객 그룹 목록 조회
@@ -85,158 +86,62 @@ export default function ArsCampaigns() {
     queryKey: ["/api/customer-groups"],
   });
 
-  // 선택된 그룹의 고객 수 조회
-  const { data: groupCustomers } = useQuery({
-    queryKey: [`/api/customer-groups/${bulkCampaignData.groupId}/customers`],
-    enabled: !!bulkCampaignData.groupId && bulkCampaignData.targetType === "group",
+  // 기존 캠페인 기록 조회 (참고용)
+  const { data: campaigns, isLoading: campaignsLoading } = useQuery({
+    queryKey: ["/api/ars/campaigns"],
   });
 
-  // 사용자 제안 솔루션에 따른 상태 초기화 함수
-  const initArsVariables = useCallback(() => {
-    setArsState({
-      callListAdded: false,
-      campaignId: null,
-      totalTargets: 0,
-      successCount: 0,
-      audioUploaded: false,
-      campaignStarted: false,
-      errorMessage: null,
-    });
-  }, []);
-  
-  // ARS 상태 업데이트를 위한 안전한 함수
-  const updateArsState = useCallback((updates: Partial<ArsState>) => {
-    setArsState(prev => ({ ...prev, ...updates }));
-  }, []);
-  
-  // 시나리오 로드 완료 시 첫 번째 시나리오로 자동 설정
-  useEffect(() => {
-    if (scenarios && (scenarios as any).length > 0 && !bulkCampaignData.scenarioId) {
-      setBulkCampaignData(prev => ({
-        ...prev,
-        scenarioId: (scenarios as any)[0].id
-      }));
-    }
-  }, [scenarios, bulkCampaignData.scenarioId]);
-
-
-
-  // 선택된 캠페인의 상세 정보 조회
-  const { data: campaignDetail, isLoading: campaignDetailLoading } = useQuery<{
-    id: number;
-    name: string;
-    totalCount: number;
-    successCount: number;
-    failedCount: number;
-    completedCount: number;
-    pendingCount: number;
-    status: string;
-  }>({
-    queryKey: [`/api/ars/campaigns/${selectedCampaign?.id}/detail`],
-    enabled: !!selectedCampaign?.id && showDetailModal,
+  // 선택된 historyKey의 상세 결과 조회
+  const { data: historyResponse, isLoading: historyDetailLoading } = useQuery<any>({
+    queryKey: ["/api/ars/calllist/history", selectedHistoryKey],
+    enabled: !!selectedHistoryKey && showDetailModal,
     refetchInterval: showDetailModal ? 5000 : false, // 5초마다 자동 갱신
   });
 
-  // 선택된 캠페인의 통화 기록 조회
-  const { data: campaignHistory } = useQuery<Array<{
-    id: number;
-    customerId: string;
-    customerName: string;
-    phone: string;
-    status: string;
-    sentAt: string;
-    result: string;
-  }>>({
-    queryKey: [`/api/ars/campaigns/${selectedCampaign?.id}/history`],
-    enabled: !!selectedCampaign?.id && showDetailModal,
-  });
+  // 백엔드 응답에서 실제 history data 추출 및 fallback 처리
+  const historyDetail: ArsHistoryResult | null = historyResponse?.data ? {
+    historyKey: (historyResponse as any).historyKey || '',
+    campaignName: (historyResponse as any).campaignName || '',
+    totalCount: (historyResponse as any).totalCount || 0,
+    successCount: (historyResponse as any).data?.successCount || 0,
+    failedCount: (historyResponse as any).data?.failedCount || 0,
+    completedCount: (historyResponse as any).data?.completedCount || 0,
+    pendingCount: (historyResponse as any).data?.pendingCount || 0,
+    items: Array.isArray((historyResponse as any).data?.items) ? (historyResponse as any).data.items : Array.isArray((historyResponse as any).data?.data) ? (historyResponse as any).data.data : []
+  } : null;
 
-  // 사용자 제안 솔루션에 따른 대량 ARS 발송 개선
-  const sendBulkArsMutation = useMutation({
-    mutationFn: async (data: {
-      customerIds?: string[];
-      groupId?: string;
-      campaignName: string;
-      scenarioId: string;
-    }) => {
-      // 발송 시작 시 상태 초기화
-      initArsVariables();
-      
-      try {
-        const rawResponse = await apiRequest("POST", "/api/ars/send-bulk", data);
-        
-        // Response 객체를 JSON으로 파싱
-        const response = rawResponse?.json ? await rawResponse.json() : rawResponse;
-        
-        // API 응답에서 안전하게 데이터 추출 (옵셔널 체이닝)
-        const campaignId = response?.campaignId || null;
-        const totalTargets = response?.totalTargets || 0;
-        const successCount = response?.successCount || 0;
-        const audioUploaded = response?.audioUploaded || false;
-        const campaignStarted = response?.campaignStarted || false;
-        
-        // 사용자 제안에 따른 변수 업데이트
-        updateArsState({
-          campaignId,
-          totalTargets,
-          successCount,
-          audioUploaded,
-          campaignStarted,
-          callListAdded: true,
-          errorMessage: null,
-        });
-        
-        return response;
-      } catch (error) {
-        // 에러 발생 시 상태 업데이트
-        updateArsState({
-          errorMessage: error instanceof Error ? error.message : '알 수 없는 오류',
-        });
-        throw error;
-      }
+  // 새로운 ARS 발송 API 호출
+  const sendArsMutation = useMutation({
+    mutationFn: async (data: ArsCallListAdd) => {
+      const response = await apiRequest("POST", "/api/ars/calllist/add", data);
+      return response.json();
     },
     onSuccess: (response: any) => {
-      // ARS 상태에서 안전하게 값 가져오기
-      const { totalTargets, successCount, audioUploaded, campaignStarted } = arsState;
-      
-      let description = `총 ${totalTargets}명 중 ${successCount}명 발송 성공`;
-      if (audioUploaded) {
-        description += ", 음성파일 업로드 완료";
-      }
-      if (campaignStarted) {
-        description += ", 캠페인 시작 완료";
-      }
-      
-      toast({
-        title: response?.success ? "발송 성공" : "발송 실패",
-        description: response?.message || description,
-        variant: response?.success ? "default" : "destructive",
-      });
-      
       if (response?.success) {
-        setShowBulkModal(false);
-        // 폼 데이터 초기화 시 안전한 시나리오 설정
-        setBulkCampaignData({
-          campaignName: "",
-          scenarioId: scenarios && (scenarios as any)?.length > 0 ? (scenarios as any)[0]?.id || "" : "",
-          targetType: "all",
-          groupId: "",
-          targetCount: 0,
+        toast({
+          title: "발송 성공",
+          description: `캠페인 '${response.campaignName || 'Unknown'}'이 성공적으로 발송되었습니다. (총 ${response.totalCount || 0}명)`,
         });
-        // 캠페인 성공 후 ARS 상태 초기화
-        initArsVariables();
+        
+        // 발송 성공 시 결과 조회를 위해 historyKey 저장
+        if (response.historyKey) {
+          setSelectedHistoryKey(response.historyKey);
+          setShowDetailModal(true);
+        }
+        
+        setShowBulkModal(false);
+        form.reset();
+      } else {
+        toast({
+          title: "발송 실패",
+          description: response?.message || "알 수 없는 오류가 발생했습니다.",
+          variant: "destructive",
+        });
       }
       
       queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
     },
     onError: (error: Error) => {
-      // 에러 발생 시 상태 복원 및 사용자 알림
-      updateArsState({
-        errorMessage: error.message,
-        callListAdded: false,
-        campaignStarted: false,
-      });
-      
       toast({
         title: "발송 오류",
         description: `ARS 발송 중 오류가 발생했습니다: ${error.message}`,
@@ -245,102 +150,22 @@ export default function ArsCampaigns() {
     },
   });
 
-  // ARS 결과 업데이트
-  const updateResultsMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/ars/update-results`);
-    },
-    onSuccess: () => {
-      toast({
-        title: "성공",
-        description: "ARS 발송 결과가 업데이트되었습니다.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "오류",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
+  // 대상 선택 상태
+  const [selectedTargetType, setSelectedTargetType] = useState<"all" | "group">("all");
+  const [selectedGroupId, setSelectedGroupId] = useState<string>("");
+
+  // 선택된 그룹의 고객 수 조회
+  const { data: groupCustomers } = useQuery({
+    queryKey: [`/api/customer-groups/${selectedGroupId}/customers`],
+    enabled: !!selectedGroupId && selectedTargetType === "group",
   });
 
-  // 캠페인 종료
-  const stopCampaignMutation = useMutation({
-    mutationFn: async (campaignId: number) => {
-      const response = await apiRequest("POST", `/api/ars/campaigns/${campaignId}/stop`);
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "캠페인 종료",
-        description: data.message,
-        variant: data.success ? "default" : "destructive",
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "오류",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleBulkSend = () => {
-    // 사용자 제안 솔루션에 따른 안전한 입력 검증
-    const campaignName = bulkCampaignData?.campaignName?.trim();
-    const scenarioId = bulkCampaignData?.scenarioId?.trim();
-    const targetType = bulkCampaignData?.targetType;
-    const groupId = bulkCampaignData?.groupId?.trim();
+  const handleSubmit = (data: ArsCallListAdd) => {
+    // 전화번호 배열 구성
+    let phones: string[] = [];
     
-    if (!campaignName) {
-      toast({
-        title: "입력 오류",
-        description: "캠페인명을 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!scenarioId) {
-      toast({
-        title: "시나리오 선택 필요",
-        description: "ARS 시나리오를 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (targetType === "group" && !groupId) {
-      toast({
-        title: "그룹 선택 필요",
-        description: "발송할 고객 그룹을 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 사용자 제안 솔루션에 따른 안전한 데이터 준비
-    const sendData: {
-      campaignName: string;
-      scenarioId: string;
-      groupId?: string;
-      customerIds?: string[];
-    } = {
-      campaignName,
-      scenarioId,
-    };
-
-    // targetType에 따라 정확히 하나의 필드만 설정 (옵셔널 체이닝 적용)
-    if (targetType === "group" && groupId) {
-      // 그룹 기반 발송 - groupId만 설정
-      sendData.groupId = groupId;
-      console.log(`[ARS] 그룹 기반 발송: ${groupId}`, sendData);
-    } else if (targetType === "all") {
-      // 전체 마케팅 동의 고객 - customerIds만 설정 (안전한 배열 처리)
+    if (selectedTargetType === "all") {
+      // 전체 마케팅 동의 고객
       const targets = (marketingTargets as any)?.targets;
       if (!Array.isArray(targets) || targets.length === 0) {
         toast({
@@ -350,82 +175,34 @@ export default function ArsCampaigns() {
         });
         return;
       }
-      // 안전한 customer ID 추출
-      const customerIds = targets
-        .map((customer: any) => customer?.id)
-        .filter(Boolean); // null/undefined 제거
-        
-      if (customerIds.length === 0) {
+      phones = targets.map((customer: any) => customer.phone).filter(Boolean);
+    } else if (selectedTargetType === "group" && selectedGroupId) {
+      // 선택된 그룹의 고객
+      const customers = groupCustomers as any;
+      if (!Array.isArray(customers) || customers.length === 0) {
         toast({
-          title: "대상 데이터 오류",
-          description: "유효한 고객 ID가 없습니다.",
+          title: "대상 없음",
+          description: "선택된 그룹에 고객이 없습니다.",
           variant: "destructive",
         });
         return;
       }
-      
-      sendData.customerIds = customerIds;
-      console.log(`[ARS] 전체 고객 발송: ${customerIds.length}명`, sendData);
-    } else {
+      phones = customers.map((customer: any) => customer.phone).filter(Boolean);
+    }
+
+    if (phones.length === 0) {
       toast({
-        title: "발송 대상 오류",
-        description: "발송 대상을 올바르게 선택해주세요.",
+        title: "대상 없음",
+        description: "발송할 대상의 전화번호가 없습니다.",
         variant: "destructive",
       });
       return;
     }
 
-    // 사용자 제안에 따른 강화된 검증 로직
-    const hasGroupId = Boolean(sendData.groupId);
-    const hasCustomerIds = Boolean(sendData.customerIds && sendData.customerIds.length > 0);
-    
-    // 검증: groupId와 customerIds가 동시에 설정되지 않았는지 확인
-    if (hasGroupId && hasCustomerIds) {
-      console.error("[ARS] 오류: groupId와 customerIds가 동시에 설정됨", sendData);
-      updateArsState({ errorMessage: "그룹 ID와 고객 ID가 동시에 설정됨" });
-      toast({
-        title: "설정 오류",
-        description: "시스템 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 검증: 최소 하나는 설정되어야 함
-    if (!hasGroupId && !hasCustomerIds) {
-      updateArsState({ errorMessage: "발송 대상이 선택되지 않음" });
-      toast({
-        title: "대상 선택 오류",
-        description: "발송 대상을 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // 발송 실행 전 상태 로깅 (디버깅용)
-    console.log(`[ARS] 발송 데이터 검증 완료:`, {
-      campaignName,
-      scenarioId,
-      targetType,
-      targetCount: hasGroupId ? 
-        (groupCustomers as any)?.length || 0 : 
-        (marketingTargets as any)?.count || 0
+    sendArsMutation.mutate({
+      ...data,
+      phones,
     });
-    
-    // 안전한 발송 실행
-    try {
-      sendBulkArsMutation.mutate(sendData);
-    } catch (error) {
-      console.error('[ARS] 발송 실행 중 예외 발생:', error);
-      updateArsState({ 
-        errorMessage: error instanceof Error ? error.message : '발송 실행 실패'
-      });
-    }
-  };
-
-  const handleViewCampaignDetail = (campaign: any) => {
-    setSelectedCampaign(campaign);
-    setShowDetailModal(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -446,397 +223,206 @@ export default function ArsCampaigns() {
     }
   };
 
-  // 캠페인 선택 관련 핸들러
-  const handleSelectCampaign = (campaignId: number, checked: boolean) => {
-    if (checked) {
-      setSelectedCampaignIds(prev => [...prev, campaignId]);
-    } else {
-      setSelectedCampaignIds(prev => prev.filter(id => id !== campaignId));
-    }
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedCampaignIds((campaigns as any[])?.map(c => c.id) || []);
-    } else {
-      setSelectedCampaignIds([]);
-    }
-  };
-
-  const isAllSelected = selectedCampaignIds.length > 0 && selectedCampaignIds.length === (campaigns as any[])?.length;
-  const isIndeterminate = selectedCampaignIds.length > 0 && selectedCampaignIds.length < ((campaigns as any[])?.length || 0);
-
-  // 선택된 캠페인 액션 뮤테이션들
-  const startSelectedCampaignsMutation = useMutation({
-    mutationFn: async (campaignIds: number[]) => {
-      return apiRequest("POST", "/api/ars/campaigns/start-multiple", { campaignIds });
-    },
-    onSuccess: () => {
-      toast({
-        title: "성공",
-        description: `${selectedCampaignIds.length}개 캠페인이 시작되었습니다.`,
-      });
-      setSelectedCampaignIds([]);
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "오류",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const resendSelectedCampaignsMutation = useMutation({
-    mutationFn: async (campaignIds: number[]) => {
-      try {
-        // 안전한 배열 검증
-        if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
-          throw new Error('재발송할 캠페인이 선택되지 않았습니다');
-        }
-        
-        // 유효한 ID만 필터링
-        const validIds = campaignIds.filter(id => id && id > 0);
-        if (validIds.length === 0) {
-          throw new Error('유효한 캠페인 ID가 없습니다');
-        }
-        
-        const rawResponse = await apiRequest("POST", "/api/ars/campaigns/resend-multiple", { 
-          campaignIds: validIds 
-        });
-        
-        // Response 객체를 JSON으로 파싱
-        const response = rawResponse?.json ? await rawResponse.json() : rawResponse;
-        
-        // 재발송 성공 시 상태 업데이트
-        if (response?.success) {
-          updateArsState({
-            errorMessage: null,
-            successCount: (response.successCount || 0) + (arsState.successCount || 0), // 기존 성공수에 추가
-            totalTargets: response.totalResendCount || arsState.totalTargets,
-          });
-        }
-        
-        return response;
-      } catch (error) {
-        updateArsState({
-          errorMessage: error instanceof Error ? error.message : '캠페인 재발송 실패',
-        });
-        throw error;
-      }
-    },
-    onSuccess: (response: any) => {
-      const successCount = response?.successCount || 0;
-      const totalResendCount = response?.totalResendCount || 0;
-      const isSuccess = response?.success !== false;
-      
-      toast({
-        title: isSuccess ? "재발송 완료" : "재발송 부분 실패",
-        description: isSuccess ? 
-          `${successCount}개 캠페인 재발송 완료, 총 ${totalResendCount}명에게 전송되었습니다.` :
-          `재발송 중 일부 실패: ${response?.message || '알 수 없는 오류'}`,
-        variant: isSuccess ? "default" : "destructive",
-      });
-      setSelectedCampaignIds([]);
-      queryClient.invalidateQueries({ queryKey: ["/api/ars/campaigns"] });
-    },
-    onError: (error: Error) => {
-      const errorMessage = error?.message || '알 수 없는 오류';
-      toast({
-        title: "재발송 실패",
-        description: `캠페인 재발송 중 문제가 발생했습니다: ${errorMessage}`,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const testSendMutation = useMutation({
-    mutationFn: async (campaignIds: number[]) => {
-      try {
-        // 안전한 배열 검증
-        if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
-          throw new Error('테스트할 캠페인이 선택되지 않았습니다');
-        }
-        
-        // 유효한 ID만 필터링
-        const validIds = campaignIds.filter(id => id && id > 0);
-        if (validIds.length === 0) {
-          throw new Error('유효한 캠페인 ID가 없습니다');
-        }
-        
-        const rawResponse = await apiRequest("POST", "/api/ars/campaigns/test-send", { 
-          campaignIds: validIds 
-        });
-        
-        // Response 객체를 JSON으로 파싱
-        const response = rawResponse?.json ? await rawResponse.json() : rawResponse;
-        
-        // 테스트 성공 시 상태 업데이트
-        if (response?.success) {
-          updateArsState({ 
-            errorMessage: null 
-          });
-        }
-        
-        return response;
-      } catch (error) {
-        updateArsState({
-          errorMessage: error instanceof Error ? error.message : '테스트 발송 실패',
-        });
-        throw error;
-      }
-    },
-    onSuccess: (response) => {
-      const message = response?.message || "테스트 발송이 완료되었습니다.";
-      toast({
-        title: "테스트 성공",
-        description: message,
-      });
-    },
-    onError: (error: Error) => {
-      const errorMessage = error?.message || '알 수 없는 오류';
-      toast({
-        title: "테스트 발송 오류",
-        description: `테스트 발송 중 문제가 발생했습니다: ${errorMessage}`,
-        variant: "destructive",
-      });
-    },
-  });
-
-  if (campaignsLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">캠페인 정보를 불러오는 중...</p>
-        </div>
-      </div>
-    );
-  }
+  const targetCount = selectedTargetType === "all" 
+    ? (marketingTargets as any)?.count || 0
+    : (groupCustomers as any)?.length || 0;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
+      {/* 헤더 */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">ARS 캠페인 관리</h1>
-          <p className="text-gray-600 mt-2">자동 전화 발송 캠페인을 관리하고 모니터링하세요</p>
+          <h1 className="text-3xl font-bold">ARS 캠페인</h1>
+          <p className="text-muted-foreground">ARS 발송 캠페인을 관리하고 실행합니다</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={() => updateResultsMutation.mutate()}
-            disabled={updateResultsMutation.isPending}
-            variant="outline"
-            data-testid="button-refresh-results"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            결과 업데이트
-          </Button>
-          
-          
-          <Dialog open={showBulkModal} onOpenChange={setShowBulkModal}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-create-campaign">
-                <Send className="h-4 w-4 mr-2" />
-                신규 캠페인
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>대량 ARS 발송</DialogTitle>
-                <DialogDescription>
-                  마케팅 동의 고객들에게 ARS를 발송합니다.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="campaignName">캠페인명</Label>
-                  <Input
-                    id="campaignName"
-                    placeholder="예: 2024년 12월 마케팅 캠페인"
-                    value={bulkCampaignData.campaignName}
-                    onChange={(e) =>
-                      setBulkCampaignData(prev => ({
-                        ...prev,
-                        campaignName: e.target.value,
-                      }))
-                    }
-                    data-testid="input-campaign-name"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="text-sm text-gray-600 p-3 bg-gray-50 rounded-md">
-                    <strong>발신번호:</strong> 1660-2426 (고정)
-                  </div>
-                </div>
+        <Dialog open={showBulkModal} onOpenChange={setShowBulkModal}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-create-campaign">
+              <Send className="mr-2 h-4 w-4" />
+              새 캠페인 발송
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>ARS 캠페인 발송</DialogTitle>
+              <DialogDescription>
+                캠페인명을 입력하고 발송 대상을 선택하여 ARS를 발송하세요.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                {/* 캠페인명 입력 */}
+                <FormField
+                  control={form.control}
+                  name="campaignName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>캠페인명 *</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="아톡비즈에서 생성된 캠페인명을 입력하세요" 
+                          data-testid="input-campaign-name"
+                          {...field} 
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        아톡비즈에서 미리 생성된 캠페인명을 정확히 입력해주세요.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-                <div className="space-y-2">
-                  <Label htmlFor="scenario">시나리오</Label>
-                  <Select
-                    value={bulkCampaignData.scenarioId}
-                    onValueChange={(value) =>
-                      setBulkCampaignData(prev => ({
-                        ...prev,
-                        scenarioId: value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger data-testid="select-scenario">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(scenarios as any)?.map((scenario: any) => (
-                        <SelectItem key={scenario.id} value={scenario.id}>
-                          <div className="flex flex-col space-y-1">
-                            <span className="font-medium">{scenario.name}</span>
-                            {scenario.description && (
-                              <span className="text-xs text-gray-500">{scenario.description}</span>
-                            )}
-                            {scenario.audioFileUrl && (
-                              <span className="text-xs text-blue-600 flex items-center">
-                                <Phone className="h-3 w-3 mr-1" />
-                                음성파일 연결됨
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  
-                  {/* 선택된 시나리오 정보 표시 */}
-                  {bulkCampaignData.scenarioId && (scenarios as any)?.find((s: any) => s.id === bulkCampaignData.scenarioId) && (
-                    <div className="mt-2 p-3 bg-green-50 rounded-md border border-green-200">
-                      {(() => {
-                        const selectedScenario = (scenarios as any).find((s: any) => s.id === bulkCampaignData.scenarioId);
-                        return (
-                          <div>
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                                <span className="text-sm font-medium text-green-800">
-                                  {selectedScenario.name}
-                                </span>
-                              </div>
-                              {selectedScenario.audioFileUrl && (
-                                <Badge variant="outline" className="text-green-700 border-green-300">
-                                  <Phone className="h-3 w-3 mr-1" />
-                                  음성 연동
-                                </Badge>
-                              )}
-                            </div>
-                            {selectedScenario.description && (
-                              <p className="text-xs text-green-600 mt-1">
-                                {selectedScenario.description}
-                              </p>
-                            )}
-                            {selectedScenario.audioFileUrl && (
-                              <p className="text-xs text-green-600 mt-1">
-                                음성파일이 자동으로 업로드됩니다.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })()}
+                {/* Page 필드 */}
+                <FormField
+                  control={form.control}
+                  name="page"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>페이지</FormLabel>
+                      <FormControl>
+                        <Input 
+                          placeholder="A" 
+                          data-testid="input-page"
+                          {...field} 
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        기본값: A
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* 발송 대상 선택 */}
+                <div className="space-y-4">
+                  <Label>발송 대상 선택</Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="target-all"
+                        checked={selectedTargetType === "all"}
+                        onCheckedChange={() => setSelectedTargetType("all")}
+                        data-testid="checkbox-target-all"
+                      />
+                      <Label htmlFor="target-all" className="flex items-center space-x-2">
+                        <Users className="h-4 w-4" />
+                        <span>전체 마케팅 동의 고객</span>
+                        <Badge variant="secondary" data-testid="badge-all-count">
+                          {(marketingTargets as any)?.count || 0}명
+                        </Badge>
+                      </Label>
                     </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>발송 대상</Label>
-                  <Select
-                    value={bulkCampaignData.targetType}
-                    onValueChange={(value) =>
-                      setBulkCampaignData(prev => ({
-                        ...prev,
-                        targetType: value,
-                        groupId: value === "all" ? "" : prev.groupId,
-                      }))
-                    }
-                  >
-                    <SelectTrigger data-testid="select-target-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">전체 마케팅 동의 고객</SelectItem>
-                      <SelectItem value="group">특정 고객 그룹</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {bulkCampaignData.targetType === "group" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="group">고객 그룹</Label>
-                    <Select
-                      value={bulkCampaignData.groupId}
-                      onValueChange={(value) =>
-                        setBulkCampaignData(prev => ({
-                          ...prev,
-                          groupId: value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger data-testid="select-customer-group">
-                        <SelectValue placeholder="그룹을 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(customerGroups as any)?.map((group: any) => (
-                          <SelectItem key={group.id} value={group.id}>
-                            <div className="flex items-center space-x-2">
-                              <div
-                                className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: group.color }}
-                              ></div>
-                              <span>{group.name}</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="target-group"
+                        checked={selectedTargetType === "group"}
+                        onCheckedChange={() => setSelectedTargetType("group")}
+                        data-testid="checkbox-target-group"
+                      />
+                      <Label htmlFor="target-group" className="flex items-center space-x-2">
+                        <TrendingUp className="h-4 w-4" />
+                        <span>특정 고객 그룹</span>
+                      </Label>
+                    </div>
+                    
+                    {selectedTargetType === "group" && (
+                      <div className="ml-6">
+                        <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
+                          <SelectTrigger data-testid="select-customer-group">
+                            <SelectValue placeholder="고객 그룹을 선택하세요" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(customerGroups as any[])?.map((group) => (
+                              <SelectItem key={group.id} value={group.id}>
+                                <div className="flex items-center space-x-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: group.color }}
+                                  />
+                                  <span>{group.name}</span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {selectedGroupId && (
+                          <Badge variant="outline" className="mt-2" data-testid="badge-group-count">
+                            선택된 그룹: {(groupCustomers as any)?.length || 0}명
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <Users className="h-4 w-4 inline mr-1" />
-                    발송 대상: {
-                      bulkCampaignData.targetType === "group" 
-                        ? (groupCustomers as any)?.length || 0
-                        : (marketingTargets as any)?.count || 0
-                    }명
-                  </p>
-                  {bulkCampaignData.targetType === "group" && bulkCampaignData.groupId && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      선택된 그룹: {(customerGroups as any)?.find((g: any) => g.id === bulkCampaignData.groupId)?.name}
-                    </p>
-                  )}
                 </div>
 
-                <div className="flex justify-end gap-2">
+                {/* 발송 요약 */}
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Phone className="h-4 w-4" />
+                        <span>발송 대상</span>
+                      </div>
+                      <Badge data-testid="badge-target-count">{targetCount}명</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* 발송 버튼 */}
+                <div className="flex justify-end space-x-2">
                   <Button 
+                    type="button" 
                     variant="outline" 
                     onClick={() => setShowBulkModal(false)}
                     data-testid="button-cancel"
                   >
                     취소
                   </Button>
-                  <Button
-                    onClick={handleBulkSend}
-                    disabled={sendBulkArsMutation.isPending}
-                    data-testid="button-send-bulk"
+                  <Button 
+                    type="submit" 
+                    disabled={sendArsMutation.isPending || targetCount === 0}
+                    data-testid="button-send"
                   >
-                    {sendBulkArsMutation.isPending ? "발송 중..." : "발송 시작"}
+                    {sendArsMutation.isPending ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                        발송 중...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="mr-2 h-4 w-4" />
+                        발송 시작
+                      </>
+                    )}
                   </Button>
                 </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      {/* 캠페인 통계 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {/* 통계 카드 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">마케팅 동의 고객</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-marketing-targets">
+              {(marketingTargets as any)?.count || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              ARS 발송 가능 대상
+            </p>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">총 캠페인</CardTitle>
@@ -846,487 +432,226 @@ export default function ArsCampaigns() {
             <div className="text-2xl font-bold" data-testid="text-total-campaigns">
               {(campaigns as any[])?.length || 0}
             </div>
-            <p className="text-xs text-muted-foreground">전체 생성된 캠페인 수</p>
+            <p className="text-xs text-muted-foreground">
+              생성된 캠페인 수
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">마케팅 대상</CardTitle>
+            <CardTitle className="text-sm font-medium">고객 그룹</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-marketing-targets">
-              {(marketingTargets as any)?.count || 0}
+            <div className="text-2xl font-bold" data-testid="text-customer-groups">
+              {(customerGroups as any[])?.length || 0}
             </div>
-            <p className="text-xs text-muted-foreground">마케팅 동의 고객</p>
+            <p className="text-xs text-muted-foreground">
+              생성된 그룹 수
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">이번 달 발송</CardTitle>
+            <CardTitle className="text-sm font-medium">발송 성공률</CardTitle>
             <Phone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-monthly-sends">
-              {(campaigns as any[])?.filter((c: any) => {
-                const campaignDate = new Date(c.createdAt);
-                const currentDate = new Date();
-                return campaignDate.getMonth() === currentDate.getMonth() &&
-                       campaignDate.getFullYear() === currentDate.getFullYear();
-              }).length || 0}
+            <div className="text-2xl font-bold text-green-600" data-testid="text-success-rate">
+              {campaigns && (campaigns as any[]).length > 0 
+                ? Math.round(
+                    ((campaigns as any[]).reduce((sum: number, c: any) => sum + (c.successCount || 0), 0) /
+                    (campaigns as any[]).reduce((sum: number, c: any) => sum + (c.totalCount || 0), 1)) * 100
+                  )
+                : 0}%
             </div>
-            <p className="text-xs text-muted-foreground">이번 달 진행한 캠페인</p>
+            <p className="text-xs text-muted-foreground">
+              전체 캠페인 평균
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* 캠페인 목록 테이블 */}
-      <div className="grid grid-cols-12 gap-6">
-        {/* 캠페인 목록 */}
-        <div className="col-span-12">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex justify-between items-center">
-                <CardTitle className="text-lg">캠페인 목록</CardTitle>
-                <div className="text-sm text-gray-500">
-                  {selectedCampaignIds.length > 0 && (
-                    <span className="mr-4" data-testid="text-selected-count">
-                      선택됨: {selectedCampaignIds.length}개
-                    </span>
-                  )}
-                  총 {(campaigns as any[])?.length || 0}개
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {!(campaigns as any[])?.length ? (
-                <div className="text-center py-12">
-                  <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600">아직 생성된 캠페인이 없습니다.</p>
-                  <p className="text-sm text-gray-500 mt-1">신규 캠페인 버튼을 클릭하여 첫 캠페인을 만들어보세요.</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gray-100 border-b-2 border-gray-200">
-                      <TableHead className="w-12 h-10 font-semibold text-gray-700 text-center">
-                        <Checkbox
-                          checked={isAllSelected}
-                          onCheckedChange={handleSelectAll}
-                          data-testid="checkbox-select-all"
-                          className="data-[state=indeterminate]:bg-blue-600 data-[state=indeterminate]:text-white"
-                          {...(isIndeterminate ? { 'data-state': 'indeterminate' } : {})}
-                        />
-                      </TableHead>
-                      <TableHead className="min-w-[200px] h-10 font-semibold text-gray-700">캠페인이름</TableHead>
-                      <TableHead className="w-[100px] h-10 font-semibold text-gray-700 text-center">상태</TableHead>
-                      <TableHead className="w-[100px] h-10 font-semibold text-gray-700 text-center">전화수(건)</TableHead>
-                      <TableHead className="w-[80px] h-10 font-semibold text-gray-700 text-center">발송</TableHead>
-                      <TableHead className="w-[120px] h-10 font-semibold text-gray-700 text-center">진행율</TableHead>
-                      <TableHead className="w-[100px] h-10 font-semibold text-gray-700 text-center">작업</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(campaigns as any[])?.map((campaign: any) => {
-                      const isSelected = selectedCampaignIds.includes(campaign.id);
-                      const completionRate = campaign.totalCount > 0 ? 
-                        ((campaign.completedCount || 0) / campaign.totalCount) * 100 : 0;
-                      
-                      return (
-                        <TableRow 
-                          key={campaign.id} 
-                          className={`hover:bg-gray-50/50 border-b border-gray-100 h-12 ${isSelected ? 'bg-blue-50/50 border-blue-200' : ''}`}
-                          data-testid={`row-campaign-${campaign.id}`}
-                        >
-                          <TableCell>
-                            <Checkbox
-                              checked={isSelected}
-                              onCheckedChange={(checked) => handleSelectCampaign(campaign.id, checked as boolean)}
-                              data-testid={`checkbox-campaign-${campaign.id}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="font-medium text-gray-900" data-testid={`text-campaign-name-${campaign.id}`}>
-                                {campaign.name}
-                              </div>
-                              <div className="text-xs text-gray-500" data-testid={`text-campaign-date-${campaign.id}`}>
-                                {new Date(campaign.createdAt).toLocaleDateString('ko-KR')} 생성
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={campaign.status === 'completed' ? 'default' : 
-                                      campaign.status === 'stopped' ? 'destructive' : 
-                                      campaign.status === 'sent' ? 'secondary' : 'outline'} 
-                              data-testid={`badge-campaign-status-${campaign.id}`}
-                              className="text-xs"
-                            >
-                              {campaign.status === 'completed' ? '완료' : 
-                               campaign.status === 'stopped' ? '중단됨' : 
-                               campaign.status === 'sent' ? '발송중' : '대기'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-center" data-testid={`text-campaign-targets-${campaign.id}`}>
-                            <div className="font-medium">{campaign.targetCount}</div>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <div className="text-sm font-medium text-gray-600">
-                              {campaign.sentCount || 0}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <Progress 
-                                value={completionRate} 
-                                className="h-2"
-                                data-testid={`progress-campaign-${campaign.id}`}
-                              />
-                              <div className="text-xs text-center text-gray-600">
-                                {Math.round(completionRate)}%
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleViewCampaignDetail(campaign)}
-                                data-testid={`button-view-campaign-${campaign.id}`}
-                                className="h-7 px-2 text-xs"
-                              >
-                                <Eye className="h-3 w-3" />
-                              </Button>
-                              {(campaign.status === 'sent' || campaign.status === 'pending') && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (confirm(`캠페인 "${campaign.name}"을(를) 종료하시겠습니까?`)) {
-                                      stopCampaignMutation.mutate(campaign.id);
-                                    }
-                                  }}
-                                  disabled={stopCampaignMutation.isPending}
-                                  className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  data-testid={`button-stop-campaign-${campaign.id}`}
-                                >
-                                  <StopCircle className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* 하단 액션 버튼 그룹 */}
-      <Card className="mt-6">
-        <CardContent className="py-4">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-gray-600">
-              {selectedCampaignIds.length > 0 ? (
-                <span data-testid="text-action-info">
-                  {selectedCampaignIds.length}개 캠페인이 선택되었습니다.
-                </span>
-              ) : (
-                <span>캠페인을 선택하여 일괄 작업을 수행하세요.</span>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (selectedCampaignIds.length === 0) {
-                    toast({
-                      title: "선택 필요",
-                      description: "테스트 발송할 캠페인을 선택해주세요.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  testSendMutation.mutate(selectedCampaignIds);
-                }}
-                disabled={testSendMutation.isPending}
-                data-testid="button-test-send"
-              >
-                <TestTube className="h-4 w-4 mr-2" />
-                {testSendMutation.isPending ? "테스트 중..." : "테스트발송"}
-              </Button>
-              <Button
-                onClick={() => {
-                  if (selectedCampaignIds.length === 0) {
-                    toast({
-                      title: "선택 필요",
-                      description: "시작할 캠페인을 선택해주세요.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  if (confirm(`선택된 ${selectedCampaignIds.length}개 캠페인을 시작하시겠습니까?`)) {
-                    startSelectedCampaignsMutation.mutate(selectedCampaignIds);
-                  }
-                }}
-                disabled={startSelectedCampaignsMutation.isPending}
-                data-testid="button-start-campaigns"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                {startSelectedCampaignsMutation.isPending ? "시작 중..." : "캠페인시작"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (selectedCampaignIds.length === 0) {
-                    toast({
-                      title: "선택 필요",
-                      description: "재발송할 캠페인을 선택해주세요.",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
-                  if (confirm(`선택된 ${selectedCampaignIds.length}개 캠페인을 재발송하시겠습니까?`)) {
-                    resendSelectedCampaignsMutation.mutate(selectedCampaignIds);
-                  }
-                }}
-                disabled={resendSelectedCampaignsMutation.isPending}
-                data-testid="button-resend-campaigns"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                {resendSelectedCampaignsMutation.isPending ? "재발송 중..." : "재발송"}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  // 선택 해제
-                  setSelectedCampaignIds([]);
-                  toast({
-                    title: "선택 해제",
-                    description: "모든 캠페인 선택이 해제되었습니다.",
-                  });
-                }}
-                data-testid="button-clear-selection"
-              >
-                선택해제
-              </Button>
-            </div>
-          </div>
+      {/* 캠페인 기록 테이블 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>캠페인 기록</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {campaignsLoading ? (
+            <div className="text-center py-4">로딩 중...</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>캠페인명</TableHead>
+                  <TableHead>대상 수</TableHead>
+                  <TableHead>성공/실패</TableHead>
+                  <TableHead>상태</TableHead>
+                  <TableHead>생성일</TableHead>
+                  <TableHead>작업</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(campaigns as any[])?.map((campaign) => (
+                  <TableRow key={campaign.id}>
+                    <TableCell className="font-medium" data-testid={`text-campaign-name-${campaign.id}`}>
+                      {campaign.name}
+                    </TableCell>
+                    <TableCell data-testid={`text-target-count-${campaign.id}`}>
+                      {campaign.totalCount || 0}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Badge variant="outline" className="bg-green-50">
+                          <CheckCircle className="mr-1 h-3 w-3 text-green-600" />
+                          {campaign.successCount || 0}
+                        </Badge>
+                        <Badge variant="outline" className="bg-red-50">
+                          <XCircle className="mr-1 h-3 w-3 text-red-600" />
+                          {campaign.failedCount || 0}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge 
+                        className={getStatusColor(campaign.status)}
+                        data-testid={`badge-status-${campaign.id}`}
+                      >
+                        {getStatusText(campaign.status)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell data-testid={`text-created-at-${campaign.id}`}>
+                      {new Date(campaign.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          if (campaign.historyKey) {
+                            setSelectedHistoryKey(campaign.historyKey);
+                            setShowDetailModal(true);
+                          }
+                        }}
+                        data-testid={`button-view-detail-${campaign.id}`}
+                        disabled={!campaign.historyKey}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
-      {/* 캠페인 상세보기 모달 */}
+      {/* 캠페인 상세 모달 */}
       <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Eye className="h-5 w-5" />
-              캠페인 상세보기: {selectedCampaign?.name}
-            </DialogTitle>
+            <DialogTitle>캠페인 상세 결과</DialogTitle>
             <DialogDescription>
-              캠페인의 실시간 진행 상황과 발송 결과를 확인할 수 있습니다.
+              {historyDetail?.campaignName && `캠페인: ${historyDetail.campaignName}`}
             </DialogDescription>
           </DialogHeader>
+          
+          {historyDetailLoading ? (
+            <div className="text-center py-8">결과를 불러오는 중...</div>
+          ) : historyDetail ? (
+            <div className="space-y-6">
+              {/* 진행률 */}
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>진행률</span>
+                  <span>
+                    {historyDetail.completedCount} / {historyDetail.totalCount}
+                  </span>
+                </div>
+                <Progress 
+                  value={historyDetail.totalCount > 0 ? (historyDetail.completedCount / historyDetail.totalCount) * 100 : 0} 
+                  data-testid="progress-campaign"
+                />
+              </div>
 
-          {campaignDetailLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <span className="ml-2">상세 정보를 불러오는 중...</span>
+              {/* 결과 요약 */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600" data-testid="text-detail-total">
+                    {historyDetail.totalCount}
+                  </div>
+                  <div className="text-sm text-muted-foreground">총 대상</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600" data-testid="text-detail-success">
+                    {historyDetail.successCount}
+                  </div>
+                  <div className="text-sm text-muted-foreground">성공</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600" data-testid="text-detail-failed">
+                    {historyDetail.failedCount}
+                  </div>
+                  <div className="text-sm text-muted-foreground">실패</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-yellow-600" data-testid="text-detail-pending">
+                    {historyDetail.pendingCount}
+                  </div>
+                  <div className="text-sm text-muted-foreground">대기중</div>
+                </div>
+              </div>
+
+              {/* 상세 리스트 */}
+              <div className="max-h-96 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>고객명</TableHead>
+                      <TableHead>전화번호</TableHead>
+                      <TableHead>상태</TableHead>
+                      <TableHead>발송시간</TableHead>
+                      <TableHead>결과</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historyDetail.items?.map((item: ArsHistoryItem) => (
+                      <TableRow key={item.id}>
+                        <TableCell data-testid={`text-customer-name-${item.id}`}>
+                          {item.customerName}
+                        </TableCell>
+                        <TableCell data-testid={`text-phone-${item.id}`}>
+                          {item.phone}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            className={getStatusColor(item.status)}
+                            data-testid={`badge-item-status-${item.id}`}
+                          >
+                            {getStatusText(item.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell data-testid={`text-sent-at-${item.id}`}>
+                          {item.sentAt ? new Date(item.sentAt).toLocaleString() : '-'}
+                        </TableCell>
+                        <TableCell data-testid={`text-result-${item.id}`}>
+                          {item.result || '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* 캠페인 기본 정보 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">캠페인 정보</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">캠페인명</Label>
-                      <p className="font-semibold">{selectedCampaign?.name}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">상태</Label>
-                      <Badge 
-                        variant={selectedCampaign?.status === 'completed' ? 'default' : 
-                                selectedCampaign?.status === 'stopped' ? 'destructive' : 'secondary'}
-                      >
-                        {selectedCampaign?.status === 'completed' ? '완료' : 
-                         selectedCampaign?.status === 'stopped' ? '중단됨' : 
-                         selectedCampaign?.status === 'sent' ? '발송중' : '진행중'}
-                      </Badge>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">시나리오</Label>
-                      <p>{selectedCampaign?.scenarioId}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">발신번호</Label>
-                      <p>{selectedCampaign?.sendNumber || '1660-2426'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">생성일시</Label>
-                      <p>{selectedCampaign?.createdAt ? new Date(selectedCampaign.createdAt).toLocaleString('ko-KR') : '-'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-sm font-medium text-gray-500">대상 고객</Label>
-                      <p>{selectedCampaign?.targetCount || 0}명</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 실시간 진행 상황 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5" />
-                    실시간 진행 상황
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {campaignDetail ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">전체 진행률</span>
-                        <span className="text-sm font-medium">
-                          {campaignDetail.completedCount || 0} / {campaignDetail.totalCount || 0}
-                        </span>
-                      </div>
-                      <Progress 
-                        value={campaignDetail.totalCount > 0 ? 
-                          (campaignDetail.completedCount / campaignDetail.totalCount) * 100 : 0} 
-                        className="h-3"
-                      />
-                      
-                      <div className="grid grid-cols-3 gap-4 mt-4">
-                        <div className="text-center">
-                          <div className="flex items-center justify-center mb-2">
-                            <CheckCircle className="h-5 w-5 text-green-500 mr-1" />
-                            <span className="font-medium text-green-700">성공</span>
-                          </div>
-                          <p className="text-2xl font-bold text-green-600">
-                            {campaignDetail.successCount || 0}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <div className="flex items-center justify-center mb-2">
-                            <XCircle className="h-5 w-5 text-red-500 mr-1" />
-                            <span className="font-medium text-red-700">실패</span>
-                          </div>
-                          <p className="text-2xl font-bold text-red-600">
-                            {campaignDetail.failedCount || 0}
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <div className="flex items-center justify-center mb-2">
-                            <Clock className="h-5 w-5 text-yellow-500 mr-1" />
-                            <span className="font-medium text-yellow-700">대기중</span>
-                          </div>
-                          <p className="text-2xl font-bold text-yellow-600">
-                            {campaignDetail.pendingCount || 0}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-gray-500">
-                      진행 상황 정보를 불러올 수 없습니다.
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* 발송 기록 상세 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>발송 기록</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {campaignHistory && campaignHistory.length > 0 ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>고객명</TableHead>
-                          <TableHead>전화번호</TableHead>
-                          <TableHead>상태</TableHead>
-                          <TableHead>발송시간</TableHead>
-                          <TableHead>결과</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {campaignHistory.map((record: any, index: number) => (
-                          <TableRow key={index}>
-                            <TableCell className="font-medium">
-                              {record.customerName || '-'}
-                            </TableCell>
-                            <TableCell>{record.phone || '-'}</TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={`${getStatusColor(record.status)} text-white`}
-                              >
-                                {getStatusText(record.status)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              {record.sentAt ? new Date(record.sentAt).toLocaleString('ko-KR') : '-'}
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {record.status === 'failed' || record.status === 'no_answer' ? (
-                                <div className="text-red-600">
-                                  <div className="font-medium">실패</div>
-                                  <div className="text-xs text-red-500 mt-1">
-                                    {record.errorMessage || '상세한 실패 사유를 확인할 수 없습니다'}
-                                  </div>
-                                </div>
-                              ) : record.status === 'success' ? (
-                                <div className="text-green-600">
-                                  <div className="font-medium">성공</div>
-                                  {record.dtmfInput && (
-                                    <div className="text-xs text-green-500 mt-1">
-                                      {record.dtmfInput === '1' ? '마케팅 동의' : 
-                                       record.dtmfInput === '2' ? '마케팅 거부' : '응답 완료'}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-gray-500">{record.result || '-'}</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <Phone className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                      <p>발송 기록이 없습니다.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+            <div className="text-center py-8 text-muted-foreground">
+              결과 데이터를 불러올 수 없습니다.
             </div>
           )}
-
-          <div className="flex justify-end pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowDetailModal(false)}
-              data-testid="button-close-detail"
-            >
-              닫기
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
     </div>

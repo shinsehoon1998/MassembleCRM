@@ -46,8 +46,13 @@ export const getQueryFn: <T>(options: {
         url += '?' + searchParams.toString();
       }
     } else if (queryKey.length > 1) {
-      // For simple path segments like ["/api/customers", id]
-      url = queryKey.join("/");
+      // Special handling for ARS history API with historyKey parameter
+      if (url === '/api/ars/calllist/history' && typeof queryKey[1] === 'string') {
+        url += `?historyKey=${encodeURIComponent(queryKey[1])}&page=A`;
+      } else {
+        // For simple path segments like ["/api/customers", id]
+        url = queryKey.join("/");
+      }
     }
 
     const res = await fetch(url, {

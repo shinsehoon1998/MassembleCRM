@@ -385,6 +385,17 @@ export const insertCustomerGroupMappingSchema = createInsertSchema(customerGroup
   createdAt: true,
 });
 
+// 새로운 ARS API 스키마
+export const arsCallListAddSchema = z.object({
+  campaignName: z.string().min(1, "캠페인명을 입력해주세요"),
+  page: z.string().default("A"),
+  phones: z.array(z.string()).min(1, "발송할 전화번호가 필요합니다"),
+});
+
+export const arsCallListHistorySchema = z.object({
+  historyKey: z.string().min(1, "히스토리 키가 필요합니다"),
+});
+
 // ARS 타입 정의
 export type ArsCampaign = typeof arsCampaigns.$inferSelect;
 export type InsertArsCampaign = z.infer<typeof insertArsCampaignSchema>;
@@ -394,6 +405,10 @@ export type ArsScenario = typeof arsScenarios.$inferSelect;
 export type InsertArsScenario = z.infer<typeof insertArsScenarioSchema>;
 export type AudioFile = typeof audioFiles.$inferSelect;
 export type InsertAudioFile = z.infer<typeof insertAudioFileSchema>;
+
+// 새로운 ARS API 타입
+export type ArsCallListAdd = z.infer<typeof arsCallListAddSchema>;
+export type ArsCallListHistory = z.infer<typeof arsCallListHistorySchema>;
 
 // 고객 그룹 타입 정의
 export type CustomerGroup = typeof customerGroups.$inferSelect;

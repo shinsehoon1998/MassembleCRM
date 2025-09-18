@@ -1627,6 +1627,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: result.success,
         message: result.message,
         historyKey: result.historyKey,
+        campaignName, // 프론트엔드가 기대하는 필드
+        totalCount: phoneList.length, // 프론트엔드가 기대하는 필드 (총 발송 대상 수)
         addedCount: result.success ? phoneList.length : 0,
         failedCount: result.success ? 0 : phoneList.length,
         requestId
@@ -1648,27 +1650,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // 2. POST /api/ars/calllist/history - 발송 이력 조회 (신규)
-  app.post('/api/ars/calllist/history', isAuthenticated, async (req: any, res) => {
+  // History 조회 공통 로직
+  const handleHistoryRequest = async (req: any, res: any, historyKey: string, campaignName?: string, page?: string) => {
     const requestId = generateRequestId();
     
     try {
-      // 요청 검증
-      const validation = callListHistorySchema.safeParse(req.body);
-      if (!validation.success) {
-        secureLog(LogLevel.WARNING, 'ARS_HISTORY', '발송 이력 조회 요청 검증 실패', {
-          errors: validation.error.errors
-        }, requestId);
-        
-        return res.status(400).json({
-          success: false,
-          message: '요청 데이터가 올바르지 않습니다.',
-          details: validation.error.errors[0]?.message
-        });
-      }
-
-      const { historyKey, campaignName, page } = validation.data;
-
       secureLog(LogLevel.INFO, 'ARS_HISTORY', '발송 이력 조회 요청', {
         historyKey,
         campaignName,
@@ -1677,22 +1663,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }, requestId);
 
       // getCallHistory 함수 호출
-      const historyData = await atalkArsService.getCallHistory(historyKey, campaignName, page || 'A');
+      const historyData = await atalkArsService.getCallHistory(historyKey, campaignName || '', page || 'A');
 
       // 활동 로그 기록
       await storage.createActivityLog({
         userId: req.user.id,
         customerId: null,
         action: "ars_history_viewed",
-        description: `캠페인 "${campaignName}" 발송 이력 조회 (historyKey: ${historyKey})`,
+        description: `캠페인 "${campaignName || 'Unknown'}" 발송 이력 조회 (historyKey: ${historyKey})`,
       });
+
+      // totalCount 계산 (historyData에서 안전하게 추출)
+      let totalCount = 0;
+      if (historyData) {
+        const data = historyData as any;
+        if (Array.isArray(data.items)) {
+          totalCount = data.items.length;
+        } else if (typeof data.totalCount === 'number') {
+          totalCount = data.totalCount;
+        } else if (Array.isArray(data.data)) {
+          totalCount = data.data.length;
+        } else if (Array.isArray(data)) {
+          totalCount = data.length;
+        }
+      }
 
       res.json({
         success: true,
         message: '발송 이력을 성공적으로 조회했습니다.',
         data: historyData,
         historyKey,
-        campaignName,
+        campaignName: campaignName || '',
+        totalCount,
         requestId
       });
 
@@ -1707,6 +1709,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestId
       });
     }
+  };
+
+  // 2-1. GET /api/ars/calllist/history?historyKey=... - 발송 이력 조회 (신규, GET 방식)
+  app.get('/api/ars/calllist/history', isAuthenticated, async (req: any, res) => {
+    const historyKey = req.query.historyKey as string;
+    const campaignName = req.query.campaignName as string;
+    const page = req.query.page as string;
+
+    if (!historyKey) {
+      return res.status(400).json({
+        success: false,
+        message: '히스토리 키가 필요합니다.',
+      });
+    }
+
+    await handleHistoryRequest(req, res, historyKey, campaignName, page);
+  });
+
+  // 2-2. POST /api/ars/calllist/history - 발송 이력 조회 (기존 방식 유지)
+  app.post('/api/ars/calllist/history', isAuthenticated, async (req: any, res) => {
+    // 요청 검증
+    const validation = callListHistorySchema.safeParse(req.body);
+    if (!validation.success) {
+      const requestId = generateRequestId();
+      secureLog(LogLevel.WARNING, 'ARS_HISTORY', '발송 이력 조회 요청 검증 실패', {
+        errors: validation.error.errors
+      }, requestId);
+      
+      return res.status(400).json({
+        success: false,
+        message: '요청 데이터가 올바르지 않습니다.',
+        details: validation.error.errors[0]?.message
+      });
+    }
+
+    const { historyKey, campaignName, page } = validation.data;
+    await handleHistoryRequest(req, res, historyKey, campaignName, page);
   });
 
 
@@ -1837,7 +1876,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: result.message,
         campaignName,
         historyKey: result.historyKey,
-        totalTargets: customerPhones.length,
+        totalCount: customerPhones.length, // 프론트엔드가 기대하는 필드명으로 통일
+        totalTargets: customerPhones.length, // 기존 호환성 유지
         addedCount: result.success ? customerPhones.length : 0,
         failedCount: result.success ? 0 : customerPhones.length,
         requestId
