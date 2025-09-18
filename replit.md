@@ -1,6 +1,6 @@
 # Overview
 
-This is a Customer Relationship Management (CRM) system built specifically for personal bankruptcy consultation services (개인회생 상담). The application provides a comprehensive platform for managing customer information, consultation processes, and administrative tasks in a Korean business context.
+This is a Customer Relationship Management (CRM) system (고객관리시스템). The application provides a comprehensive platform for managing customer information, consultation processes, and administrative tasks in a Korean business context.
 
 The system features a modern web interface built with React and TypeScript on the frontend, with a Node.js/Express backend utilizing PostgreSQL for data persistence. It's designed to handle the complete customer lifecycle from initial intake through consultation completion.
 

@@ -23,7 +23,7 @@ export default function Landing() {
               <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-3xl font-bold text-gray-900">마셈블 CRM</h1>
-            <p className="text-gray-600 mt-2">개인회생 상담 관리 시스템</p>
+            <p className="text-gray-600 mt-2">고객관리시스템</p>
           </div>
           
           <div className="space-y-6">
@@ -73,7 +73,7 @@ export default function Landing() {
           
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
-              개인회생 상담 전문 CRM 시스템
+              고객관리시스템
             </p>
           </div>
         </CardContent>

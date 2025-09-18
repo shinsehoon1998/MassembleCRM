@@ -70,7 +70,7 @@ export default function Login() {
             MassembleCRM
           </CardTitle>
           <p className="text-gray-600">
-            개인회생 상담 관리 시스템
+            고객관리시스템
           </p>
         </CardHeader>
         

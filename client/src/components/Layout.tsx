@@ -105,7 +105,7 @@ export default function Layout({ children }: LayoutProps) {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">마셈블 CRM</h1>
-              <p className="text-xs text-gray-300">개인회생·파산 상담 관리 시스템</p>
+              <p className="text-xs text-gray-300">고객관리시스템</p>
             </div>
           </div>
         </div>
