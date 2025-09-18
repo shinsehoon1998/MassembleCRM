@@ -391,17 +391,8 @@ export const arsCallListAddSchema = z.object({
   page: z.string().default("A"),
   phones: z.array(z.string()).optional(),
   phone: z.string().optional()
-}).refine((data) => {
-  const hasPhones = data.phones && data.phones.length > 0;
-  const hasPhone = data.phone && data.phone.trim() !== '';
-  
-  if (!hasPhones && !hasPhone) {
-    return false;
-  }
-  return true;
-}, {
-  message: "전화번호(phone) 또는 전화번호 목록(phones) 중 하나는 반드시 제공되어야 합니다.",
 });
+// 참고: 전화번호 검증은 UI에서 handleSubmit 함수에서 수행됩니다
 
 export const arsCallListHistorySchema = z.object({
   historyKey: z.string().min(1, "히스토리 키가 필요합니다"),
