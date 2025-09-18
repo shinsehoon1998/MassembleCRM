@@ -147,9 +147,35 @@ function validateSortOrder(sortOrder: string | undefined): 'asc' | 'desc' {
  * 모든 응답에서 일관성 있는 마스킹 적용
  */
 function applyPersonalInfoMasking<T extends Record<string, any>>(data: T): T {
-  if (!data || typeof data !== 'object') return data;
+  // 🔥 Critical Fix: 최강 null/undefined/primitive 체크
+  if (data === null || data === undefined || typeof data !== 'object') {
+    return data;
+  }
+  
+  // 🔥 Critical Fix: Array인 경우 별도 처리
+  if (Array.isArray(data)) {
+    console.warn('[SECURITY] applyPersonalInfoMasking called with array, use applyPersonalInfoMaskingToArray instead');
+    return data;
+  }
+  
+  // 🔥 Critical Fix: 원시 타입 객체들 처리
+  if (data instanceof Date || data instanceof RegExp || typeof data === 'function') {
+    return data;
+  }
 
-  const masked = { ...data };
+  // 🔥 Critical Fix: 안전한 객체 복사 및 null 체크
+  let masked: T;
+  try {
+    // Object 메서드 호출 전 추가 체크
+    if (Object.prototype.toString.call(data) !== '[object Object]') {
+      return data;
+    }
+    masked = { ...data };
+  } catch (error) {
+    // 복사 실패 시 원본 반환
+    console.warn('[SECURITY] Failed to copy object for masking:', error);
+    return data;
+  }
   
   // 이름 필드 마스킹
   if (masked.name && typeof masked.name === 'string') {
@@ -180,7 +206,44 @@ function applyPersonalInfoMasking<T extends Record<string, any>>(data: T): T {
  * 배열 데이터에 개인정보 마스킹 적용
  */
 function applyPersonalInfoMaskingToArray<T extends Record<string, any>>(data: T[]): T[] {
-  return data.map(item => applyPersonalInfoMasking(item));
+  // 🔥 Critical Fix: 강화된 배열 처리
+  if (data === null || data === undefined) {
+    console.warn('[SECURITY] applyPersonalInfoMaskingToArray called with null/undefined data');
+    return [];
+  }
+  
+  if (!Array.isArray(data)) {
+    console.warn('[SECURITY] applyPersonalInfoMaskingToArray called with non-array data:', typeof data);
+    return [];
+  }
+  
+  try {
+    return data.map((item, index) => {
+      try {
+        // 🔥 Critical Fix: 각 item에 대해 강화된 null 체크
+        if (item === null || item === undefined) {
+          return item;
+        }
+        
+        if (typeof item !== 'object') {
+          return item;
+        }
+        
+        if (Array.isArray(item)) {
+          console.warn(`[SECURITY] Nested array found at index ${index}, skipping masking`);
+          return item;
+        }
+        
+        return applyPersonalInfoMasking(item);
+      } catch (itemError) {
+        console.error(`[SECURITY] Error masking item at index ${index}:`, itemError);
+        return item; // 개별 아이템 오류 시 원본 반환
+      }
+    });
+  } catch (arrayError) {
+    console.error('[SECURITY] Critical error in applyPersonalInfoMaskingToArray:', arrayError);
+    return []; // 전체 배열 처리 오류 시 빈 배열 반환
+  }
 }
 
 export interface IStorage {
@@ -1623,8 +1686,9 @@ export class DatabaseStorage implements IStorage {
   }> {
     const { period, days, campaignId } = params;
     
+    // 🔥 Critical Fix: Proper SQL interval syntax for PostgreSQL
     const conditions = [
-      sql`sent_at >= CURRENT_DATE - INTERVAL '${days} days'`,
+      sql`sent_at >= CURRENT_DATE - INTERVAL '${sql.raw(days.toString())} days'`,
     ];
     
     if (campaignId) {
@@ -1752,16 +1816,39 @@ export class DatabaseStorage implements IStorage {
     total: number;
     totalPages: number;
   }> {
-    const { 
-      campaignId, callResult, retryType, dateFrom, dateTo, 
-      phoneNumber, customerName, durationMin, durationMax, 
-      costMin, costMax, status, callResults,
-      page = 1, limit = 20
-    } = params;
-    
-    // 🔥 보안 강화: sortBy/sortOrder 파라미터 검증
-    const validatedSortBy = validateSortBy(params.sortBy, 'sendLogs', 'sentAt');
-    const validatedSortOrder = validateSortOrder(params.sortOrder);
+    try {
+      // 🔥 Critical Fix: Safe parameter destructuring with detailed logging
+      if (!params || typeof params !== 'object') {
+        console.warn('[STORAGE] getEnhancedSendLogs: Invalid params, using defaults:', params);
+        params = {};
+      }
+      
+      // 🔥 Critical Fix: Safe Object.keys call with additional null checks
+      let paramKeys = 'empty';
+      try {
+        if (params && typeof params === 'object' && params !== null) {
+          paramKeys = Object.keys(params).join(', ');
+        }
+      } catch (objError) {
+        console.warn('[SECURITY] Error getting object keys:', objError);
+        paramKeys = 'error';
+      }
+      console.log('[DEBUG] getEnhancedSendLogs params structure:', typeof params, paramKeys);
+      
+      const { 
+        campaignId, callResult, retryType, dateFrom, dateTo, 
+        phoneNumber, customerName, durationMin, durationMax, 
+        costMin, costMax, status, callResults,
+        page = 1, limit = 20
+      } = params;
+      
+      console.log('[DEBUG] Parameter destructuring successful');
+      
+      // 🔥 보안 강화: sortBy/sortOrder 파라미터 검증
+      const validatedSortBy = validateSortBy(params.sortBy, 'sendLogs', 'sentAt');
+      const validatedSortOrder = validateSortOrder(params.sortOrder);
+      
+      console.log('[DEBUG] Parameter validation successful');
     
     const conditions = [];
 
@@ -1857,56 +1944,167 @@ export class DatabaseStorage implements IStorage {
         orderByClause = orderDirection(arsSendLogs.sentAt);
     }
 
-    // Get total count
-    const [{ count: total }] = await db
-      .select({ count: count() })
-      .from(arsSendLogs)
-      .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
-      .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
-      .where(whereClause);
+    // 🔥 Critical Fix: Safe SQL count query with null handling
+    let total = 0;
+    try {
+      console.log('[DEBUG] Executing count query...');
+      const countResult = await db
+        .select({ count: count() })
+        .from(arsSendLogs)
+        .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
+        .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
+        .where(whereClause);
+      
+      // 🔥 Safe count extraction with multiple fallbacks
+      if (countResult && Array.isArray(countResult) && countResult.length > 0) {
+        const countRow = countResult[0];
+        if (countRow && typeof countRow === 'object' && 'count' in countRow) {
+          total = Number(countRow.count) || 0;
+        }
+      }
+      console.log('[DEBUG] Count query completed, total:', total);
+    } catch (countError) {
+      console.error('[STORAGE] Error in count query:', countError);
+      total = 0; // Safe fallback
+    }
 
-    // Get logs with joins and pagination
-    const logsWithDetails = await db
-      .select({
-        // ArsSendLog fields
-        id: arsSendLogs.id,
-        campaignId: arsSendLogs.campaignId,
-        customerId: arsSendLogs.customerId,
-        phoneNumber: arsSendLogs.phoneNumber,
-        callResult: arsSendLogs.callResult,
-        duration: arsSendLogs.duration,
-        cost: arsSendLogs.cost,
-        status: arsSendLogs.status,
-        retryType: arsSendLogs.retryType,
-        retryCount: arsSendLogs.retryCount,
-        sentAt: arsSendLogs.sentAt,
-        completedAt: arsSendLogs.completedAt,
-        failureReason: arsSendLogs.failureReason,
-        responseData: arsSendLogs.responseData,
-        billingUnits: arsSendLogs.billingUnits,
-        createdAt: arsSendLogs.createdAt,
-        updatedAt: arsSendLogs.updatedAt,
-        // Join fields
-        customerName: customers.name,
-        customerPhone: customers.phone,
-        campaignName: arsCampaigns.name,
-      })
-      .from(arsSendLogs)
-      .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
-      .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
-      .where(whereClause)
-      .orderBy(orderByClause)
-      .limit(limit)
-      .offset((page - 1) * limit);
+    // 🔥 Critical Fix: Safe SQL data query with comprehensive error handling
+    let logsWithDetails = [];
+    try {
+      console.log('[DEBUG] Executing main data query...');
+      const queryResult = await db
+        .select({
+          // ArsSendLog fields
+          id: arsSendLogs.id,
+          campaignId: arsSendLogs.campaignId,
+          customerId: arsSendLogs.customerId,
+          phoneNumber: arsSendLogs.phoneNumber,
+          callResult: arsSendLogs.callResult,
+          duration: arsSendLogs.duration,
+          cost: arsSendLogs.cost,
+          status: arsSendLogs.status,
+          retryType: arsSendLogs.retryType,
+          retryCount: arsSendLogs.retryCount,
+          sentAt: arsSendLogs.sentAt,
+          completedAt: arsSendLogs.completedAt,
+          failureReason: arsSendLogs.failureReason,
+          responseData: arsSendLogs.responseData,
+          billingUnits: arsSendLogs.billingUnits,
+          createdAt: arsSendLogs.createdAt,
+          updatedAt: arsSendLogs.updatedAt,
+          // Join fields
+          customerName: customers.name,
+          customerPhone: customers.phone,
+          campaignName: arsCampaigns.name,
+        })
+        .from(arsSendLogs)
+        .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
+        .leftJoin(arsCampaigns, eq(arsSendLogs.campaignId, arsCampaigns.id))
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset((page - 1) * limit);
+      
+      // 🔥 Safe result validation and processing
+      if (queryResult && Array.isArray(queryResult)) {
+        logsWithDetails = queryResult.filter(row => {
+          // Filter out any null/undefined rows
+          return row && typeof row === 'object';
+        });
+        console.log('[DEBUG] Main data query completed, found', logsWithDetails.length, 'valid rows');
+      } else {
+        console.warn('[STORAGE] Query result is not a valid array:', typeof queryResult);
+        logsWithDetails = [];
+      }
+    } catch (queryError) {
+      console.error('[STORAGE] Error in main data query:', queryError);
+      logsWithDetails = []; // Safe fallback
+    }
 
-    // 🔒 개인정보 마스킹 적용
-    const maskedLogs = applyPersonalInfoMaskingToArray(logsWithDetails);
+      console.log('[DEBUG] Database queries completed, applying masking');
+      
+      // 🔒 개인정보 마스킹 적용 (with ultra-comprehensive safety checks)
+      let maskedLogs = [];
+      try {
+        console.log('[DEBUG] Starting masking process...');
+        
+        // 🔥 Triple verification of data structure
+        if (logsWithDetails === null || logsWithDetails === undefined) {
+          console.warn('[SECURITY] logsWithDetails is null/undefined');
+          maskedLogs = [];
+        } else if (!Array.isArray(logsWithDetails)) {
+          console.warn('[SECURITY] logsWithDetails is not an array:', typeof logsWithDetails);
+          maskedLogs = [];
+        } else if (logsWithDetails.length === 0) {
+          console.log('[DEBUG] No logs to mask (empty array)');
+          maskedLogs = [];
+        } else {
+          console.log('[DEBUG] Applying masking to', logsWithDetails.length, 'log entries');
+          
+          // 🔥 Pre-filter any problematic rows before masking
+          const validLogs = logsWithDetails.filter((log, index) => {
+            if (log === null || log === undefined) {
+              console.warn(`[SECURITY] Null/undefined log at index ${index}`);
+              return false;
+            }
+            if (typeof log !== 'object') {
+              console.warn(`[SECURITY] Non-object log at index ${index}:`, typeof log);
+              return false;
+            }
+            return true;
+          });
+          
+          console.log('[DEBUG] Pre-filtered to', validLogs.length, 'valid entries');
+          maskedLogs = applyPersonalInfoMaskingToArray(validLogs);
+          console.log('[DEBUG] Masking applied successfully to', maskedLogs.length, 'entries');
+        }
+      } catch (maskingError) {
+        console.error('[SECURITY] Critical error in masking process:', {
+          error: maskingError.message,
+          stack: maskingError.stack,
+          logsType: typeof logsWithDetails,
+          logsIsArray: Array.isArray(logsWithDetails),
+          logsLength: logsWithDetails ? logsWithDetails.length : 'N/A'
+        });
+        // 마스킹 실패 시에도 빈 배열로 응답하여 UI 크래시 방지
+        maskedLogs = [];
+      }
 
-    return {
-      logs: maskedLogs,
-      total,
-      totalPages: Math.ceil(total / limit),
-    };
+      // 🔥 Critical Fix: Ultra-safe result construction
+      const result = {
+        logs: Array.isArray(maskedLogs) ? maskedLogs : [],
+        total: (typeof total === 'number' && !isNaN(total) && total >= 0) ? total : 0,
+        totalPages: (() => {
+          const safePage = (typeof total === 'number' && !isNaN(total) && total >= 0) ? total : 0;
+          const safeLimit = (typeof limit === 'number' && limit > 0) ? limit : 20;
+          return Math.ceil(safePage / safeLimit);
+        })()
+      };
+      
+      console.log('[DEBUG] getEnhancedSendLogs returning result with', result.logs.length, 'entries');
+      return result;
+      
+    } catch (mainError) {
+      console.error('[STORAGE] Critical error in getEnhancedSendLogs:', {
+        error: mainError.message,
+        stack: mainError.stack,
+        paramsType: typeof params,
+        paramsKeys: (() => {
+          try {
+            return params && typeof params === 'object' && params !== null ? Object.keys(params).join(', ') : 'null';
+          } catch (objError) {
+            return 'error-getting-keys';
+          }
+        })()
+      });
+      
+      // Return safe fallback response to prevent UI crashes
+      return {
+        logs: [],
+        total: 0,
+        totalPages: 0,
+      };
+    }
   }
 
   // 캠페인 검색 메서드

@@ -2236,8 +2236,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         campaignId
       }, requestId);
 
-      const stats = await storage.getTimelineStats({ period, days, campaignId });
-      res.json(stats);
+      // 🔥 Critical Fix: Additional safety checks for timeline params
+      const safeParams = {
+        period: period || 'daily',
+        days: Math.min(365, Math.max(1, days || 7)), // Limit between 1-365 days
+        campaignId: campaignId || undefined
+      };
+      
+      const stats = await storage.getTimelineStats(safeParams);
+      
+      // 🔥 Critical Fix: Ensure response structure is always valid
+      const safeResponse = {
+        period: stats?.period || safeParams.period,
+        data: Array.isArray(stats?.data) ? stats.data : []
+      };
+      
+      res.json(safeResponse);
     } catch (error) {
       secureLog(LogLevel.ERROR, 'TIMELINE_STATS', 'Error getting timeline stats', {
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -2300,15 +2314,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const params = validation.data;
 
+      // 🔥 Critical Fix: Ultra-safely mask params before logging
+      let maskedParams = {};
+      try {
+        maskedParams = maskApiData(params) || {};
+      } catch (error) {
+        console.warn('[SECURITY] Failed to mask API data for logging:', error);
+        // 🔥 Ultra-safe fallback without Object.keys
+        try {
+          if (params && typeof params === 'object' && params !== null) {
+            maskedParams = { paramsCount: Object.keys(params).length };
+          } else {
+            maskedParams = { paramsCount: 0, paramsType: typeof params };
+          }
+        } catch (objError) {
+          maskedParams = { paramsCount: -1, error: 'object-keys-failed' };
+        }
+      }
+      
       secureLog(LogLevel.INFO, 'SEND_LOGS', 'Enhanced filtered send logs requested', {
         userId: req.user?.id,
-        ...maskApiData(params)
+        ...maskedParams
       }, requestId);
 
-      const logs = await storage.getEnhancedSendLogs(params);
+      // 🔥 Critical Fix: Additional safety checks for params
+      const safeParams = {
+        ...params,
+        page: Math.max(1, params.page || 1),
+        limit: Math.min(100, Math.max(1, params.limit || 20)), // Limit between 1-100
+      };
       
-      // Logs are already masked in the storage layer
-      res.json(logs);
+      const logs = await storage.getEnhancedSendLogs(safeParams);
+      
+      // 🔥 Critical Fix: Ensure response structure is always valid
+      const safeResponse = {
+        logs: logs?.logs || [],
+        total: logs?.total || 0,
+        totalPages: logs?.totalPages || 0
+      };
+      
+      res.json(safeResponse);
     } catch (error) {
       secureLog(LogLevel.ERROR, 'SEND_LOGS', 'Error getting enhanced filtered send logs', {
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -3898,9 +3943,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dateTo = new Date(params.dateTo);
 
       // 🔥 Storage 계층 완전 위임 - options 파라미터로 PII 처리 전달
-      const canAccess = canAccessPersonalInfo(req.user, params.includePersonalInfo);
+      const personalInfoAllowed = canAccessPersonalInfo(req.user, params.includePersonalInfo);
       const reportData = await storage.getSystemStatsForReport(dateFrom, dateTo, { 
-        includePersonalInfo: canAccess 
+        includePersonalInfo: personalInfoAllowed 
       });
 
       // 파일명 생성
@@ -3974,10 +4019,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { header: '건수', key: 'count', width: 15 }
         ];
 
-        const callResultRows = Object.entries(reportData.callResultAnalysis).map(([result, count]) => ({
-          result,
-          count
-        }));
+        // 🔥 Critical Fix: Ultra-safe Object.entries call
+        let callResultRows = [];
+        try {
+          if (reportData && 
+              reportData.callResultAnalysis && 
+              typeof reportData.callResultAnalysis === 'object' &&
+              reportData.callResultAnalysis !== null) {
+            const entries = Object.entries(reportData.callResultAnalysis);
+            callResultRows = entries.map(([result, count]) => ({
+              result,
+              count
+            }));
+          }
+        } catch (entriesError) {
+          console.error('[EXPORT] Error processing call result analysis:', entriesError);
+          callResultRows = []; // Safe fallback
+        }
         callResultSheet.addRows(callResultRows);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

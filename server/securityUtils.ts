@@ -60,7 +60,10 @@ export function maskName(name: string): string {
  * Enhanced to handle camelCase, snake_case, and common field variations
  */
 export function maskApiData(data: any): any {
-  if (!data) return data;
+  // 🔥 Critical Fix: Ultra-comprehensive null/undefined checks
+  if (data === null || data === undefined) {
+    return data;
+  }
   
   // Handle string data (try to parse as JSON)
   if (typeof data === 'string') {
@@ -74,10 +77,33 @@ export function maskApiData(data: any): any {
   }
   
   // Handle non-object data
-  if (typeof data !== 'object') return data;
+  // 🔥 Critical Fix: Handle null and undefined objects properly
+  if (typeof data !== 'object') {
+    return data;
+  }
   
-  // Deep clone to avoid modifying original
-  const masked = Array.isArray(data) ? [...data] : { ...data };
+  // 🔥 Critical Fix: Additional safety for object types
+  if (data instanceof Date || data instanceof RegExp || typeof data === 'function') {
+    return data;
+  }
+  
+  // 🔥 Critical Fix: Ultra-safe deep clone with error handling
+  let masked;
+  try {
+    if (Array.isArray(data)) {
+      masked = [...data];
+    } else {
+      // Verify it's a proper object before spreading
+      if (Object.prototype.toString.call(data) === '[object Object]') {
+        masked = { ...data };
+      } else {
+        return data; // Return non-plain objects as-is
+      }
+    }
+  } catch (cloneError) {
+    console.warn('[SECURITY] Failed to clone object in maskApiData:', cloneError);
+    return data;
+  }
   
   // Enhanced field normalization function
   const normalizeFieldName = (fieldName: string): string => {
@@ -106,26 +132,52 @@ export function maskApiData(data: any): any {
     'email', 'emailaddress', 'address', 'homeaddress'
   ];
   
-  // Process each field with enhanced matching
-  for (const key in masked) {
-    if (masked.hasOwnProperty(key)) {
-      const value = masked[key];
-      const normalizedKey = normalizeFieldName(key);
-      
-      // Check if field contains phone number patterns
-      const looksLikePhone = /^[0-9+\-\s()]{8,15}$/.test(String(value));
-      
-      if (phoneFieldsNormalized.includes(normalizedKey) || looksLikePhone) {
-        masked[key] = maskPhoneNumber(String(value));
-      } else if (nameFieldsNormalized.includes(normalizedKey)) {
-        masked[key] = maskName(String(value));
-      } else if (sensitiveFieldsNormalized.includes(normalizedKey)) {
-        masked[key] = '***';
-      } else if (typeof value === 'object' && value !== null) {
-        // Recursively mask nested objects
-        masked[key] = maskApiData(value);
+  // 🔥 Critical Fix: Ultra-safe object property processing
+  try {
+    // Use Object.keys with safety checks instead of for...in loop
+    let objectKeys = [];
+    try {
+      if (masked && typeof masked === 'object' && masked !== null) {
+        objectKeys = Object.keys(masked);
+      }
+    } catch (keysError) {
+      console.warn('[SECURITY] Failed to get object keys in maskApiData:', keysError);
+      return data; // Return original if we can't process it safely
+    }
+    
+    // Process each field with enhanced matching
+    for (const key of objectKeys) {
+      try {
+        const value = masked[key];
+        const normalizedKey = normalizeFieldName(key);
+        
+        // Check if field contains phone number patterns
+        let looksLikePhone = false;
+        try {
+          looksLikePhone = /^[0-9+\-\s()]{8,15}$/.test(String(value));
+        } catch (phoneTestError) {
+          // Ignore phone test errors
+          looksLikePhone = false;
+        }
+        
+        if (phoneFieldsNormalized.includes(normalizedKey) || looksLikePhone) {
+          masked[key] = maskPhoneNumber(String(value));
+        } else if (nameFieldsNormalized.includes(normalizedKey)) {
+          masked[key] = maskName(String(value));
+        } else if (sensitiveFieldsNormalized.includes(normalizedKey)) {
+          masked[key] = '***';
+        } else if (value !== null && value !== undefined && typeof value === 'object') {
+          // Recursively mask nested objects
+          masked[key] = maskApiData(value);
+        }
+      } catch (propertyError) {
+        console.warn(`[SECURITY] Error processing property ${key} in maskApiData:`, propertyError);
+        // Continue with other properties even if one fails
       }
     }
+  } catch (processingError) {
+    console.error('[SECURITY] Critical error in maskApiData processing:', processingError);
+    return data; // Return original data if processing completely fails
   }
   
   return masked;

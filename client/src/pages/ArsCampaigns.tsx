@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -7,11 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Phone, Users, Send, RefreshCw } from "lucide-react";
+import { Phone, Users, Send, RefreshCw, BarChart3, Download, Filter, Search } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -38,15 +40,42 @@ import {
 } from "@/components/ui/form";
 import { arsCallListAddSchema, type ArsCallListAdd } from "@shared/schema";
 
+// 새로 만든 컴포넌트들 import
+import CampaignStatsChart from "@/components/CampaignStatsChart";
+import CampaignFilters, { type CampaignFiltersValue } from "@/components/CampaignFilters";
+import CampaignSearch from "@/components/CampaignSearch";
+import SendLogsTable from "@/components/SendLogsTable";
+import { useAuth } from "@/hooks/useAuth";
+
 export default function ArsCampaigns() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
+  const [activeTab, setActiveTab] = useState("results");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  
+  // 필터링 상태 관리
+  const [filters, setFilters] = useState<CampaignFiltersValue>({
+    dateFrom: undefined,
+    dateTo: undefined,
+    campaignIds: undefined,
+    campaignStatus: undefined,
+    callResults: undefined,
+    retryTypes: undefined,
+    customerGroupIds: undefined,
+    durationMin: undefined,
+    durationMax: undefined,
+    costMin: undefined,
+    costMax: undefined,
+    phoneNumber: undefined,
+    customerName: undefined
+  });
 
   // 새로운 ARS 발송 폼
   const form = useForm<ArsCallListAdd>({
     resolver: zodResolver(arsCallListAddSchema),
     defaultValues: {
-      campaignName: "",  // 사용자가 자유롭게 입력 가능
+      campaignName: "",
       page: "A",
       phones: [],
     },
@@ -111,6 +140,10 @@ export default function ArsCampaigns() {
     enabled: !!selectedGroupId && selectedTargetType === "group",
   });
 
+  // 권한 확인
+  const canExport = user?.role === 'admin' || user?.role === 'manager';
+  const canViewAdvanced = user?.role === 'admin' || user?.role === 'manager';
+
   const handleSubmit = (data: ArsCallListAdd) => {
     // 캠페인명 검증
     if (!data.campaignName?.trim()) {
@@ -121,7 +154,6 @@ export default function ArsCampaigns() {
       });
       return;
     }
-    
     
     // 전화번호 배열 구성
     let phones: string[] = [];
@@ -172,262 +204,473 @@ export default function ArsCampaigns() {
     ? (marketingTargets as any)?.targets?.length || 0
     : (Array.isArray(groupCustomers) ? groupCustomers.length : 0);
 
+  // 필터 리셋 함수
+  const handleResetFilters = () => {
+    setFilters({
+      dateFrom: undefined,
+      dateTo: undefined,
+      campaignIds: undefined,
+      campaignStatus: undefined,
+      callResults: undefined,
+      retryTypes: undefined,
+      customerGroupIds: undefined,
+      durationMin: undefined,
+      durationMax: undefined,
+      costMin: undefined,
+      costMax: undefined,
+      phoneNumber: undefined,
+      customerName: undefined
+    });
+  };
+
+  // 검색 결과 처리
+  const handleSearchSelect = (result: any) => {
+    if (result.type === 'campaign') {
+      setSelectedCampaignId(result.id);
+      setFilters(prev => ({ ...prev, campaignIds: [result.id] }));
+    } else if (result.type === 'customer') {
+      setFilters(prev => ({ ...prev, customerName: result.title }));
+    } else if (result.type === 'sendLog') {
+      // 발송기록 선택시 해당 캠페인으로 필터링
+      setFilters(prev => ({ ...prev, campaignIds: [result.campaignId] }));
+    }
+  };
+
+  // CSV 다운로드
+  const downloadCsv = useMutation({
+    mutationFn: async (filters: CampaignFiltersValue) => {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          if (Array.isArray(value)) {
+            value.forEach(v => params.append(key, v.toString()));
+          } else {
+            params.append(key, value.toString());
+          }
+        }
+      });
+      const response = await apiRequest('GET', `/api/ars/send-logs/export/csv?${params.toString()}`);
+      return response.blob();
+    },
+    onSuccess: (blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ars-send-logs-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({
+        title: "다운로드 완료",
+        description: "발송 로그 CSV 파일이 다운로드되었습니다.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "다운로드 실패",
+        description: `CSV 다운로드 중 오류가 발생했습니다: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Excel 다운로드
+  const downloadExcel = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('GET', '/api/ars/campaigns/export/excel');
+      return response.blob();
+    },
+    onSuccess: (blob) => {
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ars-campaigns-${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast({
+        title: "다운로드 완료",
+        description: "캠페인 통계 Excel 파일이 다운로드되었습니다.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "다운로드 실패",
+        description: `Excel 다운로드 중 오류가 발생했습니다: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
 
   return (
     <div className="space-y-6">
       {/* 헤더 */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">ARS 캠페인</h1>
-          <p className="text-muted-foreground">ARS 발송 캠페인을 관리하고 실행합니다</p>
+          <h1 className="text-3xl font-bold">ARS 캠페인 관리</h1>
+          <p className="text-muted-foreground">ARS 캠페인 결과를 조회하고 새로운 캠페인을 발송합니다</p>
         </div>
-        <Dialog open={showModal} onOpenChange={setShowModal}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-create-campaign">
-              <Send className="mr-2 h-4 w-4" />
-              새 캠페인 발송
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>ARS 캠페인 발송</DialogTitle>
-              <DialogDescription>
-                캠페인명을 입력하고 발송 대상을 선택하여 ARS를 발송하세요.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-                {/* 캠페인명 입력 */}
-                <FormField
-                  control={form.control}
-                  name="campaignName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>캠페인명 *</FormLabel>
-                      <FormControl>
-                        <Input 
-                          placeholder="ATALK에서 생성한 캠페인명을 입력하세요" 
-                          data-testid="input-campaign-name"
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        ATALK에서 생성한 캠페인명을 입력하세요. 모든 캠페인명을 사용할 수 있습니다.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* 발송 대상 선택 */}
-                <div className="space-y-4">
-                  <Label>발송 대상 선택</Label>
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="target-all"
-                        checked={selectedTargetType === "all"}
-                        onCheckedChange={() => setSelectedTargetType("all")}
-                        data-testid="checkbox-target-all"
-                      />
-                      <Label htmlFor="target-all" className="flex items-center space-x-2">
-                        <Users className="h-4 w-4" />
-                        <span>전체 마케팅 동의 고객</span>
-                        <Badge variant="secondary" data-testid="badge-all-count">
-                          {(marketingTargets as any)?.targets?.length || 0}명
-                        </Badge>
-                      </Label>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="target-group"
-                        checked={selectedTargetType === "group"}
-                        onCheckedChange={() => setSelectedTargetType("group")}
-                        data-testid="checkbox-target-group"
-                      />
-                      <Label htmlFor="target-group" className="flex items-center space-x-2">
-                        <Phone className="h-4 w-4" />
-                        <span>특정 고객 그룹</span>
-                      </Label>
-                    </div>
-                    
-                    {selectedTargetType === "group" && (
-                      <div className="ml-6">
-                        <Select
-                          value={selectedGroupId}
-                          onValueChange={setSelectedGroupId}
-                          data-testid="select-customer-group"
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="고객 그룹을 선택하세요" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {customerGroups && Array.isArray(customerGroups) ? customerGroups.map((group: any) => (
-                              <SelectItem key={group.id} value={group.id} data-testid={`select-item-${group.id}`}>
-                                {group.name}
-                              </SelectItem>
-                            )) : null}
-                          </SelectContent>
-                        </Select>
-                        {selectedGroupId && (
-                          <div className="mt-2">
-                            <p className="text-sm text-muted-foreground" data-testid="text-selected-group-count">
-                              선택된 그룹: {targetCount}명
-                            </p>
-                            {groupCustomersLoading && (
-                              <p className="text-sm text-blue-600">고객 정보 로딩 중...</p>
-                            )}
-                            {groupCustomersError && (
-                              <p className="text-sm text-red-600">오류: {(groupCustomersError as any)?.message || '고객 정보를 불러올 수 없습니다'}</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="text-sm font-medium">
-                    발송 대상: <span className="text-primary">{targetCount}명</span>
-                  </div>
-                </div>
-
-                {/* 버튼 */}
-                <div className="flex justify-end space-x-4">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={() => setShowModal(false)}
-                    data-testid="button-cancel"
-                  >
-                    취소
-                  </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={
-                      sendArsMutation.isPending || 
-                      targetCount === 0 || 
-                      marketingTargetsLoading || 
-                      (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading))
-                    }
-                    data-testid="button-send"
-                  >
-                    {sendArsMutation.isPending ? (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                        발송 중...
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        발송하기
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* 간단한 통계 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">마케팅 동의 고객</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-marketing-targets">
-              {(marketingTargets as any)?.targets?.length || 0}
+        <div className="flex items-center space-x-2">
+          {canExport && (
+            <div className="flex items-center space-x-1">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => downloadCsv.mutate(filters)}
+                disabled={downloadCsv.isPending}
+                data-testid="button-download-csv"
+              >
+                <Download className="mr-1 h-3 w-3" />
+                {downloadCsv.isPending ? "다운로드 중..." : "CSV"}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => downloadExcel.mutate()}
+                disabled={downloadExcel.isPending}
+                data-testid="button-download-excel"
+              >
+                <Download className="mr-1 h-3 w-3" />
+                {downloadExcel.isPending ? "다운로드 중..." : "Excel"}
+              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              ARS 발송 가능 대상
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">총 캠페인</CardTitle>
-            <Send className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-campaigns">
-              {(campaigns as any[])?.length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              생성된 캠페인 수
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">고객 그룹</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-customer-groups">
-              {(customerGroups as any[])?.length || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              생성된 그룹 수
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* 캠페인 목록 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>캠페인 기록</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {campaignsLoading ? (
-            <p>로딩 중...</p>
-          ) : !campaigns || (Array.isArray(campaigns) && campaigns.length === 0) ? (
-            <p className="text-muted-foreground text-center py-8">
-              아직 발송된 캠페인이 없습니다. 새 캠페인을 발송해보세요.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>캠페인명</TableHead>
-                  <TableHead>발송일시</TableHead>
-                  <TableHead>총 발송</TableHead>
-                  <TableHead>성공</TableHead>
-                  <TableHead>실패</TableHead>
-                  <TableHead>상태</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Array.isArray(campaigns) && campaigns.map((campaign: any) => (
-                  <TableRow key={campaign.id} data-testid={`row-campaign-${campaign.id}`}>
-                    <TableCell className="font-medium">{campaign.name}</TableCell>
-                    <TableCell>
-                      {campaign.createdAt ? new Date(campaign.createdAt).toLocaleString() : '-'}
-                    </TableCell>
-                    <TableCell>{campaign.totalCount || 0}</TableCell>
-                    <TableCell className="text-green-600">{campaign.successCount || 0}</TableCell>
-                    <TableCell className="text-red-600">{campaign.failedCount || 0}</TableCell>
-                    <TableCell>
-                      <Badge variant={campaign.status === 'completed' ? 'default' : campaign.status === 'failed' ? 'destructive' : 'secondary'}>
-                        {campaign.status === 'completed' ? '완료' : 
-                         campaign.status === 'failed' ? '실패' : 
-                         campaign.status === 'running' ? '진행중' : '대기'}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
           )}
-        </CardContent>
-      </Card>
+          <Dialog open={showModal} onOpenChange={setShowModal}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-create-campaign">
+                <Send className="mr-2 h-4 w-4" />
+                새 캠페인 발송
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>ARS 캠페인 발송</DialogTitle>
+                <DialogDescription>
+                  캠페인명을 입력하고 발송 대상을 선택하여 ARS를 발송하세요.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                  {/* 캠페인명 입력 */}
+                  <FormField
+                    control={form.control}
+                    name="campaignName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>캠페인명 *</FormLabel>
+                        <FormControl>
+                          <Input 
+                            placeholder="ATALK에서 생성한 캠페인명을 입력하세요" 
+                            data-testid="input-campaign-name"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          ATALK에서 생성한 캠페인명을 입력하세요. 모든 캠페인명을 사용할 수 있습니다.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* 발송 대상 선택 */}
+                  <div className="space-y-4">
+                    <Label>발송 대상 선택</Label>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="target-all"
+                          checked={selectedTargetType === "all"}
+                          onCheckedChange={() => setSelectedTargetType("all")}
+                          data-testid="checkbox-target-all"
+                        />
+                        <Label htmlFor="target-all" className="flex items-center space-x-2">
+                          <Users className="h-4 w-4" />
+                          <span>전체 마케팅 동의 고객</span>
+                          <Badge variant="secondary" data-testid="badge-all-count">
+                            {(marketingTargets as any)?.targets?.length || 0}명
+                          </Badge>
+                        </Label>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="target-group"
+                          checked={selectedTargetType === "group"}
+                          onCheckedChange={() => setSelectedTargetType("group")}
+                          data-testid="checkbox-target-group"
+                        />
+                        <Label htmlFor="target-group" className="flex items-center space-x-2">
+                          <Phone className="h-4 w-4" />
+                          <span>특정 고객 그룹</span>
+                        </Label>
+                      </div>
+                      
+                      {selectedTargetType === "group" && (
+                        <div className="ml-6">
+                          <Select
+                            value={selectedGroupId}
+                            onValueChange={setSelectedGroupId}
+                            data-testid="select-customer-group"
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="고객 그룹을 선택하세요" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {customerGroups && Array.isArray(customerGroups) ? customerGroups.map((group: any) => (
+                                <SelectItem key={group.id} value={group.id} data-testid={`select-item-${group.id}`}>
+                                  {group.name}
+                                </SelectItem>
+                              )) : null}
+                            </SelectContent>
+                          </Select>
+                          {selectedGroupId && (
+                            <div className="mt-2">
+                              <p className="text-sm text-muted-foreground" data-testid="text-selected-group-count">
+                                선택된 그룹: {targetCount}명
+                              </p>
+                              {groupCustomersLoading && (
+                                <p className="text-sm text-blue-600">고객 정보 로딩 중...</p>
+                              )}
+                              {groupCustomersError && (
+                                <p className="text-sm text-red-600">오류: {(groupCustomersError as any)?.message || '고객 정보를 불러올 수 없습니다'}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="text-sm font-medium">
+                      발송 대상: <span className="text-primary">{targetCount}명</span>
+                    </div>
+                  </div>
+
+                  {/* 버튼 */}
+                  <div className="flex justify-end space-x-4">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setShowModal(false)}
+                      data-testid="button-cancel"
+                    >
+                      취소
+                    </Button>
+                    <Button 
+                      type="submit" 
+                      disabled={
+                        sendArsMutation.isPending || 
+                        targetCount === 0 || 
+                        marketingTargetsLoading || 
+                        (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading))
+                      }
+                      data-testid="button-send"
+                    >
+                      {sendArsMutation.isPending ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          발송 중...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          발송하기
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* 메인 탭 콘텐츠 */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="results" className="flex items-center space-x-2" data-testid="tab-results">
+            <BarChart3 className="h-4 w-4" />
+            <span>캠페인 결과 조회</span>
+          </TabsTrigger>
+          <TabsTrigger value="send" className="flex items-center space-x-2" data-testid="tab-send">
+            <Send className="h-4 w-4" />
+            <span>새 캠페인 발송</span>
+          </TabsTrigger>
+        </TabsList>
+
+        {/* 캠페인 결과 조회 탭 */}
+        <TabsContent value="results" className="space-y-6">
+          {/* 검색 및 필터 섹션 */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="lg:col-span-3 space-y-4">
+              {/* 검색 바 */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center space-x-2">
+                    <Search className="h-5 w-5" />
+                    <span>통합 검색</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CampaignSearch 
+                    onSelect={handleSearchSelect}
+                    onSearch={(query, type) => {
+                      // 검색 실행시 필터에 반영
+                      if (type === 'campaigns') {
+                        // 캠페인 검색 결과를 필터에 반영하는 로직
+                      } else if (type === 'customers') {
+                        setFilters(prev => ({ ...prev, customerName: query }));
+                      }
+                    }}
+                    className="w-full"
+                  />
+                </CardContent>
+              </Card>
+
+              {/* 통계 차트 */}
+              <CampaignStatsChart 
+                selectedCampaignId={selectedCampaignId}
+                className="w-full"
+              />
+            </div>
+
+            {/* 필터 사이드바 */}
+            <div className="lg:col-span-1">
+              <CampaignFilters
+                value={filters}
+                onChange={setFilters}
+                onReset={handleResetFilters}
+                className="sticky top-4"
+              />
+            </div>
+          </div>
+
+          {/* 발송 로그 테이블 */}
+          <SendLogsTable 
+            filters={filters}
+            className="w-full"
+          />
+        </TabsContent>
+
+        {/* 새 캠페인 발송 탭 */}
+        <TabsContent value="send" className="space-y-6">
+          {/* 간단한 통계 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">마케팅 동의 고객</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-marketing-targets">
+                  {(marketingTargets as any)?.targets?.length || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ARS 발송 가능 대상
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 캠페인</CardTitle>
+                <Send className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-total-campaigns">
+                  {(campaigns as any[])?.length || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  생성된 캠페인 수
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">고객 그룹</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-customer-groups">
+                  {(customerGroups as any[])?.length || 0}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  생성된 그룹 수
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 최근 캠페인 목록 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>최근 캠페인 기록</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {campaignsLoading ? (
+                <p>로딩 중...</p>
+              ) : !campaigns || (Array.isArray(campaigns) && campaigns.length === 0) ? (
+                <p className="text-muted-foreground text-center py-8">
+                  아직 발송된 캠페인이 없습니다. 새 캠페인을 발송해보세요.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>캠페인명</TableHead>
+                      <TableHead>발송일시</TableHead>
+                      <TableHead>총 발송</TableHead>
+                      <TableHead>성공</TableHead>
+                      <TableHead>실패</TableHead>
+                      <TableHead>상태</TableHead>
+                      <TableHead>액션</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Array.isArray(campaigns) && campaigns.slice(0, 5).map((campaign: any) => (
+                      <TableRow key={campaign.id} data-testid={`row-campaign-${campaign.id}`}>
+                        <TableCell className="font-medium">{campaign.name}</TableCell>
+                        <TableCell>
+                          {campaign.createdAt ? new Date(campaign.createdAt).toLocaleString() : '-'}
+                        </TableCell>
+                        <TableCell>{campaign.totalCount || 0}</TableCell>
+                        <TableCell className="text-green-600">{campaign.successCount || 0}</TableCell>
+                        <TableCell className="text-red-600">{campaign.failedCount || 0}</TableCell>
+                        <TableCell>
+                          <Badge variant={campaign.status === 'completed' ? 'default' : campaign.status === 'failed' ? 'destructive' : 'secondary'}>
+                            {campaign.status === 'completed' ? '완료' : 
+                             campaign.status === 'failed' ? '실패' : 
+                             campaign.status === 'running' ? '진행중' : '대기'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedCampaignId(campaign.id);
+                              setFilters(prev => ({ ...prev, campaignIds: [campaign.id] }));
+                              setActiveTab("results");
+                            }}
+                            data-testid={`button-view-campaign-${campaign.id}`}
+                          >
+                            결과 보기
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
