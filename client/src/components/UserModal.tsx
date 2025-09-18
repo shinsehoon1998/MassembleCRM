@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { apiRequest } from "@/lib/queryClient";
 
 interface UserModalProps {
   isOpen: boolean;
@@ -50,6 +51,10 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
     role: 'counselor',
     isActive: true,
   });
+
+  // Password reset state
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
 
   // Reset form when editing user changes or modal opens
   useEffect(() => {
@@ -115,6 +120,59 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
     },
   });
 
+  // Password reset mutation
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ userId, password }: { userId: string; password: string }) => {
+      const response = await apiRequest('POST', `/api/users/${userId}/reset-password`, { password });
+      return response;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      toast({
+        title: "비밀번호 설정 완료",
+        description: "사용자 비밀번호가 성공적으로 설정되었습니다.",
+      });
+      setShowPasswordReset(false);
+      setResetPassword('');
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "비밀번호 설정 실패",
+        description: error.message || "비밀번호 설정 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handlePasswordReset = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!resetPassword.trim()) {
+      toast({
+        title: "입력 오류",
+        description: "새 비밀번호를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (resetPassword.length < 4) {
+      toast({
+        title: "입력 오류",
+        description: "비밀번호는 최소 4자 이상이어야 합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (editingUser) {
+      resetPasswordMutation.mutate({ 
+        userId: editingUser.id, 
+        password: resetPassword 
+      });
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -158,6 +216,8 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
       role: 'counselor',
       isActive: true,
     });
+    setShowPasswordReset(false);
+    setResetPassword('');
     onClose();
   };
 
@@ -201,6 +261,71 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
     );
   }
 
+  // Password reset dialog
+  if (showPasswordReset && editingUser) {
+    return (
+      <Dialog open={showPasswordReset} onOpenChange={() => setShowPasswordReset(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold">
+              비밀번호 설정 - {editingUser.name}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <form onSubmit={handlePasswordReset} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="resetPassword" className="text-sm font-medium">
+                새 비밀번호 <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="resetPassword"
+                type="password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder="새 비밀번호를 입력하세요 (최소 4자)"
+                required
+                minLength={4}
+                data-testid="input-reset-password"
+              />
+            </div>
+            
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded">
+              <p className="text-sm text-blue-700">
+                이 사용자의 비밀번호를 설정하면 즉시 로그인할 수 있습니다.
+              </p>
+            </div>
+
+            <DialogFooter className="flex gap-2">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setShowPasswordReset(false)}
+                data-testid="button-cancel-reset"
+              >
+                취소
+              </Button>
+              <Button 
+                type="submit"
+                disabled={resetPasswordMutation.isPending}
+                data-testid="button-confirm-reset"
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {resetPasswordMutation.isPending ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin mr-2"></i>
+                    설정 중...
+                  </>
+                ) : (
+                  '비밀번호 설정'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -230,14 +355,34 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
             <Label htmlFor="password" className="text-sm font-medium">
               비밀번호 {!editingUser && <span className="text-red-500">*</span>}
             </Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password || ''}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder={editingUser ? "변경할 비밀번호 (선택사항)" : "비밀번호를 입력하세요"}
-              data-testid="input-password"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="password"
+                type="password"
+                value={formData.password || ''}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder={editingUser ? "변경할 비밀번호 (선택사항)" : "비밀번호를 입력하세요"}
+                data-testid="input-password"
+                className="flex-1"
+              />
+              {editingUser && !editingUser.password && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPasswordReset(true)}
+                  className="text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
+                  data-testid="button-reset-password"
+                >
+                  비밀번호 설정
+                </Button>
+              )}
+            </div>
+            {editingUser && !editingUser.password && (
+              <p className="text-sm text-orange-600 bg-orange-50 p-2 rounded border border-orange-200">
+                ⚠️ 이 사용자는 비밀번호가 설정되지 않아 로그인할 수 없습니다.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

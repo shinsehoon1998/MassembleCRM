@@ -36,7 +36,7 @@ export default function Login() {
     setError('');
 
     try {
-      await apiRequest('POST', '/api/login', credentials);
+      await apiRequest('POST', '/api/auth/login', credentials);
 
       // Invalidate auth query to refetch user data
       queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });

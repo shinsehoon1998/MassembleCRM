@@ -36,68 +36,7 @@ export async function setupAuth(app: Express) {
   // Add session middleware
   app.use(getSession());
 
-  // Login endpoint
-  app.post("/api/login", async (req, res) => {
-    try {
-      const { username, password } = req.body;
-      
-      if (!username || !password) {
-        return res.status(400).json({ message: "사용자명과 비밀번호를 입력해주세요." });
-      }
-
-      const user = await storage.getUserByUsername(username);
-      console.log(`Login attempt for username: ${username}, user found: ${!!user}`);
-      
-      if (!user) {
-        console.log(`User not found: ${username}`);
-        return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
-      }
-
-      const isValidPassword = await bcrypt.compare(password, user.password || '');
-      console.log(`Password validation for ${username}: ${isValidPassword}`);
-      
-      if (!isValidPassword) {
-        console.log(`Invalid password for user: ${username}`);
-        return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
-      }
-
-      // Store user in session
-      console.log(`Setting session for user: ${user.id}`);
-      (req.session as any).userId = user.id;
-      (req.session as any).user = {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        department: user.department
-      };
-      
-      // Save session explicitly and wait for completion
-      req.session.save((err) => {
-        if (err) {
-          console.error('Session save error:', err);
-          return res.status(500).json({ message: "세션 저장 중 오류가 발생했습니다." });
-        }
-        
-        console.log('Session saved successfully');
-        res.json({ 
-          message: "로그인 성공",
-          user: {
-            id: user.id,
-            username: user.username,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            department: user.department
-          }
-        });
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "로그인 중 오류가 발생했습니다." });
-    }
-  });
+  // Login endpoint removed - now handled in routes.ts
 
   // Logout endpoint
   app.post("/api/logout", (req, res) => {

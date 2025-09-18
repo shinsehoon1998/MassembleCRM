@@ -48,6 +48,7 @@ import {
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql, inArray } from "drizzle-orm";
 import { maskPhoneNumber, maskName } from "./securityUtils";
+import bcrypt from 'bcryptjs';
 
 // ============================================
 // Security: SortBy Validation Whitelist
@@ -328,6 +329,7 @@ export interface IStorage {
     status?: string;
     page?: number;
     limit?: number;
+    filterByUserId?: string;
   }): Promise<{
     logs: ArsSendLog[];
     total: number;
@@ -458,6 +460,8 @@ export interface IStorage {
     callResults?: string[];
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    // 사용자별 필터링
+    filterByUserId?: string;
   }): Promise<{
     logs: (ArsSendLog & { 
       customerName?: string; 
@@ -701,17 +705,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
+    // 비밀번호 해싱 처리
+    let processedUserData = { ...userData };
+    if (userData.password && userData.password.trim() !== '') {
+      // 이미 해싱된 비밀번호인지 확인 (bcrypt 해시는 $2b$로 시작)
+      if (!userData.password.startsWith('$2b$')) {
+        processedUserData.password = await bcrypt.hash(userData.password, 10);
+      }
+    }
+
     const [user] = await db
       .insert(users)
       .values({
-        ...userData,
-        name: userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || 'User',
+        ...processedUserData,
+        name: processedUserData.name || `${processedUserData.firstName || ''} ${processedUserData.lastName || ''}`.trim() || 'User',
       })
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          ...userData,
-          name: userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || 'User',
+          ...processedUserData,
+          name: processedUserData.name || `${processedUserData.firstName || ''} ${processedUserData.lastName || ''}`.trim() || 'User',
           updatedAt: new Date(),
         },
       })
@@ -727,12 +740,13 @@ export class DatabaseStorage implements IStorage {
     unshared?: boolean;
     page?: number;
     limit?: number;
+    filterByUserId?: string; // For role-based access control
   } = {}): Promise<{
     customers: CustomerWithUser[];
     total: number;
     totalPages: number;
   }> {
-    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20 } = params;
+    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20, filterByUserId } = params;
     const conditions = [];
     
     if (search) {
@@ -757,6 +771,13 @@ export class DatabaseStorage implements IStorage {
     // Filter for unshared customers (공유담당자 미정) 
     if (unshared) {
       conditions.push(sql`${customers.secondaryUserId} IS NULL`);
+    }
+
+    // Role-based access control: counselor can only see customers they are assigned to
+    if (filterByUserId) {
+      conditions.push(
+        sql`(${customers.assignedUserId} = ${filterByUserId} OR ${customers.secondaryUserId} = ${filterByUserId})`
+      );
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1174,12 +1195,13 @@ export class DatabaseStorage implements IStorage {
     status?: string;
     page?: number;
     limit?: number;
+    filterByUserId?: string;
   }): Promise<{
     logs: ArsSendLog[];
     total: number;
     totalPages: number;
   }> {
-    const { campaignId, customerId, status, page = 1, limit = 50 } = params;
+    const { campaignId, customerId, status, page = 1, limit = 50, filterByUserId } = params;
     const conditions = [];
 
     if (campaignId) {
@@ -1194,18 +1216,27 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(arsSendLogs.status, status));
     }
 
+    // Role-based access control: counselor can only see ARS logs for customers they are assigned to
+    if (filterByUserId) {
+      conditions.push(
+        sql`(${customers.assignedUserId} = ${filterByUserId} OR ${customers.secondaryUserId} = ${filterByUserId})`
+      );
+    }
+
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // 총 개수 조회
+    // 총 개수 조회 - customers와 조인 필요
     const [{ count: totalCount }] = await db
       .select({ count: count() })
       .from(arsSendLogs)
+      .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
       .where(whereClause);
 
-    // 페이징된 로그 조회
+    // 페이징된 로그 조회 - customers와 조인 필요
     const logs = await db
       .select()
       .from(arsSendLogs)
+      .leftJoin(customers, eq(arsSendLogs.customerId, customers.id))
       .where(whereClause)
       .orderBy(desc(arsSendLogs.createdAt))
       .limit(limit)
@@ -1815,6 +1846,8 @@ export class DatabaseStorage implements IStorage {
     callResults?: string[];
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
+    // 사용자별 필터링
+    filterByUserId?: string;
   }): Promise<{
     logs: (ArsSendLog & { 
       customerName?: string; 
@@ -1847,7 +1880,7 @@ export class DatabaseStorage implements IStorage {
         campaignId, callResult, retryType, dateFrom, dateTo, 
         phoneNumber, customerName, durationMin, durationMax, 
         costMin, costMax, status, callResults,
-        page = 1, limit = 20
+        page = 1, limit = 20, filterByUserId
       } = params;
       
       console.log('[DEBUG] Parameter destructuring successful');
@@ -1912,6 +1945,13 @@ export class DatabaseStorage implements IStorage {
 
     if (callResults && callResults.length > 0) {
       conditions.push(inArray(arsSendLogs.callResult, callResults as any));
+    }
+
+    // Role-based access control: counselor can only see ARS logs for customers they are assigned to
+    if (filterByUserId) {
+      conditions.push(
+        sql`(${customers.assignedUserId} = ${filterByUserId} OR ${customers.secondaryUserId} = ${filterByUserId})`
+      );
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

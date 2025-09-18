@@ -56,6 +56,63 @@ const requireAdminOrManager = (req: any, res: any, next: any) => {
   next();
 };
 
+/**
+ * Apply user-based filtering for customer data access
+ * - counselor: can only access customers where assignedUserId or secondaryUserId matches their id
+ * - admin/manager: can access all customers
+ */
+const applyUserBasedCustomerFilter = (params: any, user: any) => {
+  if (!user) {
+    throw new Error('User not found for filtering');
+  }
+
+  // Admin and manager can access all customers - no filtering
+  if (user.role === 'admin' || user.role === 'manager') {
+    return params;
+  }
+
+  // Counselor can only access customers they are assigned to
+  if (user.role === 'counselor') {
+    return {
+      ...params,
+      // This will be handled in the storage layer
+      filterByUserId: user.id
+    };
+  }
+
+  // Default: no access for unknown roles
+  throw new Error('Unauthorized role for customer access');
+};
+
+/**
+ * Check if a user has access to a specific customer
+ * - counselor: can only access customers where assignedUserId or secondaryUserId matches their id
+ * - admin/manager: can access all customers
+ */
+const canAccessCustomer = async (customerId: string, user: any): Promise<boolean> => {
+  if (!user) {
+    return false;
+  }
+
+  // Admin and manager can access all customers
+  if (user.role === 'admin' || user.role === 'manager') {
+    return true;
+  }
+
+  // Counselor can only access customers they are assigned to
+  if (user.role === 'counselor') {
+    const customer = await storage.getCustomer(customerId);
+    if (!customer) {
+      return false;
+    }
+    
+    return customer.assignedUserId === user.id || customer.secondaryUserId === user.id;
+  }
+
+  // Default: no access for unknown roles
+  return false;
+};
+
 // ============================================
 // CSRF Protection Middleware
 // ============================================
@@ -160,7 +217,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
       }
 
-      const isValidPassword = await bcrypt.compare(password, user.password || '');
+      // 비밀번호가 null 또는 empty인 경우 로그인 거부
+      if (!user.password || user.password.trim() === '') {
+        secureLog(LogLevel.WARNING, 'AUTH', 'User password not set', {
+          username: maskName(username),
+          userId: user.id
+        }, requestId);
+        return res.status(401).json({ 
+          message: "비밀번호가 설정되지 않았습니다. 관리자에게 문의하세요." 
+        });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      
+      if (!isValidPassword) {
+        secureLog(LogLevel.WARNING, 'AUTH', 'Invalid password', {
+          username: maskName(username)
+        }, requestId);
+        return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
+      }
+
+      // Store user in session
+      secureLog(LogLevel.INFO, 'AUTH', 'Setting session', {
+        userId: user.id
+      }, requestId);
+      
+      (req.session as any).userId = user.id;
+      (req.session as any).user = {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        department: user.department
+      };
+      
+      // Save session explicitly and wait for completion
+      req.session.save((err) => {
+        if (err) {
+          secureLog(LogLevel.ERROR, 'AUTH', 'Session save error', {
+            error: err.message
+          }, requestId);
+          return res.status(500).json({ message: "세션 저장 중 오류가 발생했습니다." });
+        }
+        
+        secureLog(LogLevel.INFO, 'AUTH', 'Session saved successfully', {
+          userId: user.id
+        }, requestId);
+        
+        res.json({ 
+          message: "로그인 성공",
+          user: {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            department: user.department
+          }
+        });
+      });
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'AUTH', 'Login error', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "로그인 중 오류가 발생했습니다." });
+    }
+  });
+
+  // Legacy login endpoint - alias for /api/auth/login for backward compatibility  
+  app.post('/api/login', async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      
+      if (!username || !password) {
+        return res.status(400).json({ message: "사용자명과 비밀번호를 입력해주세요." });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      const requestId = generateRequestId();
+      
+      secureLog(LogLevel.INFO, 'AUTH', 'Login attempt via legacy endpoint', {
+        username: maskName(username),
+        userFound: !!user
+      }, requestId);
+      
+      if (!user) {
+        secureLog(LogLevel.WARNING, 'AUTH', 'User not found', {
+          username: maskName(username)
+        }, requestId);
+        return res.status(401).json({ message: "잘못된 사용자명 또는 비밀번호입니다." });
+      }
+
+      // 비밀번호가 null 또는 empty인 경우 로그인 거부
+      if (!user.password || user.password.trim() === '') {
+        secureLog(LogLevel.WARNING, 'AUTH', 'User password not set', {
+          username: maskName(username),
+          userId: user.id
+        }, requestId);
+        return res.status(401).json({ 
+          message: "비밀번호가 설정되지 않았습니다. 관리자에게 문의하세요." 
+        });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.password);
       
       if (!isValidPassword) {
         secureLog(LogLevel.WARNING, 'AUTH', 'Invalid password', {
@@ -269,6 +429,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin-only password reset endpoint for users with null passwords
+  app.post('/api/users/:id/reset-password', isAuthenticated, async (req: any, res) => {
+    try {
+      // Admin permission check
+      const currentUser = await storage.getUser(req.user.id);
+      if (!currentUser || currentUser.role !== 'admin') {
+        return res.status(403).json({ message: "관리자 권한이 필요합니다." });
+      }
+
+      const { password } = req.body;
+      const userId = req.params.id;
+
+      if (!password || password.trim() === '') {
+        return res.status(400).json({ message: "새 비밀번호를 입력해주세요." });
+      }
+
+      if (password.length < 4) {
+        return res.status(400).json({ message: "비밀번호는 최소 4자 이상이어야 합니다." });
+      }
+
+      // Get target user
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+      }
+
+      // Hash password and update user
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const updatedUser = await storage.upsertUser({
+        id: userId,
+        password: hashedPassword,
+        // Preserve existing user data
+        username: targetUser.username,
+        name: targetUser.name,
+        email: targetUser.email,
+        role: targetUser.role,
+        department: targetUser.department,
+        isActive: targetUser.isActive
+      });
+
+      secureLog(LogLevel.INFO, 'ADMIN', 'Password reset by admin', {
+        adminId: currentUser.id,
+        targetUserId: userId,
+        targetUsername: maskName(targetUser.username || ''),
+        targetName: maskName(targetUser.name || '')
+      });
+
+      res.json({ 
+        message: "비밀번호가 성공적으로 설정되었습니다.",
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          name: updatedUser.name,
+          role: updatedUser.role,
+          hasPassword: !!updatedUser.password
+        }
+      });
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'ADMIN', 'Password reset error', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      res.status(500).json({ message: "비밀번호 설정 중 오류가 발생했습니다." });
+    }
+  });
+
   // Dashboard routes
   app.get('/api/dashboard/stats', isAuthenticated, async (req, res) => {
     try {
@@ -296,7 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Customer routes
-  app.get('/api/customers', isAuthenticated, async (req, res) => {
+  app.get('/api/customers', isAuthenticated, async (req: any, res) => {
     try {
       const search = req.query.search as string;
       const status = req.query.status as string;
@@ -306,7 +531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
-      const result = await storage.getCustomers({
+      const params = {
         search,
         status: status && status !== 'all' ? status : undefined,
         assignedUserId: assignedUserId && assignedUserId !== 'all' ? assignedUserId : undefined,
@@ -314,7 +539,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         unshared,
         page,
         limit,
-      });
+      };
+
+      // Apply user-based filtering
+      const filteredParams = applyUserBasedCustomerFilter(params, req.user);
+      const result = await storage.getCustomers(filteredParams);
 
       res.json(result);
     } catch (error) {
@@ -406,8 +635,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/customers/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/customers/:id', isAuthenticated, async (req: any, res) => {
     try {
+      // Check if user has access to this customer
+      const hasAccess = await canAccessCustomer(req.params.id, req.user);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "해당 고객에 대한 접근 권한이 없습니다." });
+      }
+
       const customer = await storage.getCustomer(req.params.id);
       if (!customer) {
         return res.status(404).json({ message: "Customer not found" });
@@ -500,6 +735,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/customers/:id', isAuthenticated, async (req: any, res) => {
     try {
+      // Check if user has access to this customer
+      const hasAccess = await canAccessCustomer(req.params.id, req.user);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "해당 고객에 대한 접근 권한이 없습니다." });
+      }
+
       const validatedData = updateCustomerSchema.parse(req.body);
       const customer = await storage.updateCustomer(req.params.id, validatedData);
 
@@ -589,6 +830,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/customers/:id', isAuthenticated, async (req: any, res) => {
     try {
+      // Check if user has access to this customer
+      const hasAccess = await canAccessCustomer(req.params.id, req.user);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "해당 고객에 대한 접근 권한이 없습니다." });
+      }
+
       const customer = await storage.getCustomer(req.params.id);
       if (!customer) {
         return res.status(404).json({ message: "Customer not found" });
@@ -943,7 +1190,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.password = await bcrypt.hash(password, 10);
       }
 
-      const updatedUser = await storage.updateUser(req.params.id, updateData);
+      // Use upsertUser for updates (includes id in updateData)
+      const updatedUser = await storage.upsertUser({ id: req.params.id, ...updateData });
       res.json(updatedUser);
     } catch (error) {
       console.error("Error updating user:", error);
@@ -2362,8 +2610,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         page: Math.max(1, params.page || 1),
         limit: Math.min(100, Math.max(1, params.limit || 20)), // Limit between 1-100
       };
-      
-      const logs = await storage.getEnhancedSendLogs(safeParams);
+
+      // Apply user-based filtering for ARS logs
+      const filteredParams = applyUserBasedCustomerFilter(safeParams, req.user);
+      const logs = await storage.getEnhancedSendLogs(filteredParams);
       
       // 🔥 Critical Fix: Ensure response structure is always valid
       const safeResponse = {
@@ -2587,11 +2837,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: '유효하지 않은 캠페인 ID입니다.' });
       }
 
-      const logs = await storage.getArsSendLogs({
+      const params = {
         campaignId,
         page: 1,
         limit: 1000, // 모든 기록 가져오기
-      });
+      };
+
+      // Apply user-based filtering for ARS campaign history
+      const filteredParams = applyUserBasedCustomerFilter(params, req.user);
+      const logs = await storage.getArsSendLogs(filteredParams);
 
       // 고객 정보를 포함한 발송 기록 조합
       const historyWithCustomers = await Promise.all(
