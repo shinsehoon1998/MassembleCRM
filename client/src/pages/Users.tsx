@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiRequest } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
 import { UserModal } from "@/components/UserModal";
 
-function UsersList({ onEditUser }: { onEditUser: (user: User) => void }) {
+function UsersList({ onEditUser, isAdmin }: { onEditUser: (user: User) => void; isAdmin: boolean }) {
   const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ['/api/users'],
   });
@@ -93,15 +92,17 @@ function UsersList({ onEditUser }: { onEditUser: (user: User) => void }) {
             <Badge variant={user.isActive ? "default" : "secondary"}>
               {user.isActive ? "활성" : "비활성"}
             </Badge>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="text-gray-400 hover:text-gray-600"
-              onClick={() => onEditUser(user)}
-              data-testid={`button-edit-user-${user.id}`}
-            >
-              <i className="fas fa-edit"></i>
-            </Button>
+            {isAdmin && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-gray-400 hover:text-gray-600"
+                onClick={() => onEditUser(user)}
+                data-testid={`button-edit-user-${user.id}`}
+              >
+                <i className="fas fa-edit"></i>
+              </Button>
+            )}
           </div>
         </div>
       ))}
@@ -111,7 +112,7 @@ function UsersList({ onEditUser }: { onEditUser: (user: User) => void }) {
 
 export default function Users() {
   const { toast } = useToast();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
@@ -160,17 +161,19 @@ export default function Users() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900">시스템 사용자</h2>
-              <Button 
-                className="bg-massemble-red hover:bg-massemble-red-hover text-white"
-                onClick={() => setIsUserModalOpen(true)}
-                data-testid="button-add-user"
-              >
-                <i className="fas fa-plus mr-2"></i>
-                사용자 추가
-              </Button>
+              {user?.role === 'admin' && (
+                <Button 
+                  className="bg-massemble-red hover:bg-massemble-red-hover text-white"
+                  onClick={() => setIsUserModalOpen(true)}
+                  data-testid="button-add-user"
+                >
+                  <i className="fas fa-plus mr-2"></i>
+                  사용자 추가
+                </Button>
+              )}
             </div>
             
-            <UsersList onEditUser={handleEditUser} />
+            <UsersList onEditUser={handleEditUser} isAdmin={user?.role === 'admin'} />
           </div>
         </CardContent>
       </Card>

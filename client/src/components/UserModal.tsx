@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/schema";
 import {
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/useAuth";
 
 interface UserModalProps {
   isOpen: boolean;
@@ -36,6 +36,10 @@ interface CreateUserData {
 export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
+  
+  // Check if current user is admin
+  const isAdmin = currentUser?.role === 'admin';
   const [formData, setFormData] = useState<CreateUserData>({
     username: '',
     password: '',
@@ -113,6 +117,17 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Admin permission check before API call
+    if (!isAdmin) {
+      toast({
+        title: "권한 없음",
+        description: "사용자 관리는 관리자만 가능합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (!formData.username.trim()) {
       toast({
         title: "입력 오류",
@@ -154,6 +169,37 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
       default: return role;
     }
   };
+
+  // Show access denied message for non-admin users
+  if (!isAdmin) {
+    return (
+      <Dialog open={isOpen} onOpenChange={handleClose}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold text-red-600">
+              접근 권한 없음
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-6 text-center">
+            <div className="text-red-500 text-4xl mb-4">🚫</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              관리자 권한이 필요합니다
+            </h3>
+            <p className="text-gray-600 mb-4">
+              사용자 관리 기능은 관리자만 사용할 수 있습니다.
+            </p>
+          </div>
+          
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={handleClose}>
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -281,7 +327,7 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
             className="bg-massemble-red hover:bg-massemble-red-hover text-white"
             data-testid="button-create-user"
           >
-            {createUserMutation.isPending ? '추가 중...' : '추가'}
+            {createUserMutation.isPending ? (editingUser ? '수정 중...' : '추가 중...') : (editingUser ? '수정' : '추가')}
           </Button>
         </DialogFooter>
       </DialogContent>

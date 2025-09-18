@@ -177,7 +177,7 @@ export default function Layout({ children }: LayoutProps) {
             <span className="ml-3">고객 그룹</span>
           </Link>
           
-          {(user?.role === 'admin' || user?.role === 'manager') && (
+          {user?.role === 'admin' && (
             <Link 
               href="/users"
               className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
