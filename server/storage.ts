@@ -46,7 +46,7 @@ import {
   type ArsHourlyStats,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, asc, like, and, count, sql } from "drizzle-orm";
+import { eq, desc, asc, like, and, count, sql, inArray } from "drizzle-orm";
 import { maskPhoneNumber, maskName } from "./securityUtils";
 
 // ============================================
@@ -1907,11 +1907,11 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (status && status.length > 0) {
-      conditions.push(sql`${arsSendLogs.status} = ANY(${status})`);
+      conditions.push(inArray(arsSendLogs.status, status));
     }
 
     if (callResults && callResults.length > 0) {
-      conditions.push(sql`${arsSendLogs.callResult} = ANY(${callResults})`);
+      conditions.push(inArray(arsSendLogs.callResult, callResults as any));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -3136,12 +3136,31 @@ export class DatabaseStorage implements IStorage {
       
       for (const result of atalkResults) {
         try {
-          // ATALK 응답 데이터 구조에 따라 필드 매핑
-          const phoneNumber = result.phone || result.phoneNumber || result.tel || '';
+          // 🔥 ATALK 실제 응답 구조에 맞는 필드 매핑 (2025-09-18 수정)
+          const phoneNumber = result.callee || result.phone || result.phoneNumber || result.tel || '';
           const customerName = result.name || result.customerName || '';
-          const callResult = this.mapAtalkCallResult(result.result || result.status || result.callResult);
+          
+          // 🔥 통화 결과: result_message와 result_code로 정확한 상태 판단
+          const resultMessage = result.result_message || result.resultMessage || '';
+          const resultCode = result.result_code || result.resultCode || '';
+          const callResult = this.mapAtalkCallResult(resultMessage, resultCode);
+          
           const duration = parseInt(result.duration || result.talkTime || '0') || 0;
           const cost = parseFloat(result.cost || result.price || '0') || 0;
+          
+          // 🔥 DTMF 입력: digit 필드에서 파싱
+          const dtmfInput = result.digit || result.dtmf || result.dtmfInput || null;
+          
+          // 🔥 디버깅 로그: ATALK 응답 구조 확인
+          console.log(`[SAVE_SEND_LOGS] ATALK 응답 파싱:`, {
+            phone: phoneNumber ? `***${phoneNumber.slice(-4)}` : 'empty',
+            resultMessage,
+            resultCode, 
+            callResult,
+            dtmfInput,
+            duration,
+            hasConnectTime: !!result.connect_time
+          });
           
           // 전화번호로 고객 찾기 (정규화된 형식으로 검색)
           let customer;
@@ -3200,7 +3219,7 @@ export class DatabaseStorage implements IStorage {
             retryAttempt: 1,
             duration,
             cost: cost.toString(),
-            dtmfInput: result.dtmf || result.dtmfInput || null,
+            dtmfInput: dtmfInput,
             recordingUrl: result.recordUrl || result.recordingUrl || null,
             errorMessage: result.error || result.errorMessage || null,
             sentAt: result.sentAt ? new Date(result.sentAt) : new Date(),
@@ -3273,48 +3292,82 @@ export class DatabaseStorage implements IStorage {
   
   /**
    * ATALK 통화 결과를 우리 시스템의 callResult enum에 매핑
+   * 🔥 2025-09-18 수정: result_message와 result_code 모두 고려
    */
-  private mapAtalkCallResult(atalkResult: string): string {
-    if (!atalkResult) return 'pending';
-    
-    const result = atalkResult.toLowerCase();
-    
-    // ATALK 응답 매핑
-    if (result.includes('연결') || result.includes('성공') || result.includes('connected')) {
-      return 'connected';
-    }
-    if (result.includes('응답') || result.includes('answered')) {
-      return 'answered';
-    }
-    if (result.includes('통화중') || result.includes('busy')) {
-      return 'busy';
-    }
-    if (result.includes('무응답') || result.includes('no_answer') || result.includes('noanswer')) {
-      return 'no_answer';
-    }
-    if (result.includes('사서함') || result.includes('voicemail')) {
-      return 'voicemail';
-    }
-    if (result.includes('거절') || result.includes('rejected')) {
-      return 'rejected';
-    }
-    if (result.includes('결번') || result.includes('invalid')) {
-      return 'invalid_number';
-    }
-    if (result.includes('팩스') || result.includes('fax')) {
-      return 'fax';
-    }
-    if (result.includes('전원') || result.includes('power')) {
-      return 'power_off';
-    }
-    if (result.includes('자동응답') || result.includes('auto')) {
-      return 'auto_response';
-    }
-    if (result.includes('오류') || result.includes('error')) {
-      return 'error';
+  private mapAtalkCallResult(resultMessage: string, resultCode?: string): string {
+    // 🔥 우선순위 1: result_code 기반 판단 (가장 정확함)
+    if (resultCode) {
+      const code = resultCode.toUpperCase();
+      
+      if (code === 'TRANS' || code === 'SUCCESS' || code === 'OK') {
+        return 'connected'; // 통화 연결 및 전송 성공
+      }
+      if (code === 'BUSY') {
+        return 'busy';
+      }
+      if (code === 'NO_ANSWER' || code === 'NOANSWER' || code === 'TIMEOUT') {
+        return 'no_answer';
+      }
+      if (code === 'REJECT' || code === 'REJECTED') {
+        return 'rejected';
+      }
+      if (code === 'INVALID' || code === 'ERROR') {
+        return 'invalid_number';
+      }
+      if (code === 'VOICEMAIL' || code === 'VM') {
+        return 'voicemail';
+      }
+      if (code === 'FAX') {
+        return 'fax';
+      }
+      if (code === 'POWER_OFF' || code === 'OFF') {
+        return 'power_off';
+      }
     }
     
-    // 기본값
+    // 🔥 우선순위 2: result_message 기반 판단
+    if (resultMessage) {
+      const message = resultMessage.toLowerCase();
+      
+      if (message.includes('응답') || message.includes('answered') || message.includes('연결')) {
+        return 'connected'; // 응답받음 = 연결성공
+      }
+      if (message.includes('성공') || message.includes('완료') || message.includes('connected')) {
+        return 'connected';
+      }
+      if (message.includes('통화중') || message.includes('busy')) {
+        return 'busy';
+      }
+      if (message.includes('무응답') || message.includes('no_answer') || message.includes('noanswer')) {
+        return 'no_answer';
+      }
+      if (message.includes('사서함') || message.includes('voicemail')) {
+        return 'voicemail';
+      }
+      if (message.includes('거절') || message.includes('rejected')) {
+        return 'rejected';
+      }
+      if (message.includes('결번') || message.includes('invalid')) {
+        return 'invalid_number';
+      }
+      if (message.includes('팩스') || message.includes('fax')) {
+        return 'fax';
+      }
+      if (message.includes('전원') || message.includes('power')) {
+        return 'power_off';
+      }
+      if (message.includes('자동응답') || message.includes('auto')) {
+        return 'auto_response';
+      }
+      if (message.includes('오류') || message.includes('error')) {
+        return 'error';
+      }
+    }
+    
+    // 🔥 기본값: 빈 값이면 pending, 그 외는 other
+    if (!resultMessage && !resultCode) {
+      return 'pending';
+    }
     return 'other';
   }
   
