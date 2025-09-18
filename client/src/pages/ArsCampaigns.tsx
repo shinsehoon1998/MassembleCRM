@@ -112,8 +112,15 @@ export default function ArsCampaigns() {
   });
 
   const handleSubmit = (data: ArsCallListAdd) => {
+    console.log("🚀 handleSubmit 시작!", data);
+    console.log("selectedTargetType:", selectedTargetType);
+    console.log("selectedGroupId:", selectedGroupId);
+    console.log("marketingTargets:", marketingTargets);
+    console.log("groupCustomers:", groupCustomers);
+    
     // 캠페인명 검증
     if (!data.campaignName?.trim()) {
+      console.log("❌ 캠페인명 비어있음");
       toast({
         title: "캠페인명 필요",
         description: "아톡비즈에서 생성된 캠페인명을 입력해주세요.",
@@ -121,14 +128,18 @@ export default function ArsCampaigns() {
       });
       return;
     }
+    console.log("✅ 캠페인명 검증 통과:", data.campaignName);
     
     // 전화번호 배열 구성
     let phones: string[] = [];
     
     if (selectedTargetType === "all") {
+      console.log("📞 전체 마케팅 동의 고객 모드");
       // 전체 마케팅 동의 고객
       const targets = (marketingTargets as any)?.targets;
+      console.log("targets:", targets);
       if (!Array.isArray(targets) || targets.length === 0) {
+        console.log("❌ 마케팅 타겟 없음");
         toast({
           title: "대상 없음",
           description: "마케팅 동의한 고객이 없습니다.",
@@ -137,10 +148,14 @@ export default function ArsCampaigns() {
         return;
       }
       phones = targets.map((customer: any) => customer.phone).filter(Boolean);
+      console.log("✅ 전체 고객 전화번호:", phones);
     } else if (selectedTargetType === "group" && selectedGroupId) {
+      console.log("👥 특정 그룹 모드");
       // 선택된 그룹의 고객
       const customers = groupCustomers as any;
+      console.log("group customers:", customers);
       if (!Array.isArray(customers) || customers.length === 0) {
+        console.log("❌ 그룹 고객 없음");
         toast({
           title: "대상 없음",
           description: "선택된 그룹에 고객이 없습니다.",
@@ -149,9 +164,11 @@ export default function ArsCampaigns() {
         return;
       }
       phones = customers.map((customer: any) => customer.phone).filter(Boolean);
+      console.log("✅ 그룹 고객 전화번호:", phones);
     }
 
     if (phones.length === 0) {
+      console.log("❌ 최종 전화번호 배열 비어있음");
       toast({
         title: "대상 없음",
         description: "발송할 대상의 전화번호가 없습니다.",
@@ -160,6 +177,7 @@ export default function ArsCampaigns() {
       return;
     }
 
+    console.log("🎯 API 호출 시작! phones:", phones);
     sendArsMutation.mutate({
       ...data,
       phones,
