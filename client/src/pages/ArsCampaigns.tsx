@@ -333,6 +333,12 @@ export default function ArsCampaigns() {
                       marketingTargetsLoading || 
                       (selectedTargetType === "group" && (customerGroupsLoading || groupCustomersLoading))
                     }
+                    onClick={() => {
+                      console.log("🔥 버튼 클릭됨!");
+                      console.log("Form values:", form.getValues());
+                      console.log("Form errors:", form.formState.errors);
+                      console.log("Form isValid:", form.formState.isValid);
+                    }}
                     data-testid="button-send"
                   >
                     {sendArsMutation.isPending ? (
