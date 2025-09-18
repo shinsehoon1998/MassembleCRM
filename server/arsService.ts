@@ -439,11 +439,15 @@ export class AtalkArsService {
       }, requestId);
 
       const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
+      // 🔥 ATALK API 성공 응답 패턴 개선 - "등록 처리하였습니다" 등의 실제 성공 메시지 인식
       const isSuccessResult = !response.result || 
                               response.result === '성공' || 
                               response.result === 'SUCCESS' || 
                               response.result.includes('성공') ||
-                              response.result.toLowerCase().includes('success');
+                              response.result.toLowerCase().includes('success') ||
+                              response.result.includes('등록 처리하였습니다') ||
+                              response.result.includes('등록') ||
+                              (response.result.includes('처리') && response.result.includes('건'));
 
       if (isSuccessCode && isSuccessResult) {
         secureLog(LogLevel.INFO, 'ARS', '발송리스트 추가 성공', {
@@ -637,7 +641,7 @@ export class AtalkArsService {
       
       const response = await this.makeApiCall('/calllist/add', callData, 'POST', requestId);
 
-      // 🔥 성공/실패 판단 로직
+      // 🔥 성공/실패 판단 로직 개선
       secureLog(LogLevel.INFO, 'ARS', '배치 발송리스트 추가 응답 상세', {
         code: response.code,
         result: response.result,
@@ -647,11 +651,15 @@ export class AtalkArsService {
       }, requestId);
 
       const isSuccessCode = response.code === '200' || response.code === 'SUCCESS' || response.code === '0';
+      // 🔥 ATALK API 성공 응답 패턴 개선 - "등록 처리하였습니다" 등의 실제 성공 메시지 인식
       const isSuccessResult = !response.result || 
                               response.result === '성공' || 
                               response.result === 'SUCCESS' || 
                               response.result.includes('성공') ||
-                              response.result.toLowerCase().includes('success');
+                              response.result.toLowerCase().includes('success') ||
+                              response.result.includes('등록 처리하였습니다') ||
+                              response.result.includes('등록') ||
+                              (response.result.includes('처리') && response.result.includes('건'));
 
       if (isSuccessCode && isSuccessResult) {
         secureLog(LogLevel.INFO, 'ARS', '배치 발송리스트 추가 성공', {
@@ -670,19 +678,35 @@ export class AtalkArsService {
           processedCount: validPhones.length
         };
       } else {
-        const errorMessage = response.result || 
-                            response.data?.error || 
-                            response.data?.message ||
-                            `배치 발송리스트 추가 실패 (응답코드: ${response.code})`;
+        // 🔥 400 오류에 대한 구체적인 메시지 파싱 개선
+        let errorMessage = response.result || response.data?.error || response.data?.message;
+        
+        // 400 오류일 때 더 구체적인 메시지 제공
+        if (response.code === '400') {
+          if (errorMessage && errorMessage.includes('캠페인')) {
+            errorMessage = `❌ 캠페인 '${campaignName}'이 ATALK 시스템에 존재하지 않습니다.\n\n해결 방법:\n1. 아톡비즈(ATALK) 관리자 페이지에서 캠페인을 먼저 생성해주세요.\n2. 캠페인명이 정확한지 확인해주세요 (대소문자 구분).\n3. 관리자에게 문의하여 사용 가능한 캠페인 목록을 확인해주세요.`;
+          } else if (errorMessage && (errorMessage.includes('필수') || errorMessage.includes('누락'))) {
+            errorMessage = `❌ 필수 정보가 누락되었습니다: ${errorMessage}`;
+          } else {
+            errorMessage = `❌ 잘못된 API 요청입니다.\n\n가능한 원인:\n1. 캠페인 '${campaignName}'이 존재하지 않음\n2. 전화번호 형식 오류\n3. 필수 필드 누락\n\n자세한 오류: ${errorMessage || '응답코드 400'}`;
+          }
+        } else if (response.code === '401') {
+          errorMessage = `❌ 인증 오류: ATALK API 토큰이 유효하지 않습니다. 관리자에게 문의하세요.`;
+        } else if (response.code === '500') {
+          errorMessage = `❌ ATALK 서버 내부 오류가 발생했습니다. 잠시 후 다시 시도하거나 관리자에게 문의하세요.`;
+        } else {
+          errorMessage = errorMessage || `배치 발송리스트 추가 실패 (응답코드: ${response.code})`;
+        }
         
         secureLog(LogLevel.WARNING, 'ARS', '배치 발송리스트 추가 실패', {
           validCount: validPhones.length,
           error: errorMessage,
           responseCode: response.code,
-          result: response.result
+          result: response.result,
+          campaignName: campaignName
         }, requestId);
         
-        throw new Error(`❌ ${errorMessage}`);
+        throw new Error(errorMessage);
       }
     } catch (error) {
       secureLog(LogLevel.ERROR, 'ARS', '배치 발송리스트 추가 예외', {
