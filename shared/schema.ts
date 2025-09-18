@@ -294,7 +294,32 @@ export const arsCampaigns = pgTable("ars_campaigns", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// ARS 발송 로그
+// 통화 결과 상세 분류를 위한 enum
+export const callResultEnum = pgEnum("call_result", [
+  "connected",     // 연결
+  "answered",      // 응답  
+  "busy",          // 통화중
+  "no_answer",     // 무응답
+  "voicemail",     // 사서함
+  "rejected",      // 거절
+  "invalid_number", // 결번
+  "fax",           // 팩스
+  "other",         // 기타
+  "power_off",     // 전원오프
+  "auto_response", // 자동응답
+  "error",         // 오류
+  "pending",       // 대기중
+  "processing"     // 처리중
+]);
+
+// 재발송 유형을 위한 enum
+export const retryTypeEnum = pgEnum("retry_type", [
+  "initial",       // 최초 발송
+  "retry",         // 재발송
+  "repeat"         // 반복
+]);
+
+// ARS 발송 로그 (개선)
 export const arsSendLogs = pgTable("ars_send_logs", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   campaignId: integer("campaign_id").references(() => arsCampaigns.id),
@@ -302,17 +327,46 @@ export const arsSendLogs = pgTable("ars_send_logs", {
   phone: varchar("phone", { length: 20 }).notNull(),
   scenarioId: varchar("scenario_id", { length: 50 }),
   historyKey: varchar("history_key", { length: 100 }),
-  status: varchar("status", { length: 20 }).default("pending"),
+  
+  // 개선된 상태 추적 필드들
+  status: varchar("status", { length: 20 }).default("pending"), // 기존 호환성 유지
+  callResult: callResultEnum("call_result").default("pending"), // 상세 통화 결과
+  retryType: retryTypeEnum("retry_type").default("initial"), // 재발송 유형
+  retryAttempt: integer("retry_attempt").default(1), // 시도 횟수
+  parentLogId: integer("parent_log_id"), // 재발송의 경우 원본 로그 ID
+  
+  // 통화 정보
   dtmfInput: varchar("dtmf_input", { length: 10 }),
-  duration: integer("duration").default(0),
+  duration: integer("duration").default(0), // 초 단위
   recordingUrl: varchar("recording_url", { length: 500 }),
+  
+  // 비용 및 과금 정보
+  cost: decimal("cost", { precision: 10, scale: 4 }), // 호당 비용
+  billingUnits: integer("billing_units"), // 과금 단위
+  
+  // 기술적 메타데이터
+  carrierInfo: varchar("carrier_info", { length: 100 }), // 통신사 정보
+  callQuality: integer("call_quality"), // 통화 품질 점수 (1-10)
+  errorCode: varchar("error_code", { length: 20 }), // 오류 코드
   errorMessage: text("error_message"), // 실패 사유 저장용
-  sentAt: timestamp("sent_at"),
-  completedAt: timestamp("completed_at"),
+  
+  // 시간 추적
+  queuedAt: timestamp("queued_at"), // 큐에 등록된 시간
+  sentAt: timestamp("sent_at"), // 발송 시작 시간
+  answeredAt: timestamp("answered_at"), // 응답 시간
+  completedAt: timestamp("completed_at"), // 완료 시간
   createdAt: timestamp("created_at").defaultNow(),
-});
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ars_send_logs_campaign_id").on(table.campaignId),
+  index("idx_ars_send_logs_customer_id").on(table.customerId),
+  index("idx_ars_send_logs_call_result").on(table.callResult),
+  index("idx_ars_send_logs_sent_at").on(table.sentAt),
+  index("idx_ars_send_logs_phone").on(table.phone),
+  index("idx_ars_send_logs_history_key").on(table.historyKey),
+]);
 
-// ARS API 로그
+// ARS API 로그 (인덱스 추가)
 export const arsApiLogs = pgTable("ars_api_logs", {
   id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
   endpoint: varchar("endpoint", { length: 255 }),
@@ -321,7 +375,146 @@ export const arsApiLogs = pgTable("ars_api_logs", {
   responseData: text("response_data"),
   httpCode: integer("http_code"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_ars_api_logs_endpoint").on(table.endpoint),
+  index("idx_ars_api_logs_created_at").on(table.createdAt),
+  index("idx_ars_api_logs_http_code").on(table.httpCode),
+]);
+
+// 캠페인 통계 요약 테이블 (성능 최적화)
+export const arsCampaignStats = pgTable("ars_campaign_stats", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  campaignId: integer("campaign_id").notNull().references(() => arsCampaigns.id, { onDelete: "cascade" }),
+  
+  // 기본 집계 통계
+  totalCalls: integer("total_calls").default(0),
+  completedCalls: integer("completed_calls").default(0),
+  pendingCalls: integer("pending_calls").default(0),
+  
+  // 상세 통화 결과별 집계
+  connectedCount: integer("connected_count").default(0),
+  answeredCount: integer("answered_count").default(0),
+  busyCount: integer("busy_count").default(0),
+  noAnswerCount: integer("no_answer_count").default(0),
+  voicemailCount: integer("voicemail_count").default(0),
+  rejectedCount: integer("rejected_count").default(0),
+  invalidNumberCount: integer("invalid_number_count").default(0),
+  faxCount: integer("fax_count").default(0),
+  otherCount: integer("other_count").default(0),
+  powerOffCount: integer("power_off_count").default(0),
+  autoResponseCount: integer("auto_response_count").default(0),
+  errorCount: integer("error_count").default(0),
+  
+  // 재발송 통계
+  initialCount: integer("initial_count").default(0),
+  retryCount: integer("retry_count").default(0),
+  repeatCount: integer("repeat_count").default(0),
+  
+  // 비용 및 시간 통계
+  totalCost: decimal("total_cost", { precision: 12, scale: 4 }).default("0"),
+  totalDuration: integer("total_duration").default(0), // 초 단위
+  averageDuration: decimal("average_duration", { precision: 8, scale: 2 }).default("0"),
+  
+  // 통계 생성 정보
+  statsDate: timestamp("stats_date").notNull().defaultNow(),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+}, (table) => [
+  index("idx_ars_campaign_stats_campaign_id").on(table.campaignId),
+  index("idx_ars_campaign_stats_stats_date").on(table.statsDate),
+]);
+
+// 일별 캠페인 통계 집계
+export const arsDailyStats = pgTable("ars_daily_stats", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  campaignId: integer("campaign_id").references(() => arsCampaigns.id, { onDelete: "cascade" }),
+  statsDate: timestamp("stats_date").notNull(), // 해당 날짜 (YYYY-MM-DD 00:00:00)
+  
+  // 일일 집계 통계
+  totalCalls: integer("total_calls").default(0),
+  successfulCalls: integer("successful_calls").default(0),
+  failedCalls: integer("failed_calls").default(0),
+  
+  // 결과별 통계
+  connectedCount: integer("connected_count").default(0),
+  answeredCount: integer("answered_count").default(0),
+  busyCount: integer("busy_count").default(0),
+  noAnswerCount: integer("no_answer_count").default(0),
+  
+  // 비용 및 시간
+  totalCost: decimal("total_cost", { precision: 12, scale: 4 }).default("0"),
+  totalDuration: integer("total_duration").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ars_daily_stats_campaign_date").on(table.campaignId, table.statsDate),
+  index("idx_ars_daily_stats_date").on(table.statsDate),
+]);
+
+// 시간별 캠페인 통계 집계
+export const arsHourlyStats = pgTable("ars_hourly_stats", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  campaignId: integer("campaign_id").references(() => arsCampaigns.id, { onDelete: "cascade" }),
+  statsHour: timestamp("stats_hour").notNull(), // 해당 시간 (YYYY-MM-DD HH:00:00)
+  
+  // 시간별 집계 통계
+  totalCalls: integer("total_calls").default(0),
+  successfulCalls: integer("successful_calls").default(0),
+  failedCalls: integer("failed_calls").default(0),
+  
+  // 주요 결과 통계
+  answeredCount: integer("answered_count").default(0),
+  busyCount: integer("busy_count").default(0),
+  noAnswerCount: integer("no_answer_count").default(0),
+  
+  // 성능 메트릭
+  averageWaitTime: decimal("average_wait_time", { precision: 8, scale: 2 }).default("0"),
+  peakCallVolume: integer("peak_call_volume").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ars_hourly_stats_campaign_hour").on(table.campaignId, table.statsHour),
+  index("idx_ars_hourly_stats_hour").on(table.statsHour),
+]);
+
+// 배치 작업 상태 관리 테이블
+export const arsBatchJobs = pgTable("ars_batch_jobs", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  jobType: varchar("job_type", { length: 50 }).notNull(), // 'campaign_send', 'stats_aggregation', 'retry_processing'
+  campaignId: integer("campaign_id").references(() => arsCampaigns.id),
+  
+  // 작업 상태
+  status: varchar("status", { length: 20 }).default("pending"), // 'pending', 'running', 'completed', 'failed', 'cancelled'
+  progress: integer("progress").default(0), // 진행률 (0-100)
+  
+  // 작업 세부사항
+  totalItems: integer("total_items").default(0),
+  processedItems: integer("processed_items").default(0),
+  successfulItems: integer("successful_items").default(0),
+  failedItems: integer("failed_items").default(0),
+  
+  // 작업 메타데이터
+  jobData: jsonb("job_data"), // 작업별 추가 데이터
+  errorMessage: text("error_message"),
+  errorDetails: jsonb("error_details"),
+  
+  // 시간 추적
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  
+  // 작업 실행 정보
+  createdBy: varchar("created_by").references(() => users.id),
+  executorInfo: jsonb("executor_info"), // 실행 환경 정보
+}, (table) => [
+  index("idx_ars_batch_jobs_type_status").on(table.jobType, table.status),
+  index("idx_ars_batch_jobs_campaign_id").on(table.campaignId),
+  index("idx_ars_batch_jobs_created_at").on(table.createdAt),
+  index("idx_ars_batch_jobs_scheduled_at").on(table.scheduledAt),
+]);
 
 // ARS 시나리오
 export const arsScenarios = pgTable("ars_scenarios", {
@@ -362,7 +555,44 @@ export const insertArsCampaignSchema = createInsertSchema(arsCampaigns).omit({
 export const insertArsSendLogSchema = createInsertSchema(arsSendLogs).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
 });
+
+// 새로운 스키마 정의들
+export const insertArsCampaignStatsSchema = createInsertSchema(arsCampaignStats).omit({
+  id: true,
+  lastUpdated: true,
+});
+
+export const insertArsDailyStatsSchema = createInsertSchema(arsDailyStats).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertArsHourlyStatsSchema = createInsertSchema(arsHourlyStats).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertArsBatchJobSchema = createInsertSchema(arsBatchJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateArsBatchJobSchema = createInsertSchema(arsBatchJobs).pick({
+  status: true,
+  progress: true,
+  processedItems: true,
+  successfulItems: true,
+  failedItems: true,
+  errorMessage: true,
+  errorDetails: true,
+  startedAt: true,
+  completedAt: true,
+}).partial();
 
 export const insertArsScenarioSchema = createInsertSchema(arsScenarios).omit({
   createdAt: true,
@@ -428,15 +658,87 @@ export type ArsCampaign = typeof arsCampaigns.$inferSelect;
 export type InsertArsCampaign = z.infer<typeof insertArsCampaignSchema>;
 export type ArsSendLog = typeof arsSendLogs.$inferSelect;
 export type InsertArsSendLog = z.infer<typeof insertArsSendLogSchema>;
+export type ArsCampaignStats = typeof arsCampaignStats.$inferSelect;
+export type InsertArsCampaignStats = z.infer<typeof insertArsCampaignStatsSchema>;
+export type ArsDailyStats = typeof arsDailyStats.$inferSelect;
+export type InsertArsDailyStats = z.infer<typeof insertArsDailyStatsSchema>;
+export type ArsHourlyStats = typeof arsHourlyStats.$inferSelect;
+export type InsertArsHourlyStats = z.infer<typeof insertArsHourlyStatsSchema>;
+export type ArsBatchJob = typeof arsBatchJobs.$inferSelect;
+export type InsertArsBatchJob = z.infer<typeof insertArsBatchJobSchema>;
+export type UpdateArsBatchJob = z.infer<typeof updateArsBatchJobSchema>;
 export type ArsScenario = typeof arsScenarios.$inferSelect;
 export type InsertArsScenario = z.infer<typeof insertArsScenarioSchema>;
 export type AudioFile = typeof audioFiles.$inferSelect;
 export type InsertAudioFile = z.infer<typeof insertAudioFileSchema>;
 
-// 새로운 ARS API 타입
+// ARS API 타입
 export type ArsCallListAdd = z.infer<typeof arsCallListAddSchema>;
 export type ArsCallListHistory = z.infer<typeof arsCallListHistorySchema>;
 export type ArsBulkSend = z.infer<typeof arsBulkSendSchema>;
+
+// 캠페인 결과 조회를 위한 추가 타입 정의
+export type CampaignResultSummary = {
+  campaignId: number;
+  campaignName: string;
+  totalCalls: number;
+  completedCalls: number;
+  pendingCalls: number;
+  successRate: number;
+  totalCost: string;
+  averageDuration: string;
+  callResultBreakdown: {
+    connected: number;
+    answered: number;
+    busy: number;
+    noAnswer: number;
+    voicemail: number;
+    rejected: number;
+    invalidNumber: number;
+    fax: number;
+    other: number;
+    powerOff: number;
+    autoResponse: number;
+    error: number;
+  };
+  retryBreakdown: {
+    initial: number;
+    retry: number;
+    repeat: number;
+  };
+};
+
+export type CampaignResultFilter = {
+  campaignIds?: number[];
+  campaignNames?: string[];
+  dateFrom?: Date;
+  dateTo?: Date;
+  callResults?: (typeof callResultEnum.enumValues)[number][];
+  retryTypes?: (typeof retryTypeEnum.enumValues)[number][];
+  statuses?: string[];
+  page?: number;
+  limit?: number;
+};
+
+export type DetailedCallResult = ArsSendLog & {
+  customerName?: string;
+  customerPhone: string;
+  campaignName: string;
+  scenarioName?: string;
+};
+
+// 시간대별 통계를 위한 타입
+export type TimeBasedStats = {
+  period: string; // '2024-01-15' (일별) 또는 '2024-01-15 14:00' (시간별)
+  totalCalls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  answeredCount: number;
+  busyCount: number;
+  noAnswerCount: number;
+  totalCost: string;
+  averageDuration: string;
+};
 
 // 고객 그룹 타입 정의
 export type CustomerGroup = typeof customerGroups.$inferSelect;
@@ -457,4 +759,20 @@ export type AttachmentWithUser = Attachment & {
 export type ConsultationWithDetails = Consultation & {
   customer: Customer;
   user: User;
+};
+
+// ARS 관련 확장 타입
+export type ArsCampaignWithStats = ArsCampaign & {
+  stats?: ArsCampaignStats;
+  targetGroup?: CustomerGroup;
+};
+
+export type ArsSendLogWithDetails = ArsSendLog & {
+  customer?: Customer;
+  campaign?: ArsCampaign;
+};
+
+export type ArsBatchJobWithDetails = ArsBatchJob & {
+  campaign?: ArsCampaign;
+  creator?: User;
 };
