@@ -897,7 +897,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Only include password if it's provided (for updates, password is optional)
       if (password && password.trim()) {
-        updateData.password = password;
+        updateData.password = await bcrypt.hash(password, 10);
       }
 
       const updatedUser = await storage.updateUser(req.params.id, updateData);
