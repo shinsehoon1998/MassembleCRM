@@ -1,9 +1,24 @@
-// ATALK API 환경변수 설정 (import 전에 먼저 설정)
-process.env.ATALK_API_TOKEN = "NjI3OTIz";
-process.env.ATALK_COMPANY = "627923";
-process.env.ATALK_USER_ID = "mb627923";
-process.env.ATALK_CAMPAIGN_NAME = "테스트4";  // 성공 확인된 캠페인명
-console.log('✅ ATALK API 환경변수 설정 완료 (캠페인명: 테스트4)');
+// ATALK API 설정 - 중앙화된 설정 사용
+import { getConfigStatus } from './atalkConfig';
+
+// 애플리케이션 시작 시 ATALK 설정 상태 확인 (에러 발생 시에도 서버는 계속 실행)
+try {
+  const configStatus = getConfigStatus();
+  if (configStatus.isConfigured) {
+    console.log('✅ ATALK API 설정 확인됨:', {
+      environment: configStatus.environment,
+      protocol: configStatus.protocol,
+      campaignName: configStatus.campaignName,
+      source: configStatus.configSource
+    });
+  } else {
+    console.warn('⚠️ ATALK API 설정 문제 감지:', configStatus.issues);
+    console.warn('   ARS 기능이 제한될 수 있습니다. 필요 시 환경변수를 설정하세요.');
+  }
+} catch (error) {
+  console.warn('⚠️ ATALK 설정 확인 중 오류:', error instanceof Error ? error.message : 'Unknown error');
+  console.warn('   서버는 계속 실행되지만 ARS 기능이 제한될 수 있습니다.');
+}
 
 import express, { type Request, Response, NextFunction } from "express";
 import multer from 'multer';

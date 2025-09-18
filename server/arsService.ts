@@ -15,163 +15,10 @@ import {
   secureLog,
   LogLevel
 } from './securityUtils';
+import { getAtalkConfig } from './atalkConfig';
 
-// 🔥 ATALK API 고정 설정 - API 문서 기준 + HTTPS 보안 강화
-function validateAndSecureConfig() {
-  const token = process.env.ATALK_API_TOKEN || process.env.ATALK_API_KEY;
-  const company = '627923';  // API 문서 고정값
-  const userId = 'bWI2Mjc5MjM=';  // API 문서 고정값
-  
-  // 🔥 보안 강화: 프로토콜 선택 로직 개선 (ATALK 서버 HTTPS 미지원 대응)
-  const isProduction = process.env.NODE_ENV === 'production';
-  const allowInsecure = process.env.ALLOW_INSECURE_ATALK === 'true';
-  const forceHttp = process.env.ATALK_FORCE_HTTP === 'true';
-  
-  let baseUrl: string;
-  let protocol: string;
-  
-  // 🔥 수정: ATALK 서버가 HTTPS를 지원하지 않는 것이 확인됨 (SSL handshake error)
-  // 프로덕션에서도 ATALK_FORCE_HTTP=true 설정 시 HTTP 허용
-  if (forceHttp) {
-    baseUrl = 'http://101.202.45.50:8080/thirdparty/v1';
-    protocol = 'http';
-    secureLog(LogLevel.WARNING, 'CONFIG', '⚠️  ATALK_FORCE_HTTP 설정으로 HTTP 사용', {
-      protocol: 'http',
-      environment: isProduction ? 'production' : 'development',
-      reason: 'ATALK 서버가 HTTPS를 지원하지 않음 (SSL/TLS handshake error)',
-      security_note: 'ATALK API 서버 제약으로 인한 불가피한 HTTP 사용',
-      ssl_error: 'error:0A0000C6:SSL routines::packet length too long'
-    });
-  } else if (isProduction) {
-    // 프로덕션에서 ATALK_FORCE_HTTP가 설정되지 않은 경우 HTTPS 시도 (실패할 것으로 예상)
-    baseUrl = 'https://101.202.45.50:8080/thirdparty/v1';
-    protocol = 'https';
-    secureLog(LogLevel.ERROR, 'CONFIG', '🚫 프로덕션 환경: HTTPS 시도 (실패 예상)', {
-      protocol: 'https',
-      environment: 'production',
-      known_issue: 'ATALK 서버가 HTTPS를 지원하지 않음',
-      solution: 'ATALK_FORCE_HTTP=true 환경변수 설정 필요',
-      ssl_error_expected: 'SSL/TLS handshake will fail'
-    });
-  } else if (allowInsecure) {
-    // 개발환경에서 ALLOW_INSECURE_ATALK=true인 경우 HTTP 허용
-    baseUrl = 'http://101.202.45.50:8080/thirdparty/v1';
-    protocol = 'http';
-    secureLog(LogLevel.INFO, 'CONFIG', '개발 환경: HTTP 사용 허용', {
-      protocol: 'http',
-      environment: 'development',
-      insecureAllowed: true
-    });
-  } else {
-    // 개발환경이라도 기본적으로 HTTPS 시도 (실패할 것으로 예상)
-    baseUrl = 'https://101.202.45.50:8080/thirdparty/v1';
-    protocol = 'https';
-    secureLog(LogLevel.WARNING, 'CONFIG', '⚠️  개발 환경: HTTPS 사용 (실패 예상)', {
-      protocol: 'https',
-      environment: 'development',
-      known_issue: 'ATALK 서버가 HTTPS를 지원하지 않음',
-      recommendation: 'ALLOW_INSECURE_ATALK=true 또는 ATALK_FORCE_HTTP=true 설정 권장'
-    });
-  }
-
-  // 🔥 중요: 토큰 검증
-  if (!token) {
-    const isDevelopment = !isProduction;
-    const friendlyMessage = isDevelopment 
-      ? `🛠️ ARS 기능을 사용하려면 다음 환경변수를 설정해주세요:\n\n누락된 환경변수:\n- ATALK_API_TOKEN 또는 ATALK_API_KEY\n\n예시 설정:\n- ATALK_API_TOKEN=your_token_here\n\n관리자에게 문의하여 정확한 토큰 값을 받으세요.`
-      : `ARS 서비스 설정 오류: 관리자에게 문의하세요 (ATALK API 토큰 누락)`;
-    
-    secureLog(LogLevel.ERROR, 'CONFIG', '치명적 오류: ATALK API 토큰이 설정되지 않았습니다', {
-      message: 'ATALK_API_TOKEN 또는 ATALK_API_KEY 환경변수를 설정해야 합니다.',
-      development: isDevelopment
-    });
-    throw new Error(friendlyMessage);
-  }
-
-  // 설정 완료 로그
-  secureLog(LogLevel.INFO, 'CONFIG', 'ATALK API 보안 설정 완료', {
-    baseUrl,
-    company,
-    userId,
-    isProduction,
-    protocol: baseUrl.startsWith('https') ? 'https' : 'http',
-    message: 'API 문서 기준 + 보안 강화 설정 적용'
-  });
-
-  return { baseUrl, token, company, userId };
-}
-
-// 환경변수 설정을 lazy하게 처리
-let ATALK_API_CONFIG: any = null;
-
-// 🔥 환경변수 검증 상태 캐시 (중복 체크 방지)
-let ENV_VALIDATION_RESULT: { success: boolean; error?: string; config?: any } | null = null;
-
-function getAtalkConfig() {
-  // 이미 검증된 결과가 있으면 재사용
-  if (ENV_VALIDATION_RESULT) {
-    if (!ENV_VALIDATION_RESULT.success) {
-      throw new Error(ENV_VALIDATION_RESULT.error);
-    }
-    if (!ATALK_API_CONFIG) {
-      ATALK_API_CONFIG = ENV_VALIDATION_RESULT.config;
-    }
-    return ATALK_API_CONFIG;
-  }
-
-  // 🔥 첫 번째 호출시에만 검증 수행
-  try {
-    const secureConfig = validateAndSecureConfig();
-    
-    // 🔥 ATALK API 설정 - 고정값 사용
-    ATALK_API_CONFIG = {
-      baseUrl: secureConfig.baseUrl,
-      token: secureConfig.token,
-      company: secureConfig.company,
-      userId: secureConfig.userId,
-      campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-      page: 'A'  // API 문서 고정값
-    };
-    
-    // 검증 성공 결과 캐시
-    ENV_VALIDATION_RESULT = {
-      success: true,
-      config: ATALK_API_CONFIG
-    };
-    
-    return ATALK_API_CONFIG;
-  } catch (error) {
-    // 🔥 검증 실패 결과 캐시하여 반복적인 에러 방지
-    const errorMessage = error instanceof Error ? error.message : 'Unknown configuration error';
-    ENV_VALIDATION_RESULT = {
-      success: false,
-      error: errorMessage
-    };
-    throw error;
-  }
-}
-
-// 🔥 보안 설정 검증 강화
-function validateSecurityConfig() {
-  const config = validateAndSecureConfig();
-  
-  // API 키 형식 검증
-  if (!isValidApiKey(config.token)) {
-    secureLog(LogLevel.ERROR, 'CONFIG', 'Invalid API key format detected');
-    throw new Error('유효하지 않은 API 키 형식입니다. 관리자에게 문의하세요.');
-  }
-  
-  // 완전한 config 객체 반환
-  return {
-    ...config,
-    campaignName: process.env.ATALK_CAMPAIGN_NAME || '주식회사마셈블',
-    page: 'A'  // API 문서 고정값
-  };
-}
-
-secureLog(LogLevel.INFO, 'CONFIG', 'ARS API 보안 설정 완료', {
-  features: ['환경변수 검증', 'HTTPS 보안', 'PII 보호']
-});
+// ATALK 설정 중앙화 완료 - atalkConfig.ts에서 관리
+// 이제 모든 ATALK 설정은 atalkConfig.ts에서 중앙화된 설정을 사용함
 
 // API 응답 인터페이스
 export interface AtalkApiResponse {
@@ -431,7 +278,7 @@ export class AtalkArsService {
       // 🔥 환경변수 및 보안 검증을 먼저 수행하여 명확한 에러 메시지 제공
       let config;
       try {
-        config = validateSecurityConfig();
+        config = getAtalkConfig();
       } catch (configError) {
         // 🔥 환경변수 문제일 때 구체적인 에러 메시지 제공
         const errorMessage = configError instanceof Error ? configError.message : 'ATALK API 설정 오류';
@@ -632,7 +479,7 @@ export class AtalkArsService {
       // 🔥 환경변수 및 보안 검증
       let config;
       try {
-        config = validateSecurityConfig();
+        config = getAtalkConfig();
       } catch (configError) {
         const errorMessage = configError instanceof Error ? configError.message : 'ATALK API 설정 오류';
         secureLog(LogLevel.ERROR, 'ARS', '환경변수 설정 오류', {
@@ -833,7 +680,7 @@ export class AtalkArsService {
     campaignName: string
   ): Promise<{ success: boolean; message: string; fileName?: string }> {
     try {
-      const config = validateSecurityConfig();
+      const config = getAtalkConfig();
       
       const formData = new FormData();
       
@@ -985,7 +832,7 @@ export class AtalkArsService {
     const requestId = generateRequestId();
     
     try {
-      const config = validateSecurityConfig();
+      const config = getAtalkConfig();
       const historyData = {
         history_key: historyKey,
         company: config.company,
