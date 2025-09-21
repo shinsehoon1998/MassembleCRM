@@ -44,6 +44,7 @@ export const users = pgTable("users", {
   name: varchar("name").notNull(),
   username: varchar("username").unique(),
   password: varchar("password"),
+  phone: varchar("phone"),
   department: varchar("department"),
   role: userRoleEnum("role").notNull().default("counselor"),
   isActive: boolean("is_active").notNull().default(true),
