@@ -190,89 +190,171 @@ export class SolapiSmsService {
   }
 
   /**
-   * API 호출 공통 함수
+   * 지수 백오프를 사용한 재시도 헬퍼 함수
+   */
+  private async delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * API 호출 공통 함수 (재시도 로직 포함)
    */
   private async makeApiCall<T = SolapiApiResponse>(
     endpoint: string,
     data: any,
     method: 'POST' | 'GET' = 'POST',
-    requestId?: string
+    requestId?: string,
+    maxRetries = 3
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const currentRequestId = requestId || generateRequestId();
     
-    try {
-      const authHeaders = await this.generateAuthHeaders();
-      
-      const requestOptions: RequestInit = {
-        method,
-        headers: {
-          ...authHeaders,
-          'X-Request-ID': currentRequestId,
-        }
-      };
-
-      if (method === 'POST' && data) {
-        requestOptions.body = JSON.stringify(data);
-      }
-
-      // 로그에서 민감정보 마스킹
-      const maskedData = maskApiData(data);
-      
-      secureLog(LogLevel.INFO, 'SOLAPI_SMS', `${method} ${endpoint}`, {
-        endpoint,
-        data: maskedData,
-        authPresent: !!this.apiKey
-      }, currentRequestId);
-
-      const response = await fetch(url, requestOptions);
-      
-      secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'Response received', {
-        status: response.status,
-        contentType: response.headers.get('content-type')
-      }, currentRequestId);
-      
-      let result: any;
-      const contentType = response.headers.get('content-type') || '';
-      
-      if (contentType.includes('application/json')) {
-        result = await response.json();
-      } else {
-        const textResult = await response.text();
-        result = {
-          statusCode: response.status.toString(),
-          statusMessage: textResult || response.statusText,
-          data: textResult
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const authHeaders = await this.generateAuthHeaders();
+        
+        const requestOptions: RequestInit = {
+          method,
+          headers: {
+            ...authHeaders,
+            'X-Request-ID': currentRequestId,
+          }
         };
+
+        if (method === 'POST' && data) {
+          requestOptions.body = JSON.stringify(data);
+        }
+
+        // 로그에서 민감정보 마스킹
+        const maskedData = maskApiData(data);
+        
+        if (attempt > 0) {
+          secureLog(LogLevel.INFO, 'SOLAPI_SMS', `${method} ${endpoint} (재시도 ${attempt}/${maxRetries})`, {
+            endpoint,
+            data: maskedData,
+            authPresent: !!this.apiKey,
+            attempt
+          }, currentRequestId);
+        } else {
+          secureLog(LogLevel.INFO, 'SOLAPI_SMS', `${method} ${endpoint}`, {
+            endpoint,
+            data: maskedData,
+            authPresent: !!this.apiKey
+          }, currentRequestId);
+        }
+
+        const response = await fetch(url, requestOptions);
+        
+        secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'Response received', {
+          status: response.status,
+          contentType: response.headers.get('content-type'),
+          attempt
+        }, currentRequestId);
+        
+        let result: any;
+        const contentType = response.headers.get('content-type') || '';
+        
+        if (contentType.includes('application/json')) {
+          result = await response.json();
+        } else {
+          const textResult = await response.text();
+          result = {
+            statusCode: response.status.toString(),
+            statusMessage: textResult || response.statusText,
+            data: textResult
+          };
+        }
+
+        // API 호출 결과 로깅 (v4 구조에 맞게 수정)
+        secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'API response parsed', {
+          httpStatus: response.status,
+          hasGroupId: !!result.groupId,
+          hasMessageId: !!result.messageId,
+          successCount: result.successCount,
+          failCount: result.failCount,
+          hasBalance: result.balance !== undefined,
+          hasError: !!result.errorCode,
+          attempt
+        }, currentRequestId);
+
+        // 재시도 가능한 HTTP 상태 코드 확인
+        const isRetryableStatus = response.status === 429 || // Rate limit
+                                 response.status === 500 || // Internal server error
+                                 response.status === 502 || // Bad gateway
+                                 response.status === 503 || // Service unavailable
+                                 response.status === 504;   // Gateway timeout
+
+        if (!response.ok) {
+          const error = new Error(`Solapi API 호출 실패 (HTTP ${response.status}): ${result.statusMessage || response.statusText}`);
+          
+          // 재시도 가능한 상태이고 아직 재시도 횟수가 남아있으면 재시도
+          if (isRetryableStatus && attempt < maxRetries) {
+            lastError = error;
+            
+            // 지수 백오프 계산 (base: 1초, 최대: 16초)
+            const delayMs = Math.min(1000 * Math.pow(2, attempt), 16000);
+            
+            secureLog(LogLevel.WARNING, 'SOLAPI_SMS', '재시도 가능한 오류 발생', {
+              httpStatus: response.status,
+              error: result.statusMessage || response.statusText,
+              attempt: attempt + 1,
+              maxRetries,
+              delayMs
+            }, currentRequestId);
+            
+            await this.delay(delayMs);
+            continue; // 다음 재시도로
+          }
+          
+          throw error;
+        }
+
+        // 성공적인 응답
+        if (attempt > 0) {
+          secureLog(LogLevel.INFO, 'SOLAPI_SMS', '재시도 후 성공', {
+            attempt: attempt + 1,
+            httpStatus: response.status
+          }, currentRequestId);
+        }
+
+        return result as T;
+        
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+        
+        // 네트워크 오류나 기타 예외의 경우도 재시도 (fetch 실패 등)
+        if (attempt < maxRetries) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt), 16000);
+          
+          secureLog(LogLevel.WARNING, 'SOLAPI_SMS', '네트워크 오류로 재시도', {
+            error: lastError.message,
+            attempt: attempt + 1,
+            maxRetries,
+            delayMs
+          }, currentRequestId);
+          
+          await this.delay(delayMs);
+          continue; // 다음 재시도로
+        }
+        
+        // 최대 재시도 횟수 초과
+        break;
       }
-
-      // API 호출 결과 로깅 (v4 구조에 맞게 수정)
-      secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'API response parsed', {
-        httpStatus: response.status,
-        hasGroupId: !!result.groupId,
-        hasMessageId: !!result.messageId,
-        successCount: result.successCount,
-        failCount: result.failCount,
-        hasBalance: result.balance !== undefined,
-        hasError: !!result.errorCode
-      }, currentRequestId);
-
-      if (!response.ok) {
-        throw new Error(`Solapi API 호출 실패 (HTTP ${response.status}): ${result.statusMessage || response.statusText}`);
-      }
-
-      return result as T;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      secureLog(LogLevel.ERROR, 'SOLAPI_SMS', `${endpoint} 호출 실패`, {
-        error: errorMessage,
-        url,
-        endpoint
-      }, currentRequestId);
-      
-      throw error;
     }
+    
+    // 모든 재시도 실패
+    const errorMessage = lastError?.message || 'Unknown error';
+    
+    secureLog(LogLevel.ERROR, 'SOLAPI_SMS', `${endpoint} 호출 최종 실패 (${maxRetries + 1}번 시도)`, {
+      error: errorMessage,
+      url,
+      endpoint,
+      totalAttempts: maxRetries + 1
+    }, currentRequestId);
+    
+    throw lastError || new Error('Unknown error occurred during API call');
   }
 
   /**
@@ -289,7 +371,7 @@ https://massemble-crm-shinsehoona.replit.app`;
 
     return template
       .replace('{{customerName}}', templateData.customerName)
-      .replace('{{customerPhone}}', maskPhoneNumber(templateData.customerPhone))
+      .replace('{{customerPhone}}', templateData.customerPhone)
       .replace('{{status}}', templateData.status)
       .replace('{{assignedTime}}', templateData.assignedTime);
   }

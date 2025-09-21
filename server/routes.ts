@@ -9,6 +9,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
 import multer from "multer";
 import { atalkArsService } from "./arsService";
+import { SolapiSmsService } from "./solapiService";
 import {
   maskPhoneNumber,
   maskName,
@@ -167,6 +168,261 @@ function csrfProtection(req: any, res: any, next: any) {
   }
 
   next();
+}
+
+// ============================================
+// SMS 발송 헬퍼 함수들
+// ============================================
+
+/**
+ * SMS 서비스 인스턴스 생성 및 초기화
+ */
+let smsService: SolapiSmsService | null = null;
+
+/**
+ * SMS 서비스 인스턴스를 안전하게 초기화하고 반환
+ */
+function getSmsService(): SolapiSmsService | null {
+  try {
+    if (!smsService) {
+      smsService = new SolapiSmsService();
+    }
+    return smsService;
+  } catch (error) {
+    secureLog(LogLevel.WARNING, 'SMS', 'SMS 서비스 초기화 실패', {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    return null;
+  }
+}
+
+/**
+ * SMS 발송 결과 인터페이스
+ */
+interface SmsAssignmentResult {
+  success: boolean;
+  customerId: string;
+  attempted: boolean; // SMS 발송을 시도했는지 여부
+  reason?: string; // 실패하거나 생략한 이유
+  messageId?: string; // 성공시 메시지 ID
+}
+
+/**
+ * SMS 발송 작업 인터페이스
+ */
+interface SmsTask {
+  customerId: string;
+  assignedUserId: string;
+  customer: any;
+  requestId: string;
+}
+
+/**
+ * 병렬 SMS 발송 처리 함수 (concurrency limit 적용)
+ */
+async function processSmsTasksInParallel(
+  smsTasks: SmsTask[],
+  concurrencyLimit = 5
+): Promise<SmsAssignmentResult[]> {
+  const results: SmsAssignmentResult[] = [];
+  
+  // 작업을 청크로 나누어 병렬 처리
+  for (let i = 0; i < smsTasks.length; i += concurrencyLimit) {
+    const chunk = smsTasks.slice(i, i + concurrencyLimit);
+    
+    // 현재 청크의 모든 SMS 발송을 병렬로 실행
+    const chunkPromises = chunk.map(async (task) => {
+      return await sendCustomerAssignmentSms(
+        task.customerId,
+        task.assignedUserId,
+        task.customer,
+        task.requestId
+      );
+    });
+    
+    // 모든 병렬 작업이 완료될 때까지 대기
+    const chunkResults = await Promise.all(chunkPromises);
+    results.push(...chunkResults);
+    
+    // 다음 청크 처리 전에 약간의 지연 (API 속도 제한 완화)
+    if (i + concurrencyLimit < smsTasks.length) {
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms 지연
+    }
+  }
+  
+  return results;
+}
+
+/**
+ * 고객 배정 변경 시 SMS 발송 처리 함수
+ * SMS 발송 실패해도 고객 배정 작업은 정상 완료되도록 처리
+ */
+async function sendCustomerAssignmentSms(
+  customerId: string,
+  newAssignedUserId: string | null | undefined,
+  customer: any,
+  requestId?: string
+): Promise<SmsAssignmentResult> {
+  const currentRequestId = requestId || generateRequestId();
+  
+  try {
+    // 새로운 담당자가 없으면 SMS 발송하지 않음
+    if (!newAssignedUserId) {
+      secureLog(LogLevel.INFO, 'SMS', 'SMS 발송 생략 - 담당자 미지정', {
+        customerId,
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId,
+        attempted: false,
+        reason: '담당자 미지정'
+      };
+    }
+
+    const sms = getSmsService();
+    if (!sms) {
+      secureLog(LogLevel.WARNING, 'SMS', 'SMS 서비스 사용 불가 - 발송 생략', {
+        customerId,
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId,
+        attempted: false,
+        reason: 'SMS 서비스 사용 불가'
+      };
+    }
+
+    // 새로운 담당자 정보 조회
+    const assignedUser = await storage.getUser(newAssignedUserId);
+    if (!assignedUser) {
+      secureLog(LogLevel.WARNING, 'SMS', '담당자 정보 없음 - SMS 발송 생략', {
+        customerId,
+        newAssignedUserId,
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId,
+        attempted: false,
+        reason: '담당자 정보 없음'
+      };
+    }
+
+    // 담당자 휴대폰 번호 확인
+    if (!assignedUser.phone || assignedUser.phone.trim() === '') {
+      secureLog(LogLevel.INFO, 'SMS', '담당자 휴대폰 번호 없음 - SMS 발송 생략', {
+        customerId,
+        assignedUserId: newAssignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId,
+        attempted: false,
+        reason: '담당자 휴대폰 번호 없음'
+      };
+    }
+
+    // SMS 템플릿 데이터 준비
+    const now = new Date();
+    const templateData = {
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      status: customer.status || '인텍',
+      assignedTime: now.toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      })
+    };
+
+    secureLog(LogLevel.INFO, 'SMS', '고객 배정 SMS 발송 시작', {
+      customerId,
+      customerName: maskName(customer.name),
+      assignedUserId: newAssignedUserId,
+      assignedUserName: maskName(assignedUser.name),
+      assignedUserPhone: maskPhoneNumber(assignedUser.phone)
+    }, currentRequestId);
+
+    // SMS 발송 (비동기 처리 - 실패해도 고객 배정은 완료됨)
+    const smsResult = await sms.sendCustomerAssignmentNotification(
+      assignedUser.phone,
+      templateData
+    );
+
+    if (smsResult.success) {
+      secureLog(LogLevel.INFO, 'SMS', '고객 배정 SMS 발송 성공', {
+        customerId,
+        customerName: maskName(customer.name),
+        assignedUserId: newAssignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        messageId: smsResult.messageId
+      }, currentRequestId);
+      
+      return {
+        success: true,
+        customerId,
+        attempted: true,
+        messageId: smsResult.messageId
+      };
+    } else {
+      secureLog(LogLevel.WARNING, 'SMS', '고객 배정 SMS 발송 실패', {
+        customerId,
+        customerName: maskName(customer.name),
+        assignedUserId: newAssignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        error: smsResult.message
+      }, currentRequestId);
+      
+      return {
+        success: false,
+        customerId,
+        attempted: true,
+        reason: smsResult.message || 'SMS 발송 실패'
+      };
+    }
+  } catch (error) {
+    // SMS 발송 실패해도 에러를 throw하지 않음 (고객 배정은 정상 완료되어야 함)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    secureLog(LogLevel.ERROR, 'SMS', '고객 배정 SMS 발송 예외', {
+      customerId,
+      customerName: customer.name ? maskName(customer.name) : 'unknown',
+      newAssignedUserId,
+      error: errorMessage
+    }, currentRequestId);
+    
+    return {
+      success: false,
+      customerId,
+      attempted: true,
+      reason: `예외 발생: ${errorMessage}`
+    };
+  }
+}
+
+/**
+ * assignedUserId 변경 감지 함수
+ */
+function hasAssignedUserChanged(
+  originalAssignedUserId: string | null | undefined,
+  newAssignedUserId: string | null | undefined
+): boolean {
+  // null, undefined, empty string을 모두 "미배정" 상태로 간주
+  const normalizeAssignedUserId = (id: string | null | undefined): string | null => {
+    if (!id || id.trim() === '') return null;
+    return id.trim();
+  };
+
+  const originalNormalized = normalizeAssignedUserId(originalAssignedUserId);
+  const newNormalized = normalizeAssignedUserId(newAssignedUserId);
+
+  return originalNormalized !== newNormalized;
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -686,6 +942,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Batch operations for customers (배치 엔드포인트를 개별 엔드포인트보다 먼저 정의)
   app.put('/api/customers/batch', isAuthenticated, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
     try {
       const { customerIds, updates } = req.body;
       
@@ -697,11 +955,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "updates object is required" });
       }
 
+      // assignedUserId가 업데이트 대상인지 확인
+      const isAssigningUsers = 'assignedUserId' in updates;
+      
+      secureLog(LogLevel.INFO, 'CUSTOMER', '일괄 고객 수정 요청', {
+        customerCount: customerIds.length,
+        isAssigningUsers,
+        newAssignedUserId: updates.assignedUserId || 'none'
+      }, requestId);
+
       const results = [];
       let updateCount = 0;
+      const smsTasks: SmsTask[] = [];
       
+      // Step 1: 고객 정보 업데이트 (순차 처리)
       for (const customerId of customerIds) {
         try {
+          let originalCustomer = null;
+          
+          // assignedUserId 변경이 포함된 경우, 기존 고객 정보 조회
+          if (isAssigningUsers) {
+            originalCustomer = await storage.getCustomer(customerId);
+            if (!originalCustomer) {
+              secureLog(LogLevel.WARNING, 'CUSTOMER', '고객 정보 조회 실패', {
+                customerId
+              }, requestId);
+              results.push({ 
+                id: customerId, 
+                status: 'error', 
+                error: '고객을 찾을 수 없습니다.' 
+              });
+              continue;
+            }
+          }
+          
           const customer = await storage.updateCustomer(customerId, updates);
           results.push(customer);
           updateCount++;
@@ -713,30 +1000,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
             action: "customer_batch_updated",
             description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
           });
+
+          // assignedUserId가 변경된 경우 SMS 작업 수집
+          if (isAssigningUsers && originalCustomer) {
+            const assignedUserChanged = hasAssignedUserChanged(
+              originalCustomer.assignedUserId,
+              updates.assignedUserId
+            );
+
+            if (assignedUserChanged && updates.assignedUserId) {
+              smsTasks.push({
+                customerId: customer.id,
+                assignedUserId: updates.assignedUserId,
+                customer: customer,
+                requestId: requestId
+              });
+            }
+          }
         } catch (error) {
           secureLog(LogLevel.ERROR, 'CUSTOMER', `Error updating customer ${maskPhoneNumber(customerId)}`, {
             error: error instanceof Error ? error.message : 'Unknown error'
-          });
+          }, requestId);
           // 개별 고객 업데이트 실패는 전체 작업을 중단하지 않음
-          results.push({ id: customerId, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
+          results.push({ 
+            id: customerId, 
+            status: 'error', 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          });
         }
       }
 
-      console.log(`Batch update completed: ${updateCount}/${customerIds.length} customers updated`);
+      // Step 2: SMS 발송 (병렬 처리 - concurrency limit 5)
+      let smsResults: SmsAssignmentResult[] = [];
+      if (smsTasks.length > 0) {
+        secureLog(LogLevel.INFO, 'SMS', 'SMS 병렬 발송 시작', {
+          smsTaskCount: smsTasks.length,
+          concurrencyLimit: 5
+        }, requestId);
+        
+        try {
+          smsResults = await processSmsTasksInParallel(smsTasks, 5);
+          
+          secureLog(LogLevel.INFO, 'SMS', 'SMS 병렬 발송 완료', {
+            totalTasks: smsTasks.length,
+            successCount: smsResults.filter(r => r.success).length,
+            failureCount: smsResults.filter(r => !r.success).length,
+            attemptedCount: smsResults.filter(r => r.attempted).length
+          }, requestId);
+        } catch (error) {
+          secureLog(LogLevel.ERROR, 'SMS', 'SMS 병렬 발송 중 오류 발생', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            smsTaskCount: smsTasks.length
+          }, requestId);
+        }
+      }
+
+      // SMS 발송 결과 집계
+      const smsSuccessCount = smsResults.filter(r => r.success).length;
+      const smsFailureCount = smsResults.filter(r => !r.success && r.attempted).length;
+      const smsSkippedCount = smsResults.filter(r => !r.attempted).length;
+      
+      secureLog(LogLevel.INFO, 'CUSTOMER', '일괄 고객 수정 완료', {
+        updatedCount: updateCount,
+        totalCount: customerIds.length,
+        smsTaskCount: smsTasks.length,
+        smsSuccessCount,
+        smsFailureCount,
+        smsSkippedCount,
+        isAssigningUsers
+      }, requestId);
+
       res.json({ 
         updated: updateCount, 
         total: customerIds.length,
-        customers: results 
+        customers: results,
+        sms: {
+          attempted: smsTasks.length,
+          success: smsSuccessCount,
+          failed: smsFailureCount,
+          skipped: smsSkippedCount,
+          results: smsResults
+        }
       });
     } catch (error) {
       secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error batch updating customers', {
         error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      }, requestId);
       res.status(500).json({ message: "Failed to batch update customers" });
     }
   });
 
   app.put('/api/customers/:id', isAuthenticated, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
     try {
       // Check if user has access to this customer
       const hasAccess = await canAccessCustomer(req.params.id, req.user);
@@ -744,7 +1100,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "해당 고객에 대한 접근 권한이 없습니다." });
       }
 
+      // 기존 고객 정보 조회 (assignedUserId 변경 감지를 위해)
+      const originalCustomer = await storage.getCustomer(req.params.id);
+      if (!originalCustomer) {
+        return res.status(404).json({ message: "고객을 찾을 수 없습니다." });
+      }
+
       const validatedData = updateCustomerSchema.parse(req.body);
+      
+      // assignedUserId 변경 여부 확인
+      const assignedUserChanged = hasAssignedUserChanged(
+        originalCustomer.assignedUserId,
+        validatedData.assignedUserId
+      );
+
+      secureLog(LogLevel.INFO, 'CUSTOMER', '고객 정보 수정 요청', {
+        customerId: req.params.id,
+        customerName: maskName(originalCustomer.name),
+        assignedUserChanged,
+        originalAssignedUserId: originalCustomer.assignedUserId || 'none',
+        newAssignedUserId: validatedData.assignedUserId || 'none'
+      }, requestId);
+
+      // 고객 정보 업데이트
       const customer = await storage.updateCustomer(req.params.id, validatedData);
 
       // Log activity
@@ -755,6 +1133,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: `고객 "${customer.name}"의 정보를 수정했습니다.`,
       });
 
+      // assignedUserId가 변경된 경우 SMS 발송 (비동기 처리 - 실패해도 응답에는 영향 없음)
+      if (assignedUserChanged && validatedData.assignedUserId) {
+        // SMS 발송을 비동기로 처리하여 응답 속도에 영향을 주지 않음
+        sendCustomerAssignmentSms(
+          customer.id,
+          validatedData.assignedUserId,
+          customer,
+          requestId
+        ).catch(error => {
+          // SMS 발송 실패는 로그로만 처리 (이미 sendCustomerAssignmentSms 내에서 로깅됨)
+          secureLog(LogLevel.ERROR, 'SMS', 'SMS 발송 비동기 처리 실패', {
+            customerId: customer.id,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          }, requestId);
+        });
+      }
+
       res.json(customer);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -762,7 +1157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error updating customer', {
         error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      }, requestId);
       res.status(500).json({ message: "Failed to update customer" });
     }
   });
