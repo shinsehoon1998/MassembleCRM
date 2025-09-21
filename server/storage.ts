@@ -820,7 +820,7 @@ export class DatabaseStorage implements IStorage {
     })) as CustomerWithUser[];
 
     return {
-      customers: applyPersonalInfoMaskingToArray(maskedCustomers),
+      customers: maskedCustomers, // 고객 목록에서는 마스킹 제거 - 담당자가 고객명을 확인할 수 있어야 함
       total,
       totalPages: Math.ceil(total / limit),
     };
@@ -1023,7 +1023,7 @@ export class DatabaseStorage implements IStorage {
       assignedUser: row.assignedUser,
     })) as CustomerWithUser[];
 
-    return applyPersonalInfoMaskingToArray(maskedCustomers);
+    return maskedCustomers; // 최근 고객 목록에서도 마스킹 제거 - 담당자가 고객명을 확인할 수 있어야 함
   }
 
   async getConsultations(customerId: string): Promise<ConsultationWithDetails[]> {
