@@ -1122,6 +1122,70 @@ export type SendLogsExportCsv = z.infer<typeof sendLogsExportCsvSchema>;
 export type CampaignsExportExcel = z.infer<typeof campaignsExportExcelSchema>;
 export type ReportsExport = z.infer<typeof reportsExportSchema>;
 
+// ============================================
+// SMS 관련 Zod 스키마 (Solapi v4)
+// ============================================
+
+// SMS 메시지 스키마
+export const smsMessageSchema = z.object({
+  to: z.string()
+    .min(9, '전화번호는 최소 9자리 이상이어야 합니다.')
+    .max(15, '전화번호는 최대 15자리까지 허용됩니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  from: z.string()
+    .min(9, '발신번호는 최소 9자리 이상이어야 합니다.')
+    .max(15, '발신번호는 최대 15자리까지 허용됩니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 발신번호 형식이 아닙니다.'),
+  text: z.string()
+    .min(1, '메시지 내용은 필수입니다.')
+    .max(2000, '메시지는 최대 2000자까지 허용됩니다.'),
+  type: z.enum(['SMS', 'LMS', 'MMS']).optional(),
+  country: z.string().default('82'),
+  subject: z.string().max(40, '제목은 최대 40자까지 허용됩니다.').optional(),
+});
+
+// SMS 발송 요청 스키마
+export const smsSendRequestSchema = z.object({
+  to: z.string()
+    .min(9, '수신번호는 필수입니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  message: z.string()
+    .min(1, '메시지 내용은 필수입니다.')
+    .max(2000, '메시지는 최대 2000자까지 허용됩니다.'),
+  type: z.enum(['SMS', 'LMS', 'MMS']).optional(),
+  subject: z.string().max(40, '제목은 최대 40자까지 허용됩니다.').optional(),
+});
+
+// 고객 배정 알림 SMS 스키마
+export const smsCustomerAssignmentSchema = z.object({
+  to: z.string()
+    .min(9, '수신번호는 필수입니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  customerName: z.string()
+    .min(1, '고객명은 필수입니다.')
+    .max(50, '고객명은 최대 50자까지 허용됩니다.'),
+  customerPhone: z.string()
+    .min(9, '고객 전화번호는 필수입니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  status: z.string()
+    .min(1, '상태는 필수입니다.')
+    .max(30, '상태는 최대 30자까지 허용됩니다.'),
+  assignedTime: z.string()
+    .min(1, '배정시간은 필수입니다.'),
+});
+
+// SMS 이력 조회 스키마
+export const smsHistoryRequestSchema = z.object({
+  messageId: z.string()
+    .min(1, '메시지 ID는 필수입니다.')
+    .regex(/^[a-zA-Z0-9_-]+$/, '유효한 메시지 ID 형식이 아닙니다.'),
+});
+
+// SMS 발송 결과 타입
+export type SmsSendRequest = z.infer<typeof smsSendRequestSchema>;
+export type SmsCustomerAssignment = z.infer<typeof smsCustomerAssignmentSchema>;
+export type SmsHistoryRequest = z.infer<typeof smsHistoryRequestSchema>;
+
 // 파일명 생성 유틸리티 함수들
 export const generateExportFileName = {
   sendLogsCsv: (dateFrom?: string, dateTo?: string, campaignName?: string) => {

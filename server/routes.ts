@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -179,6 +179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/customers', csrfProtection);
   app.use('/api/users', csrfProtection);
   app.use('/api/ars', csrfProtection);
+  app.use('/api/sms', csrfProtection); // SMS 엔드포인트 CSRF 보호
 
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
@@ -4449,6 +4450,291 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         message: error instanceof Error ? error.message : '결과 동기화 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  // ============================================
+  // SMS 발송 서비스 API Routes
+  // ============================================
+  
+  /**
+   * SMS 발솠
+   * 권한: 관리자/매니저만 가능
+   * 속도 제한: 적용
+   * 유효성 검사: Zod 스키마 사용
+   */
+  app.post('/api/sms/send', isAuthenticated, requireAdminOrManager, async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      // 속도 제한 검사
+      const rateLimitResult = checkRateLimit(`sms_send_${(req as any).user.id}`, 10, 60); // 분당 10개 제한
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'SMS_RATE_LIMIT', 'SMS 발송 속도 제한 초과', {
+          userId: (req as any).user.id,
+          remainingTime: rateLimitResult.resetTime
+        }, requestId);
+        
+        return res.status(429).json({ 
+          success: false, 
+          message: `SMS 발송 속도 제한을 초과했습니다. ${Math.ceil(rateLimitResult.resetTime! / 1000)}초 후 다시 시도해주세요.`,
+          retryAfter: rateLimitResult.resetTime
+        });
+      }
+      
+      // Zod 스키마 유효성 검사
+      const validationResult = smsSendRequestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        secureLog(LogLevel.WARNING, 'SMS_VALIDATION', 'SMS 발송 요청 유효성 검사 실패', {
+          userId: (req as any).user.id,
+          errors: validationResult.error.errors
+        }, requestId);
+        
+        return res.status(400).json({ 
+          success: false, 
+          message: '입력 데이터가 올바르지 않습니다.',
+          errors: validationResult.error.errors
+        });
+      }
+
+      const { to, message, type, subject } = validationResult.data;
+      
+      secureLog(LogLevel.INFO, 'SMS_SEND', 'SMS 발송 요청', {
+        userId: (req as any).user.id,
+        userRole: (req as any).user.role,
+        recipientPhone: maskPhoneNumber(to),
+        messageLength: message.length,
+        messageType: type || 'auto'
+      }, requestId);
+
+      const { solapiSmsService } = await import('./solapiService');
+      const result = await solapiSmsService.sendSms(to, message, { type, subject });
+      
+      // 발송 결과 로깅
+      secureLog(LogLevel.INFO, 'SMS_SEND_RESULT', 'SMS 발송 결과', {
+        userId: (req as any).user.id,
+        success: result.success,
+        messageId: result.messageId,
+        recipientPhone: maskPhoneNumber(to)
+      }, requestId);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SMS_SEND_ERROR', 'SMS 발송 오류', {
+        userId: (req as any).user?.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ 
+        success: false, 
+        message: 'SMS 발송 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  /**
+   * 고객 배정 알림 SMS 발송
+   * 권한: 관리자/매니저만 가능
+   * 속도 제한: 적용
+   * 유효성 검사: Zod 스키마 사용
+   */
+  app.post('/api/sms/send-customer-assignment', isAuthenticated, requireAdminOrManager, async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      // 속도 제한 검사
+      const rateLimitResult = checkRateLimit(`sms_assignment_${req.user.id}`, 20, 60); // 분당 20개 제한
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'SMS_RATE_LIMIT', '고객 배정 알림 SMS 속도 제한 초과', {
+          userId: req.user.id,
+          remainingTime: rateLimitResult.resetTime
+        }, requestId);
+        
+        return res.status(429).json({ 
+          success: false, 
+          message: `고객 배정 알림 SMS 속도 제한을 초과했습니다. ${Math.ceil(rateLimitResult.resetTime! / 1000)}초 후 다시 시도해주세요.`,
+          retryAfter: rateLimitResult.resetTime
+        });
+      }
+      
+      // Zod 스키마 유효성 검사
+      const validationResult = smsCustomerAssignmentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        secureLog(LogLevel.WARNING, 'SMS_VALIDATION', '고객 배정 알림 SMS 유효성 검사 실패', {
+          userId: req.user.id,
+          errors: validationResult.error.errors
+        }, requestId);
+        
+        return res.status(400).json({ 
+          success: false, 
+          message: '입력 데이터가 올바르지 않습니다.',
+          errors: validationResult.error.errors
+        });
+      }
+
+      const { to, customerName, customerPhone, status, assignedTime } = validationResult.data;
+      
+      secureLog(LogLevel.INFO, 'SMS_CUSTOMER_ASSIGNMENT', '고객 배정 알림 SMS 발송 요청', {
+        userId: req.user.id,
+        userRole: req.user.role,
+        recipientPhone: maskPhoneNumber(to),
+        customerName: maskName(customerName),
+        status: status
+      }, requestId);
+
+      const { solapiSmsService } = await import('./solapiService');
+      const result = await solapiSmsService.sendCustomerAssignmentNotification(to, {
+        customerName,
+        customerPhone,
+        status,
+        assignedTime
+      });
+      
+      // 발송 결과 로깅
+      secureLog(LogLevel.INFO, 'SMS_CUSTOMER_ASSIGNMENT_RESULT', '고객 배정 알림 SMS 발송 결과', {
+        userId: req.user.id,
+        success: result.success,
+        messageId: result.messageId,
+        recipientPhone: maskPhoneNumber(to)
+      }, requestId);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SMS_CUSTOMER_ASSIGNMENT_ERROR', '고객 배정 알림 SMS 발송 오류', {
+        userId: req.user?.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ 
+        success: false, 
+        message: '고객 배정 알림 SMS 발송 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  /**
+   * SMS 서비스 잔액 조회
+   * 권한: 관리자만 가능 (비용 관련 정보는 민감)
+   * 속도 제한: 적용
+   */
+  app.get('/api/sms/balance', isAuthenticated, requireAdmin, async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      // 속도 제한 검사 (잔액 조회는 더 엄격하게)
+      const rateLimitResult = checkRateLimit(`sms_balance_${req.user.id}`, 30, 60); // 분당 30개 제한
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'SMS_RATE_LIMIT', 'SMS 잔액 조회 속도 제한 초과', {
+          userId: req.user.id,
+          remainingTime: rateLimitResult.resetTime
+        }, requestId);
+        
+        return res.status(429).json({ 
+          success: false, 
+          message: `잔액 조회 속도 제한을 초과했습니다. ${Math.ceil(rateLimitResult.resetTime! / 1000)}초 후 다시 시도해주세요.`,
+          retryAfter: rateLimitResult.resetTime
+        });
+      }
+      
+      secureLog(LogLevel.INFO, 'SMS_BALANCE', 'SMS 서비스 잔액 조회 요청', {
+        userId: req.user.id,
+        userRole: req.user.role
+      }, requestId);
+
+      const { solapiSmsService } = await import('./solapiService');
+      const result = await solapiSmsService.getBalance();
+      
+      secureLog(LogLevel.INFO, 'SMS_BALANCE_RESULT', 'SMS 서비스 잔액 조회 결과', {
+        userId: req.user.id,
+        success: result.success,
+        hasBalance: result.balance !== undefined
+      }, requestId);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SMS_BALANCE_ERROR', 'SMS 잔액 조회 오류', {
+        userId: req.user?.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ 
+        success: false, 
+        message: '잔액 조회 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  /**
+   * SMS 발송 이력 조회
+   * 권한: 관리자만 가능 (비용 및 발솠 정보는 민감)
+   * 속도 제한: 적용
+   * 유효성 검사: Zod 스키마 사용
+   */
+  app.get('/api/sms/history/:messageId', isAuthenticated, requireAdmin, async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      // 속도 제한 검사
+      const rateLimitResult = checkRateLimit(`sms_history_${req.user.id}`, 60, 60); // 분당 60개 제한
+      if (!rateLimitResult.allowed) {
+        secureLog(LogLevel.WARNING, 'SMS_RATE_LIMIT', 'SMS 이력 조회 속도 제한 초과', {
+          userId: req.user.id,
+          remainingTime: rateLimitResult.resetTime
+        }, requestId);
+        
+        return res.status(429).json({ 
+          success: false, 
+          message: `SMS 이력 조회 속도 제한을 초과했습니다. ${Math.ceil(rateLimitResult.resetTime! / 1000)}초 후 다시 시도해주세요.`,
+          retryAfter: rateLimitResult.resetTime
+        });
+      }
+      
+      // Zod 스키마 유효성 검사
+      const validationResult = smsHistoryRequestSchema.safeParse({ messageId: req.params.messageId });
+      if (!validationResult.success) {
+        secureLog(LogLevel.WARNING, 'SMS_VALIDATION', 'SMS 이력 조회 유효성 검사 실패', {
+          userId: req.user.id,
+          messageId: req.params.messageId,
+          errors: validationResult.error.errors
+        }, requestId);
+        
+        return res.status(400).json({ 
+          success: false, 
+          message: '잘못된 메시지 ID 형식입니다.',
+          errors: validationResult.error.errors
+        });
+      }
+
+      const { messageId } = validationResult.data;
+      
+      secureLog(LogLevel.INFO, 'SMS_HISTORY', 'SMS 발송 이력 조회 요청', {
+        userId: req.user.id,
+        userRole: req.user.role,
+        messageId: messageId
+      }, requestId);
+
+      const { solapiSmsService } = await import('./solapiService');
+      const result = await solapiSmsService.getSendHistory(messageId);
+      
+      secureLog(LogLevel.INFO, 'SMS_HISTORY_RESULT', 'SMS 발송 이력 조회 결과', {
+        userId: req.user.id,
+        messageId: messageId,
+        success: result.success,
+        hasData: !!result.data
+      }, requestId);
+      
+      res.json(result);
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SMS_HISTORY_ERROR', 'SMS 발솠 이력 조회 오류', {
+        userId: req.user?.id,
+        messageId: req.params?.messageId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ 
+        success: false, 
+        message: 'SMS 발솠 이력 조회 중 오류가 발생했습니다.' 
       });
     }
   });
