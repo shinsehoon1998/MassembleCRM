@@ -29,6 +29,7 @@ interface CreateUserData {
   name?: string;
   firstName?: string;
   lastName?: string;
+  phone?: string;
   department?: string;
   role: 'admin' | 'manager' | 'counselor';
   isActive?: boolean;
@@ -47,6 +48,7 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
     name: '',
     firstName: '',
     lastName: '',
+    phone: '',
     department: '',
     role: 'counselor',
     isActive: true,
@@ -65,6 +67,7 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
         name: editingUser.name || '',
         firstName: editingUser.firstName || '',
         lastName: editingUser.lastName || '',
+        phone: editingUser.phone || '',
         department: editingUser.department || '',
         role: editingUser.role,
         isActive: editingUser.isActive,
@@ -76,6 +79,7 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
         name: '',
         firstName: '',
         lastName: '',
+        phone: '',
         department: '',
         role: 'counselor',
         isActive: true,
@@ -202,7 +206,23 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
       });
       return;
     }
-    createUserMutation.mutate(formData);
+    if (formData.phone && !validatePhoneNumber(formData.phone)) {
+      toast({
+        title: "입력 오류",
+        description: "올바른 휴대폰 번호 형식을 입력해주세요. (예: 010-1234-5678)",
+        variant: "destructive",
+      });
+      return;
+    }
+    // Prepare the payload - exclude empty password during editing
+    const payload: CreateUserData = { ...formData };
+    
+    // Security fix: Remove empty password from payload during editing
+    if (editingUser && (!payload.password || payload.password.trim() === '')) {
+      delete payload.password;
+    }
+    
+    createUserMutation.mutate(payload);
   };
 
   const handleClose = () => {
@@ -212,6 +232,7 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
       name: '',
       firstName: '',
       lastName: '',
+      phone: '',
       department: '',
       role: 'counselor',
       isActive: true,
@@ -219,6 +240,15 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
     setShowPasswordReset(false);
     setResetPassword('');
     onClose();
+  };
+
+  // 한국 휴대폰 번호 형식 검증 함수
+  const validatePhoneNumber = (phone: string): boolean => {
+    if (!phone || phone.trim() === '') return true; // 선택적 필드이므로 빈 값은 유효
+    
+    // 한국 휴대폰 번호 정규식: 010-xxxx-xxxx 또는 01x-xxxx-xxxx
+    const phoneRegex = /^01[0-9]-\d{4}-\d{4}$/;
+    return phoneRegex.test(phone);
   };
 
   const getRoleText = (role: string) => {
@@ -406,6 +436,21 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
                 data-testid="input-lastName"
               />
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="phone" className="text-sm font-medium">휴대폰 번호</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={formData.phone || ''}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="010-1234-5678"
+              data-testid="input-phone"
+            />
+            <p className="text-xs text-gray-500">
+              형식: 010-1234-5678 (선택사항)
+            </p>
           </div>
 
           <div className="space-y-2">

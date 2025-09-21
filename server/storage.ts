@@ -705,12 +705,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    // 비밀번호 해싱 처리
+    // 비밀번호 해싱 처리 및 보안 강화
     let processedUserData = { ...userData };
-    if (userData.password && userData.password.trim() !== '') {
-      // 이미 해싱된 비밀번호인지 확인 (bcrypt 해시는 $2b$로 시작)
-      if (!userData.password.startsWith('$2b$')) {
-        processedUserData.password = await bcrypt.hash(userData.password, 10);
+    
+    if (userData.password !== undefined) {
+      if (userData.password === '' || userData.password.trim() === '') {
+        // Security: Explicitly remove empty password strings to prevent accidental empty password updates
+        delete processedUserData.password;
+        console.warn('[SECURITY] Empty password field removed from user update data', {
+          userId: userData.id || 'new',
+          hasEmptyPassword: userData.password === ''
+        });
+      } else {
+        // 이미 해싱된 비밀번호인지 확인 (bcrypt 해시는 $2b$로 시작)
+        if (!userData.password.startsWith('$2b$')) {
+          processedUserData.password = await bcrypt.hash(userData.password, 10);
+        }
       }
     }
 

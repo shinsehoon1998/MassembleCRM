@@ -1187,9 +1187,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isActive
       };
       
-      // Only include password if it's provided (for updates, password is optional)
-      if (password && password.trim()) {
+      // Security: Handle password updates with enhanced validation
+      if (password !== undefined) {
+        // Explicitly reject empty string passwords for security
+        if (password === '' || password.trim() === '') {
+          secureLog(LogLevel.WARNING, 'USER_UPDATE', 'Attempted to set empty password during user update', {
+            targetUserId: req.params.id,
+            adminId: currentUser.id,
+            adminName: maskName(currentUser.name || ''),
+            action: 'password_update_blocked'
+          });
+          return res.status(400).json({ 
+            message: "빈 비밀번호는 설정할 수 없습니다. 비밀번호를 변경하려면 유효한 값을 입력하거나, 변경하지 않으려면 필드를 비워두세요." 
+          });
+        }
+        
+        // Password length validation
+        if (password.length < 4) {
+          return res.status(400).json({ 
+            message: "비밀번호는 최소 4자 이상이어야 합니다." 
+          });
+        }
+        
+        // Hash and include password in update
         updateData.password = await bcrypt.hash(password, 10);
+        
+        secureLog(LogLevel.INFO, 'USER_UPDATE', 'Password updated by admin', {
+          targetUserId: req.params.id,
+          adminId: currentUser.id,
+          adminName: maskName(currentUser.name || ''),
+          action: 'password_changed'
+        });
       }
 
       // Use upsertUser for updates (includes id in updateData)

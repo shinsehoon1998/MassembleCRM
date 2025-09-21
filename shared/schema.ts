@@ -201,6 +201,7 @@ export const upsertUserSchema = createInsertSchema(users).pick({
   name: true,
   username: true,
   password: true,
+  phone: true,
   department: true,
   role: true,
   isActive: true,
