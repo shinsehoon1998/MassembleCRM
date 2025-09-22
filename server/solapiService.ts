@@ -470,7 +470,7 @@ https://massemble-crm-shinsehoona.replit.app`;
         return {
           success: true,
           messageId: messageId,
-          groupId: response.groupInfo.groupId,
+          groupId: response.groupInfo?.groupId,
           message: '✅ SMS 발송이 완료되었습니다.'
         };
       } else {
