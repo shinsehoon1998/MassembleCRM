@@ -42,6 +42,39 @@ export default function Customers() {
     scenarioId: "marketing_consent",
   });
 
+  // 컬럼 크기 조정을 위한 상태
+  const defaultColumnWidths = {
+    checkbox: 60,
+    number: 80,
+    customerInfo: 150,
+    contact: 120,
+    status: 100,
+    assignedUser: 120,
+    secondaryUser: 120,
+    memo: 150,
+    info1: 100,
+    info2: 100,
+    info3: 100,
+    info4: 100,
+    info5: 100,
+    info6: 100,
+    info7: 100,
+    info8: 100,
+    info9: 100,
+    info10: 100,
+    registeredAt: 120,
+    actions: 100
+  };
+
+  const [columnWidths, setColumnWidths] = useState(() => {
+    const saved = localStorage.getItem('customer-table-column-widths');
+    return saved ? { ...defaultColumnWidths, ...JSON.parse(saved) } : defaultColumnWidths;
+  });
+
+  const [isResizing, setIsResizing] = useState<string | null>(null);
+  const [resizeStartX, setResizeStartX] = useState(0);
+  const [resizeStartWidth, setResizeStartWidth] = useState(0);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -390,6 +423,47 @@ export default function Customers() {
     setEditingMemo({ ...editingMemo, [customerId]: currentMemos });
   };
 
+  // 컬럼 크기 조정 관련 함수들
+  const handleResizeStart = (e: React.MouseEvent, columnKey: string) => {
+    e.preventDefault();
+    setIsResizing(columnKey);
+    setResizeStartX(e.clientX);
+    setResizeStartWidth(columnWidths[columnKey as keyof typeof columnWidths]);
+    
+    // 마우스 이벤트 리스너 추가
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  };
+
+  const handleResizeMove = (e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    const diff = e.clientX - resizeStartX;
+    const newWidth = Math.max(50, resizeStartWidth + diff); // 최소 너비 50px
+    
+    setColumnWidths(prev => ({
+      ...prev,
+      [isResizing]: newWidth
+    }));
+  };
+
+  const handleResizeEnd = () => {
+    if (isResizing) {
+      // localStorage에 저장
+      const newWidths = { ...columnWidths };
+      localStorage.setItem('customer-table-column-widths', JSON.stringify(newWidths));
+    }
+    
+    setIsResizing(null);
+    document.removeEventListener('mousemove', handleResizeMove);
+    document.removeEventListener('mouseup', handleResizeEnd);
+  };
+
+  const resetColumnWidths = () => {
+    setColumnWidths(defaultColumnWidths);
+    localStorage.removeItem('customer-table-column-widths');
+  };
+
   const handleMemoSave = (customerId: string) => {
     const memos = editingMemo[customerId] || {};
     memoUpdateMutation.mutate({ customerId, memos });
@@ -686,35 +760,161 @@ export default function Customers() {
             <div>
               {/* Desktop Table View */}
               <div className="hidden lg:block overflow-x-auto min-w-full">
-              <table className="min-w-max w-full table-fixed" style={{ minWidth: '1600px' }}>
+                {/* 컬럼 크기 리셋 버튼 */}
+                <div className="mb-2 flex justify-end">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={resetColumnWidths}
+                    className="text-xs"
+                  >
+                    컬럼 크기 초기화
+                  </Button>
+                </div>
+                
+              <table className="w-full" style={{ tableLayout: 'fixed' }}>
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left">
+                    <th className="relative px-6 py-3 text-left" style={{ width: `${columnWidths.checkbox}px` }}>
                       <Checkbox
                         checked={selectedCustomers.length === customersData?.customers?.length && customersData.customers.length > 0}
                         onCheckedChange={handleSelectAll}
                         data-testid="checkbox-select-all"
                       />
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'checkbox')}
+                      />
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">번호</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">고객정보</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">연락처</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">공유담당자</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">메모</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보1</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보2</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보3</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보4</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보5</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보6</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보7</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보8</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보9</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보10</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">등록일</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.number}px` }}>
+                      번호
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'number')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.customerInfo}px` }}>
+                      고객정보
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'customerInfo')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.contact}px` }}>
+                      연락처
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'contact')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.status}px` }}>
+                      상태
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'status')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.assignedUser}px` }}>
+                      담당자
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'assignedUser')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.secondaryUser}px` }}>
+                      공유담당자
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'secondaryUser')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.memo}px` }}>
+                      메모
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'memo')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info1}px` }}>
+                      정보1
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info1')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info2}px` }}>
+                      정보2
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info2')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info3}px` }}>
+                      정보3
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info3')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info4}px` }}>
+                      정보4
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info4')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info5}px` }}>
+                      정보5
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info5')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info6}px` }}>
+                      정보6
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info6')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info7}px` }}>
+                      정보7
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info7')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info8}px` }}>
+                      정보8
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info8')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info9}px` }}>
+                      정보9
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info9')}
+                      />
+                    </th>
+                    <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info10}px` }}>
+                      정보10
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'info10')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.registeredAt}px` }}>
+                      등록일
+                      <div 
+                        className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-blue-300 bg-gray-300"
+                        onMouseDown={(e) => handleResizeStart(e, 'registeredAt')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.actions}px` }}>
+                      액션
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -722,107 +922,117 @@ export default function Customers() {
                     const customerNumber = customersData.total - ((searchParams.page - 1) * searchParams.limit) - index;
                     return (
                       <tr key={customer.id} className="hover:bg-gray-50" data-testid={`row-customer-${customer.id}`}>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.checkbox}px` }}>
                           <Checkbox
                             checked={selectedCustomers.includes(customer.id)}
                             onCheckedChange={(checked) => handleSelectCustomer(customer.id, checked === true)}
                             data-testid={`checkbox-customer-${customer.id}`}
                           />
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" style={{ width: `${columnWidths.number}px` }}>
                           {customerNumber}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.customerInfo}px` }}>
+                          <div className="overflow-hidden">
                             <Link href={`/customers/${customer.id}`}>
-                              <div className="text-sm font-medium text-blue-600 hover:text-blue-800 cursor-pointer" data-testid="text-customer-name">
+                              <div className="text-sm font-medium text-blue-600 hover:text-blue-800 cursor-pointer truncate" data-testid="text-customer-name" title={customer.name}>
                                 {customer.name}
                               </div>
                             </Link>
-                            <div className="text-sm text-gray-500">
+                            <div className="text-sm text-gray-500 truncate" title={`${customer.gender === 'M' ? '남' : customer.gender === 'F' ? '여' : ''}${customer.birthDate && customer.gender !== 'N' ? ', ' : ''}${customer.birthDate ? format(new Date(customer.birthDate), 'yyyy.MM.dd', { locale: ko }) : ''}`}>
                               {customer.gender === 'M' ? '남' : customer.gender === 'F' ? '여' : ''}{customer.birthDate && customer.gender !== 'N' ? ', ' : ''}
                               {customer.birthDate && format(new Date(customer.birthDate), 'yyyy.MM.dd', { locale: ko })}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{customer.phone}</div>
-                          {customer.secondaryPhone && (
-                            <div className="text-sm text-gray-500">{customer.secondaryPhone}</div>
-                          )}
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.contact}px` }}>
+                          <div className="overflow-hidden">
+                            <div className="text-sm text-gray-900 truncate" title={customer.phone}>{customer.phone}</div>
+                            {customer.secondaryPhone && (
+                              <div className="text-sm text-gray-500 truncate" title={customer.secondaryPhone}>{customer.secondaryPhone}</div>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <Select
-                            value={customer.status}
-                            onValueChange={(status) => handleStatusChange(customer.id, status)}
-                          >
-                            <SelectTrigger className="w-24 h-7 text-xs">
-                              <Badge className={`${getStatusBadgeClass(customer.status)} text-xs font-semibold border-0`}>
-                                {customer.status}
-                              </Badge>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {statusOptions.map((status: string) => (
-                                <SelectItem key={status} value={status}>{status}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.status}px` }}>
+                          <div className="overflow-hidden">
+                            <Select
+                              value={customer.status}
+                              onValueChange={(status) => handleStatusChange(customer.id, status)}
+                            >
+                              <SelectTrigger className="w-full h-7 text-xs">
+                                <Badge className={`${getStatusBadgeClass(customer.status)} text-xs font-semibold border-0 truncate`}>
+                                  {customer.status}
+                                </Badge>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {statusOptions.map((status: string) => (
+                                  <SelectItem key={status} value={status}>{status}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{customer.assignedUser?.name || '-'}</div>
-                          {customer.assignedUser?.department && (
-                            <div className="text-sm text-gray-500">{customer.assignedUser.department}</div>
-                          )}
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.assignedUser}px` }}>
+                          <div className="overflow-hidden">
+                            <div className="text-sm text-gray-900 truncate" title={customer.assignedUser?.name || '-'}>{customer.assignedUser?.name || '-'}</div>
+                            {customer.assignedUser?.department && (
+                              <div className="text-sm text-gray-500 truncate" title={customer.assignedUser.department}>{customer.assignedUser.department}</div>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{customer.secondaryUser?.name || '-'}</div>
-                          {customer.secondaryUser?.department && (
-                            <div className="text-sm text-gray-500">{customer.secondaryUser.department}</div>
-                          )}
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.secondaryUser}px` }}>
+                          <div className="overflow-hidden">
+                            <div className="text-sm text-gray-900 truncate" title={customer.secondaryUser?.name || '-'}>{customer.secondaryUser?.name || '-'}</div>
+                            {customer.secondaryUser?.department && (
+                              <div className="text-sm text-gray-500 truncate" title={customer.secondaryUser.department}>{customer.secondaryUser.department}</div>
+                            )}
+                          </div>
                         </td>
                         {/* memo1 컬럼 */}
-                        <td className="px-2 py-4 text-xs w-32">
-                          {editingMemo[customer.id] !== undefined ? (
-                            <div className="flex flex-col space-y-1">
-                              <Input
-                                value={editingMemo[customer.id]?.memo1 || ''}
-                                onChange={(e) => updateMemoField(customer.id, 'memo1', e.target.value)}
-                                placeholder="메모"
-                                className="text-xs h-6 w-28"
-                                data-testid={`input-memo1-${customer.id}`}
-                              />
-                              <div className="flex space-x-1">
-                                <Button 
-                                  size="sm" 
-                                  className="h-5 px-1 text-[10px] bg-green-500 hover:bg-green-600"
-                                  onClick={() => handleMemoSave(customer.id)}
-                                  data-testid={`button-save-memo1-${customer.id}`}
-                                >
-                                  저장
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  className="h-5 px-1 text-[10px]"
-                                  onClick={() => handleMemoCancel(customer.id)}
-                                  data-testid={`button-cancel-memo1-${customer.id}`}
-                                >
-                                  취소
-                                </Button>
+                        <td className="px-2 py-4 text-xs" style={{ width: `${columnWidths.memo}px` }}>
+                          <div className="overflow-hidden">
+                            {editingMemo[customer.id] !== undefined ? (
+                              <div className="flex flex-col space-y-1">
+                                <Input
+                                  value={editingMemo[customer.id]?.memo1 || ''}
+                                  onChange={(e) => updateMemoField(customer.id, 'memo1', e.target.value)}
+                                  placeholder="메모"
+                                  className="text-xs h-6 w-full"
+                                  data-testid={`input-memo1-${customer.id}`}
+                                />
+                                <div className="flex space-x-1">
+                                  <Button 
+                                    size="sm" 
+                                    className="h-5 px-1 text-[10px] bg-green-500 hover:bg-green-600"
+                                    onClick={() => handleMemoSave(customer.id)}
+                                    data-testid={`button-save-memo1-${customer.id}`}
+                                  >
+                                    저장
+                                  </Button>
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline"
+                                    className="h-5 px-1 text-[10px]"
+                                    onClick={() => handleMemoCancel(customer.id)}
+                                    data-testid={`button-cancel-memo1-${customer.id}`}
+                                  >
+                                    취소
+                                  </Button>
+                                </div>
                               </div>
-                            </div>
-                          ) : (
-                            <div 
-                              className="text-gray-600 max-w-28 truncate cursor-pointer hover:text-blue-600"
-                              title={customer.memo1 || '클릭하여 편집'}
-                              onClick={() => handleMemoEdit(customer.id, customer)}
-                              data-testid={`text-memo1-${customer.id}`}
-                            >
-                              {customer.memo1 || (
-                                <span className="text-gray-300">-</span>
-                              )}
-                            </div>
-                          )}
+                            ) : (
+                              <div 
+                                className="text-gray-600 truncate cursor-pointer hover:text-blue-600"
+                                title={customer.memo1 || '클릭하여 편집'}
+                                onClick={() => handleMemoEdit(customer.id, customer)}
+                                data-testid={`text-memo1-${customer.id}`}
+                              >
+                                {customer.memo1 || (
+                                  <span className="text-gray-300">-</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         
                         {/* info1 ~ info10 읽기전용 컬럼들 */}
@@ -832,23 +1042,29 @@ export default function Customers() {
                           const infoLabels = ['정보1', '정보2', '정보3', '정보4', '정보5', '정보6', '정보7', '정보8', '정보9', '정보10'];
                           
                           return (
-                            <td key={field} className="px-2 py-4 text-xs w-24">
-                              <div 
-                                className="text-gray-600 max-w-20 truncate"
-                                title={infoValue ? `${infoLabels[num-1]}: ${infoValue}` : '-'}
-                                data-testid={`text-${field}-${customer.id}`}
-                              >
-                                {infoValue || (
-                                  <span className="text-gray-300">-</span>
-                                )}
+                            <td key={field} className="px-2 py-4 text-xs" style={{ width: `${columnWidths[field as keyof typeof columnWidths]}px` }}>
+                              <div className="overflow-hidden">
+                                <div 
+                                  className="text-gray-600 truncate"
+                                  title={infoValue ? `${infoLabels[num-1]}: ${infoValue}` : '-'}
+                                  data-testid={`text-${field}-${customer.id}`}
+                                >
+                                  {infoValue || (
+                                    <span className="text-gray-300">-</span>
+                                  )}
+                                </div>
                               </div>
                             </td>
                           );
                         })}
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" style={{ width: `${columnWidths.registeredAt}px` }}>
+                          <div className="overflow-hidden">
+                            <div className="truncate" title={customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}>
+                              {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}
+                            </div>
+                          </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" style={{ width: `${columnWidths.actions}px` }}>
                           <Link href={`/customers/${customer.id}`}>
                             <Button variant="ghost" size="sm" className="text-primary-500 hover:text-primary-600 mr-3" title="상세보기" data-testid={`button-view-${customer.id}`}>
                               <i className="fas fa-eye"></i>
