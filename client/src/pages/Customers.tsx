@@ -424,62 +424,56 @@ export default function Customers() {
   };
 
   // 컬럼 크기 조정 관련 함수들
-  const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
-    
-    const diff = e.clientX - resizeStartX;
-    const newWidth = Math.max(50, resizeStartWidth + diff); // 최소 너비 50px
-    
-    setColumnWidths((prev: typeof defaultColumnWidths) => ({
-      ...prev,
-      [isResizing]: newWidth
-    }));
-  }, [isResizing, resizeStartX, resizeStartWidth]);
-
-  const handleResizeEnd = useCallback(() => {
-    if (isResizing) {
-      // localStorage에 저장
-      localStorage.setItem('customer-table-column-widths', JSON.stringify(columnWidths));
-    }
-    
-    setIsResizing(null);
-    document.removeEventListener('mousemove', handleResizeMove);
-    document.removeEventListener('mouseup', handleResizeEnd);
-    document.body.style.cursor = 'default';
-    document.body.style.userSelect = 'auto';
-  }, [isResizing, columnWidths, handleResizeMove]);
-
   const handleResizeStart = (e: React.MouseEvent, columnKey: string) => {
     e.preventDefault();
     e.stopPropagation();
     
+    const startX = e.clientX;
+    const startWidth = columnWidths[columnKey as keyof typeof columnWidths];
+    
     setIsResizing(columnKey);
-    setResizeStartX(e.clientX);
-    setResizeStartWidth(columnWidths[columnKey as keyof typeof columnWidths]);
     
     // 커서 스타일 변경 및 텍스트 선택 방지
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     
-    // 마우스 이벤트 리스너 추가
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const diff = moveEvent.clientX - startX;
+      const newWidth = Math.max(50, startWidth + diff); // 최소 너비 50px
+      
+      setColumnWidths((prev: typeof defaultColumnWidths) => ({
+        ...prev,
+        [columnKey]: newWidth
+      }));
+    };
+    
+    const handleMouseUp = () => {
+      setIsResizing(null);
+      
+      // localStorage에 저장
+      setColumnWidths((currentWidths) => {
+        localStorage.setItem('customer-table-column-widths', JSON.stringify(currentWidths));
+        return currentWidths;
+      });
+      
+      // 이벤트 리스너 제거
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      
+      // 스타일 복원
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    };
+    
+    // 이벤트 리스너 추가
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   const resetColumnWidths = () => {
     setColumnWidths(defaultColumnWidths);
     localStorage.removeItem('customer-table-column-widths');
   };
-
-  // Cleanup 이벤트 리스너
-  useEffect(() => {
-    return () => {
-      document.removeEventListener('mousemove', handleResizeMove);
-      document.removeEventListener('mouseup', handleResizeEnd);
-      document.body.style.cursor = 'default';
-      document.body.style.userSelect = 'auto';
-    };
-  }, [handleResizeMove, handleResizeEnd]);
 
   const handleMemoSave = (customerId: string) => {
     const memos = editingMemo[customerId] || {};
@@ -799,136 +793,148 @@ export default function Customers() {
                         data-testid="checkbox-select-all"
                       />
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
-                        onMouseDown={(e) => handleResizeStart(e, 'checkbox')}
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
+                        onMouseDown={(e) => {
+                          console.log('Resize started for checkbox column');
+                          handleResizeStart(e, 'checkbox');
+                        }}
                         title="드래그하여 컬럼 크기 조정"
+                        style={{ background: isResizing === 'checkbox' ? '#3b82f6' : 'transparent' }}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.number}px` }}>
                       번호
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
-                        onMouseDown={(e) => handleResizeStart(e, 'number')}
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
+                        onMouseDown={(e) => {
+                          console.log('Resize started for number column');
+                          handleResizeStart(e, 'number');
+                        }}
                         title="드래그하여 컬럼 크기 조정"
+                        style={{ background: isResizing === 'number' ? '#3b82f6' : 'transparent' }}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.customerInfo}px` }}>
                       고객정보
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
-                        onMouseDown={(e) => handleResizeStart(e, 'customerInfo')}
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
+                        onMouseDown={(e) => {
+                          console.log('Resize started for customerInfo column');
+                          handleResizeStart(e, 'customerInfo');
+                        }}
                         title="드래그하여 컬럼 크기 조정"
+                        style={{ background: isResizing === 'customerInfo' ? '#3b82f6' : 'transparent' }}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.contact}px` }}>
                       연락처
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'contact')}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.status}px` }}>
                       상태
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'status')}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.assignedUser}px` }}>
                       담당자
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'assignedUser')}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.secondaryUser}px` }}>
                       공유담당자
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'secondaryUser')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.memo}px` }}>
                       메모
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'memo')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info1}px` }}>
                       정보1
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info1')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info2}px` }}>
                       정보2
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info2')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info3}px` }}>
                       정보3
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info3')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info4}px` }}>
                       정보4
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info4')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info5}px` }}>
                       정보5
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info5')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info6}px` }}>
                       정보6
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info6')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info7}px` }}>
                       정보7
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info7')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info8}px` }}>
                       정보8
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info8')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info9}px` }}>
                       정보9
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info9')}
                       />
                     </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.info10}px` }}>
                       정보10
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'info10')}
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.registeredAt}px` }}>
                       등록일
                       <div 
-                        className="absolute right-0 top-0 w-2 h-full cursor-col-resize hover:bg-blue-400 bg-transparent border-r border-gray-300 transition-colors"
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => handleResizeStart(e, 'registeredAt')}
                       />
                     </th>
