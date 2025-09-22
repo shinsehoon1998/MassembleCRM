@@ -5228,22 +5228,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }, requestId);
         
         // 기존 고객 정보 업데이트 (설문조사 데이터 추가)
-        const updateData = {
+        const updateData: any = {
           name: surveyData.name,
           phone: surveyData.phone,
           email: surveyData.email || existingCustomer.email,
-          birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : existingCustomer.birthDate,
           gender: surveyData.gender || existingCustomer.gender,
           consultType: surveyData.consultType || existingCustomer.consultType,
           consultPath: surveyData.consultPath || existingCustomer.consultPath,
           source: surveyData.source || existingCustomer.source,
           marketingConsent: surveyData.marketingConsent !== undefined ? surveyData.marketingConsent : existingCustomer.marketingConsent,
-          marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate).toISOString() : existingCustomer.marketingConsentDate,
           marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : existingCustomer.marketingConsentMethod,
           memo: existingCustomer.memo ? 
             `${existingCustomer.memo}\n\n[${new Date().toLocaleString('ko-KR')}] 설문조사 추가 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` :
             `[${new Date().toLocaleString('ko-KR')}] 설문조사 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}`
         };
+
+        // 날짜 필드는 별도 처리 (문자열을 날짜로 변환할 때 오류 방지)
+        if (surveyData.birthDate) {
+          try {
+            updateData.birthDate = new Date(surveyData.birthDate).toISOString();
+          } catch (error) {
+            updateData.birthDate = existingCustomer.birthDate;
+          }
+        } else {
+          updateData.birthDate = existingCustomer.birthDate;
+        }
+
+        if (surveyData.marketingConsentDate) {
+          try {
+            updateData.marketingConsentDate = new Date(surveyData.marketingConsentDate).toISOString();
+          } catch (error) {
+            updateData.marketingConsentDate = existingCustomer.marketingConsentDate;
+          }
+        } else {
+          updateData.marketingConsentDate = existingCustomer.marketingConsentDate;
+        }
         
         const updatedCustomer = await storage.updateCustomer(existingCustomer.id, updateData);
         
