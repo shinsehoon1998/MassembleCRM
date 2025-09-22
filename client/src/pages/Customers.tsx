@@ -34,7 +34,7 @@ export default function Customers() {
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithUser | null>(null);
-  const [editingMemo, setEditingMemo] = useState<{ [key: string]: string }>({});
+  const [editingMemo, setEditingMemo] = useState<{ [key: string]: { [field: string]: string } }>({});
   const [showBatchActions, setShowBatchActions] = useState(false);
   const [showArsModal, setShowArsModal] = useState(false);
   const [arsData, setArsData] = useState({
@@ -234,8 +234,11 @@ export default function Customers() {
   });
 
   const memoUpdateMutation = useMutation({
-    mutationFn: async ({ customerId, memo }: { customerId: string, memo: string }) => {
-      const response = await apiRequest("PATCH", `/api/customers/${customerId}/memo`, { memo });
+    mutationFn: async ({ customerId, memos }: { customerId: string, memos: { [field: string]: string } }) => {
+      const updateData = Object.fromEntries(
+        Object.entries(memos).map(([field, value]) => [field, value || null])
+      );
+      const response = await apiRequest("PUT", `/api/customers/${customerId}`, updateData);
       return response.json();
     },
     onSuccess: () => {
@@ -380,13 +383,25 @@ export default function Customers() {
     statusUpdateMutation.mutate({ customerId, status });
   };
 
-  const handleMemoEdit = (customerId: string, currentMemo: string | null) => {
-    setEditingMemo({ ...editingMemo, [customerId]: currentMemo || '' });
+  const handleMemoEdit = (customerId: string, customer: CustomerWithUser) => {
+    const currentMemos = {
+      memo1: customer.memo1 || '',
+      memo2: customer.memo2 || '',
+      memo3: customer.memo3 || '',
+      memo4: customer.memo4 || '',
+      memo5: customer.memo5 || '',
+      memo6: customer.memo6 || '',
+      memo7: customer.memo7 || '',
+      memo8: customer.memo8 || '',
+      memo9: customer.memo9 || '',
+      memo10: customer.memo10 || '',
+    };
+    setEditingMemo({ ...editingMemo, [customerId]: currentMemos });
   };
 
   const handleMemoSave = (customerId: string) => {
-    const memo = editingMemo[customerId] || '';
-    memoUpdateMutation.mutate({ customerId, memo });
+    const memos = editingMemo[customerId] || {};
+    memoUpdateMutation.mutate({ customerId, memos });
   };
 
   const handleMemoCancel = (customerId: string) => {
@@ -395,6 +410,29 @@ export default function Customers() {
       delete newState[customerId];
       return newState;
     });
+  };
+
+  // memo1~memo10 중 값이 있는 것들을 요약해서 표시하는 함수
+  const getMemoSummary = (customer: CustomerWithUser) => {
+    const memos = [
+      customer.memo1, customer.memo2, customer.memo3, customer.memo4, customer.memo5,
+      customer.memo6, customer.memo7, customer.memo8, customer.memo9, customer.memo10
+    ].filter(memo => memo && memo.trim());
+    
+    if (memos.length === 0) return null;
+    if (memos.length === 1) return memos[0];
+    return `${memos[0]} (+${memos.length - 1}개 더)`;
+  };
+
+  // memo 편집 모드에서 특정 memo 필드 값 업데이트
+  const updateMemoField = (customerId: string, field: string, value: string) => {
+    setEditingMemo(prev => ({
+      ...prev,
+      [customerId]: {
+        ...prev[customerId],
+        [field]: value
+      }
+    }));
   };
 
   const handleBatchUpdate = (updates: any) => {
@@ -738,40 +776,65 @@ export default function Customers() {
                         </td>
                         <td className="px-6 py-4">
                           {editingMemo[customer.id] !== undefined ? (
-                            <div className="flex items-center space-x-2">
-                              <Input
-                                value={editingMemo[customer.id]}
-                                onChange={(e) => setEditingMemo({ ...editingMemo, [customer.id]: e.target.value })}
-                                placeholder="메모 입력"
-                                className="text-xs h-7 w-32"
-                                data-testid={`input-memo-${customer.id}`}
-                              />
-                              <Button 
-                                size="sm" 
-                                className="h-6 w-6 p-0 text-xs bg-green-500 hover:bg-green-600"
-                                onClick={() => handleMemoSave(customer.id)}
-                                data-testid={`button-memo-save-${customer.id}`}
-                              >
-                                <i className="fas fa-check"></i>
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                className="h-6 w-6 p-0 text-xs"
-                                onClick={() => handleMemoCancel(customer.id)}
-                                data-testid={`button-memo-cancel-${customer.id}`}
-                              >
-                                <i className="fas fa-times"></i>
-                              </Button>
+                            <div className="flex flex-col space-y-2 min-w-48">
+                              <div className="grid grid-cols-2 gap-1">
+                                {[1, 2, 3, 4, 5].map(num => {
+                                  const field = `memo${num}`;
+                                  return (
+                                    <Input
+                                      key={field}
+                                      value={editingMemo[customer.id]?.[field] || ''}
+                                      onChange={(e) => updateMemoField(customer.id, field, e.target.value)}
+                                      placeholder={`메모${num}`}
+                                      className="text-xs h-6 text-[10px]"
+                                      data-testid={`input-${field}-${customer.id}`}
+                                    />
+                                  );
+                                })}
+                              </div>
+                              <div className="grid grid-cols-2 gap-1">
+                                {[6, 7, 8, 9, 10].map(num => {
+                                  const field = `memo${num}`;
+                                  return (
+                                    <Input
+                                      key={field}
+                                      value={editingMemo[customer.id]?.[field] || ''}
+                                      onChange={(e) => updateMemoField(customer.id, field, e.target.value)}
+                                      placeholder={`메모${num}`}
+                                      className="text-xs h-6 text-[10px]"
+                                      data-testid={`input-${field}-${customer.id}`}
+                                    />
+                                  );
+                                })}
+                              </div>
+                              <div className="flex space-x-1">
+                                <Button 
+                                  size="sm" 
+                                  className="h-6 px-2 text-xs bg-green-500 hover:bg-green-600"
+                                  onClick={() => handleMemoSave(customer.id)}
+                                  data-testid={`button-memo-save-${customer.id}`}
+                                >
+                                  저장
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => handleMemoCancel(customer.id)}
+                                  data-testid={`button-memo-cancel-${customer.id}`}
+                                >
+                                  취소
+                                </Button>
+                              </div>
                             </div>
                           ) : (
                             <div 
                               className="text-sm text-gray-600 cursor-pointer hover:text-blue-600 max-w-32 truncate"
-                              onClick={() => handleMemoEdit(customer.id, customer.memo)}
-                              title={customer.memo || '클릭하여 메모 추가'}
+                              onClick={() => handleMemoEdit(customer.id, customer)}
+                              title={getMemoSummary(customer) || '클릭하여 메모 추가'}
                               data-testid={`text-memo-${customer.id}`}
                             >
-                              {customer.memo || (
+                              {getMemoSummary(customer) || (
                                 <span className="text-gray-400 italic">메모 추가</span>
                               )}
                             </div>
@@ -931,10 +994,10 @@ export default function Customers() {
                           </div>
                         </div>
                         
-                        {customer.memo && (
+                        {getMemoSummary(customer) && (
                           <div className="text-sm">
                             <span className="text-gray-500">메모:</span>
-                            <div className="text-gray-700 max-h-12 overflow-hidden">{customer.memo}</div>
+                            <div className="text-gray-700 max-h-12 overflow-hidden">{getMemoSummary(customer)}</div>
                           </div>
                         )}
                         
