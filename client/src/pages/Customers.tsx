@@ -989,12 +989,24 @@ export default function Customers() {
                           </div>
                         </div>
                         
-                        {getMemoSummary(customer) && (
-                          <div className="text-sm">
-                            <span className="text-gray-500">메모:</span>
-                            <div className="text-gray-700 max-h-12 overflow-hidden">{getMemoSummary(customer)}</div>
+                        {/* 정보1~정보10 개별 표시 */}
+                        <div className="text-sm">
+                          <span className="text-gray-500 font-medium">추가정보:</span>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
+                              const field = `memo${num}`;
+                              const memoValue = customer[field];
+                              if (!memoValue) return null;
+                              
+                              return (
+                                <div key={field} className="text-xs bg-gray-50 p-1 rounded">
+                                  <span className="font-medium text-gray-600">정보{num}:</span>
+                                  <div className="text-gray-700 truncate">{memoValue}</div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        )}
+                        </div>
                         
                         <div className="text-xs text-gray-500 pt-2 border-t">
                           등록일: {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}
