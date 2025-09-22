@@ -1240,7 +1240,7 @@ export const surveyImportSchema = z.object({
   surveyResults: z.record(z.any())
     .optional(),
   
-  // 메모/특이사항 (10개 필드)
+  // 메모/특이사항 (10개 필드) - 사용자 편집 가능
   memo1: z.string()
     .max(1000, '메모1은 최대 1000자까지 허용됩니다.')
     .optional(),
@@ -1270,6 +1270,38 @@ export const surveyImportSchema = z.object({
     .optional(),
   memo10: z.string()
     .max(1000, '메모10은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  
+  // 설문조사 정보 필드 (10개 필드) - 읽기전용 정보
+  info1: z.string()
+    .max(1000, '정보1은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info2: z.string()
+    .max(1000, '정보2는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info3: z.string()
+    .max(1000, '정보3은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info4: z.string()
+    .max(1000, '정보4는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info5: z.string()
+    .max(1000, '정보5는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info6: z.string()
+    .max(1000, '정보6은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info7: z.string()
+    .max(1000, '정보7은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info8: z.string()
+    .max(1000, '정보8은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info9: z.string()
+    .max(1000, '정보9는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info10: z.string()
+    .max(1000, '정보10은 최대 1000자까지 허용됩니다.')
     .optional(),
   
   // 소스 정보

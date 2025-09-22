@@ -5239,17 +5239,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source: surveyData.source || existingCustomer.source,
           marketingConsent: surveyData.marketingConsent !== undefined ? surveyData.marketingConsent : existingCustomer.marketingConsent,
           marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : existingCustomer.marketingConsentMethod,
-          // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보)
-          info1: surveyData.surveyResults?.hospitalVisits || null,
-          info2: surveyData.surveyResults?.gender || null,
-          info3: surveyData.surveyResults?.region || null,
-          info4: surveyData.surveyResults?.premiumRange || null,
-          info5: surveyData.surveyResults?.birthDate || null,
-          info6: surveyData.surveyResults?.insuranceTypes || null,
-          info7: surveyData.surveyResults?.consultationTime || null,
-          info8: surveyData.surveyResults?.score ? String(surveyData.surveyResults.score) : null,
-          info9: surveyData.surveyResults?.peerAverage ? String(surveyData.surveyResults.peerAverage) : null,
-          info10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyData.surveyId || 'unknown'})`
+          // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보) - 직접 매핑
+          info1: surveyData.info1 || null,
+          info2: surveyData.info2 || null,
+          info3: surveyData.info3 || null,
+          info4: surveyData.info4 || null,
+          info5: surveyData.info5 || null,
+          info6: surveyData.info6 || null,
+          info7: surveyData.info7 || null,
+          info8: surveyData.info8 || null,
+          info9: surveyData.info9 || null,
+          info10: surveyData.info10 || `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyData.surveyId || 'unknown'})`
         };
 
         // 날짜 필드는 별도 처리 (문자열을 날짜로 변환할 때 오류 방지)
@@ -5302,18 +5302,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate) : null,
         marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : null,
         status: '인텍', // 기본 상태
-        // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보)
+        // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보) - 직접 매핑
         memo1: null, // 사용자가 입력할 수 있는 메모 필드
-        info1: surveyData.surveyResults?.hospitalVisits || null,
-        info2: surveyData.surveyResults?.gender || null,
-        info3: surveyData.surveyResults?.region || null,
-        info4: surveyData.surveyResults?.premiumRange || null,
-        info5: surveyData.surveyResults?.birthDate || null,
-        info6: surveyData.surveyResults?.insuranceTypes || null,
-        info7: surveyData.surveyResults?.consultationTime || null,
-        info8: surveyData.surveyResults?.score ? String(surveyData.surveyResults.score) : null,
-        info9: surveyData.surveyResults?.peerAverage ? String(surveyData.surveyResults.peerAverage) : null,
-        info10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 신규고객 (ID: ${surveyData.surveyId || 'unknown'})`
+        info1: surveyData.info1 || null,
+        info2: surveyData.info2 || null,
+        info3: surveyData.info3 || null,
+        info4: surveyData.info4 || null,
+        info5: surveyData.info5 || null,
+        info6: surveyData.info6 || null,
+        info7: surveyData.info7 || null,
+        info8: surveyData.info8 || null,
+        info9: surveyData.info9 || null,
+        info10: surveyData.info10 || `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 신규고객 (ID: ${surveyData.surveyId || 'unknown'})`
         // createdAt과 updatedAt는 데이터베이스에서 자동 설정되므로 제외
       };
 

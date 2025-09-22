@@ -1,0 +1,843 @@
+/**
+ * 보탐정(https://botamjeong.replit.app) 구글 스프레드시트 연동 스크립트
+ * 마셈블 CRM (https://massemble-crm-shinsehoona.replit.app) 완전 통합
+ * 스프레드시트 ID: 1YgaUh70gLugjYcIV_y6jN1R96aEbEcRNb4Sr5OSkOdw
+ *
+ * 설정:
+ * 1) setupInitialSheet() 1회 실행
+ * 2) 웹앱으로 배포(실행: 나, 액세스: 모든 사용자) → 보탐정에 URL 등록
+ * 3) createCronTrigger() 1회 실행(1분 주기 크론 생성)
+ */
+
+// ===== 설정 =====
+const SPREADSHEET_ID = '1YgaUh70gLugjYcIV_y6jN1R96aEbEcRNb4Sr5OSkOdw';
+const BOTAMJEONG_URL = 'https://botamjeong.replit.app';
+
+// 마셈블 CRM 설정
+const MASSEMBLE_CRM_URL = 'https://massemble-crm-shinsehoona.replit.app';
+const MASSEMBLE_API_KEY = 'survey_2025_secure_key_abc123xyz'; // TODO: 실제 SURVEY_API_KEY로 교체 필요
+
+// 시트 이름
+const SHEETS = {
+  SURVEY: '설문_응답',
+  ANALYSIS: '분석_결과',
+  PHONE_LOG: '전화_문의',
+  CONSULTATION: '상담_신청'
+};
+
+/** 초기 스프레드시트 설정 */
+function setupInitialSheet() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    // 기존 시트 정리
+    const existingSheets = ss.getSheets();
+    if (existingSheets.length === 1 && existingSheets[0].getName() === 'Sheet1') {
+      existingSheets[0].setName(SHEETS.SURVEY);
+    }
+
+    // 설문 응답 시트
+    let surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!surveySheet) surveySheet = ss.insertSheet(SHEETS.SURVEY);
+
+    const surveyHeaders = [
+      '응답시간','ID','병원방문','성별','지역','보험료구간',
+      '생년월일','보험종류','이름','전화번호','상담시간','점수','평균보험료',
+      'CRM전송상태','CRM전송시간','마셈블고객ID'
+    ];
+
+    if (surveySheet.getLastRow() === 0) {
+      surveySheet.getRange(1,1,1,surveyHeaders.length).setValues([surveyHeaders]);
+      surveySheet.getRange(1,1,1,surveyHeaders.length)
+        .setFontWeight('bold').setBackground('#4285F4').setFontColor('#FFFFFF');
+    }
+
+    // 분석 결과
+    let analysisSheet = ss.getSheetByName(SHEETS.ANALYSIS);
+    if (!analysisSheet) analysisSheet = ss.insertSheet(SHEETS.ANALYSIS);
+
+    const analysisHeaders = [
+      '분석시간','설문ID','점수','또래평균','차이','연령','연령그룹',
+      '추천사항1','추천사항2','추천사항3','추천사항4'
+    ];
+    if (analysisSheet.getLastRow() === 0) {
+      analysisSheet.getRange(1,1,1,analysisHeaders.length).setValues([analysisHeaders]);
+      analysisSheet.getRange(1,1,1,analysisHeaders.length)
+        .setFontWeight('bold').setBackground('#34A853').setFontColor('#FFFFFF');
+    }
+
+    // 전화 문의
+    let phoneSheet = ss.getSheetByName(SHEETS.PHONE_LOG);
+    if (!phoneSheet) phoneSheet = ss.insertSheet(SHEETS.PHONE_LOG);
+
+    const phoneHeaders = ['문의시간','설문ID','이름','전화번호','문의방법','IP주소','페이지경로'];
+    if (phoneSheet.getLastRow() === 0) {
+      phoneSheet.getRange(1,1,1,phoneHeaders.length).setValues([phoneHeaders]);
+      phoneSheet.getRange(1,1,1,phoneHeaders.length)
+        .setFontWeight('bold').setBackground('#EA4335').setFontColor('#FFFFFF');
+    }
+
+    // 상담 신청
+    let consultationSheet = ss.getSheetByName(SHEETS.CONSULTATION);
+    if (!consultationSheet) consultationSheet = ss.insertSheet(SHEETS.CONSULTATION);
+
+    const consultationHeaders = ['신청시간','상담ID','이름','전화번호','희망시간','개인정보동의','설문ID'];
+    if (consultationSheet.getLastRow() === 0) {
+      consultationSheet.getRange(1,1,1,consultationHeaders.length).setValues([consultationHeaders]);
+      consultationSheet.getRange(1,1,1,consultationHeaders.length)
+        .setFontWeight('bold').setBackground('#FF9900').setFontColor('#FFFFFF');
+    }
+
+    // 너비 자동
+    surveySheet.autoResizeColumns(1, surveyHeaders.length);
+    analysisSheet.autoResizeColumns(1, analysisHeaders.length);
+    phoneSheet.autoResizeColumns(1, phoneHeaders.length);
+    consultationSheet.autoResizeColumns(1, consultationHeaders.length);
+
+    Logger.log('✅ 스프레드시트 초기 설정 완료');
+    return '스프레드시트 초기 설정 완료';
+  } catch (err) {
+    Logger.log('❌ 초기 설정 오류: ' + err);
+    throw err;
+  }
+}
+
+/** 웹앱 POST */
+function doPost(e) {
+  try {
+    Logger.log('🔥 doPost 호출됨');
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({success:false,error:'데이터가 없습니다.'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const data = JSON.parse(e.postData.contents);
+    const { action, payload } = data || {};
+    Logger.log('🎯 액션: ' + action);
+
+    let result = { success:false, message:'알 수 없는 액션입니다.' };
+
+    switch (action) {
+      case 'survey_complete':      result = handleSurveyComplete(payload); break;
+      case 'phone_inquiry':        result = handlePhoneInquiry(payload);   break;
+      case 'consultation_request': result = handleConsultationRequest(payload); break;
+      case 'get_stats':            result = getStatistics();               break;
+      case 'send_crm':             result = sendToMassembleCRM(payload?.surveyId || null); break;
+      case 'send_all_crm':         result = sendAllToMassembleCRM();        break;
+      case 'check_crm':            result = checkMassembleCRMStatus();      break;
+      default:                     result = { success:false, message:'지원하지 않는 액션: ' + action };
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    Logger.log('❌ doPost 오류: ' + error + '\n' + error.stack);
+    return ContentService.createTextOutput(JSON.stringify({success:false,error:'서버 오류: ' + error.message}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/** 웹앱 GET */
+function doGet(e) {
+  try {
+    const action = e.parameter.action || 'stats';
+    let result = {};
+    if (action === 'stats')        result = getStatistics();
+    else if (action === 'recent')  result = getRecentData(parseInt(e.parameter.limit) || 20);
+    else if (action === 'export')  result = exportData();
+    else                           result = { error: '알 수 없는 액션: ' + action };
+
+    return ContentService.createTextOutput(JSON.stringify(result, null, 2))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ error: '조회 오류: ' + error.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/** 설문 완료 저장 + 즉시 마셈블 CRM 전송 */
+function handleSurveyComplete(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    const analysisSheet = ss.getSheetByName(SHEETS.ANALYSIS);
+    if (!surveySheet || !analysisSheet) throw new Error('시트를 찾을 수 없습니다. 먼저 setupInitialSheet() 실행');
+
+    const now = new Date();
+    const surveyId = payload.surveyId || generateId();
+
+    const surveyRow = [
+      now, surveyId, payload.hospitalVisits || '', payload.gender || '', payload.region || '',
+      payload.premiumRange || '', payload.birthDate || '',
+      Array.isArray(payload.insuranceTypes) ? payload.insuranceTypes.join(', ') : '',
+      payload.name || '', payload.phone || '', payload.consultationTime || '',
+      payload.analysis?.score || 0, payload.analysis?.peerAverage || 0,
+      'pending', '', '' // CRM전송상태, CRM전송시간, 마셈블고객ID
+    ];
+    surveySheet.appendRow(surveyRow);
+
+    if (payload.analysis) {
+      const r = payload.analysis.recommendations || [];
+      const analysisRow = [
+        now, surveyId, payload.analysis.score || 0, payload.analysis.peerAverage || 0,
+        payload.analysis.difference || 0, payload.analysis.age || 0, payload.analysis.ageGroup || '',
+        r[0] || '', r[1] || '', r[2] || '', r[3] || ''
+      ];
+      analysisSheet.appendRow(analysisRow);
+    }
+
+    const last = surveySheet.getLastRow();
+    surveySheet.getRange(last,1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    surveySheet.getRange(last,12,1,2).setNumberFormat('#,##0');
+    if (payload.analysis) {
+      const la = analysisSheet.getLastRow();
+      analysisSheet.getRange(la,1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      analysisSheet.getRange(la,3,1,3).setNumberFormat('#,##0');
+    }
+
+    // 즉시 마셈블 CRM 전송
+    try { 
+      sendToMassembleCRM(surveyId); 
+    } catch (e) { 
+      Logger.log('마셈블 CRM 자동 전송 실패: ' + e); 
+    }
+
+    return { success:true, message:'저장 완료', surveyId, timestamp: now.toISOString() };
+  } catch (error) {
+    return { success:false, error: error.message };
+  }
+}
+
+/** 전화 문의 로그 */
+function handlePhoneInquiry(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEETS.PHONE_LOG);
+    if (!sh) throw new Error('전화 문의 시트를 찾을 수 없습니다.');
+
+    const now = new Date();
+    const row = [
+      now, payload.surveyId || '', payload.name || '미제공', payload.phone || '1660-2426',
+      payload.method || 'button_click', payload.ip || '', payload.page || ''
+    ];
+    sh.appendRow(row);
+    sh.getRange(sh.getLastRow(),1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    return { success:true, message:'전화 문의 기록됨', timestamp: now.toISOString() };
+  } catch (e) {
+    return { success:false, error: e.message };
+  }
+}
+
+/** 상담 신청 저장 */
+function handleConsultationRequest(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEETS.CONSULTATION);
+    if (!sh) throw new Error('상담 신청 시트를 찾을 수 없습니다. setupInitialSheet() 실행');
+
+    const now = new Date();
+    const row = [
+      now, payload.requestId || '', payload.name || '', payload.phone || '',
+      payload.preferredTime || '', payload.privacyConsent ? '동의' : '거부',
+      payload.surveyResponseId || ''
+    ];
+    sh.appendRow(row);
+    sh.getRange(sh.getLastRow(),1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    return { success:true, message:'상담 신청 저장', requestId: payload.requestId, timestamp: now.toISOString() };
+  } catch (e) {
+    return { success:false, error: e.message };
+  }
+}
+
+/** 마셈블 CRM으로 설문조사 데이터 전송 (특정 행 번호 기준) */
+function sendToMassembleCRMByRow(rowNumber) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    const analysisSheet = ss.getSheetByName(SHEETS.ANALYSIS);
+    
+    if (!surveySheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const rowData = surveySheet.getRange(rowNumber, 1, 1, surveySheet.getLastColumn()).getValues()[0];
+    
+    // 컬럼 인덱스 (0-based)
+    const IDX = { 
+      responseTime: 0, id: 1, hospitalVisits: 2, gender: 3, region: 4, premiumRange: 5,
+      birthDate: 6, insuranceTypes: 7, name: 8, phone: 9, consultationTime: 10,
+      score: 11, peerAverage: 12, crmStatus: 13, crmSentTime: 14, massembleCustomerId: 15
+    };
+
+    // 이미 전송 성공한 경우 스킵
+    let status = String(rowData[IDX.crmStatus] || '').trim().toLowerCase();
+    if (status === 'success' || status === 'sending') {
+      return { success: false, message: `이미 처리됨: ${status}`, row: rowNumber };
+    }
+
+    // 전송 중 상태로 변경
+    surveySheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('sending');
+
+    const surveyId = rowData[IDX.id] || '';
+    
+    // 분석 데이터 조회
+    let analysisData = null;
+    if (analysisSheet && surveyId) {
+      const analysisRows = analysisSheet.getDataRange().getValues().slice(1);
+      analysisData = analysisRows.find(row => row[1] === surveyId); // ID 기준으로 찾기
+    }
+
+    // 전화번호 정제
+    let phone = String(rowData[IDX.phone] || '').replace(/^p:/i,'').replace(/^\+82/,'0').replace(/[^0-9]/g,'');
+    if (phone.length === 10 && phone.startsWith('10')) {
+      phone = '0' + phone;
+      surveySheet.getRange(rowNumber, IDX.phone + 1).setValue(phone); // 정제된 번호로 업데이트
+    }
+
+    // 마셈블 CRM 형식으로 데이터 변환 (info1~info9 매핑)
+    const crmPayload = {
+      name: rowData[IDX.name] || '',
+      phone: phone,
+      gender: mapGender(rowData[IDX.gender]),
+      birthDate: formatBirthDate(rowData[IDX.birthDate]),
+      consultType: '보험상담',
+      consultPath: '보탐정설문',
+      source: 'botamjeong_survey',
+      marketingConsent: false,
+      
+      // 보탐정 설문조사 데이터를 info1~info9에 개별 매핑 (읽기전용 정보)
+      info1: rowData[IDX.hospitalVisits] || null,        // 병원방문
+      info2: rowData[IDX.gender] || null,                // 성별
+      info3: rowData[IDX.region] || null,                // 지역
+      info4: rowData[IDX.premiumRange] || null,          // 보험료구간
+      info5: rowData[IDX.birthDate] || null,             // 생년월일
+      info6: rowData[IDX.insuranceTypes] || null,        // 보험종류
+      info7: rowData[IDX.consultationTime] || null,      // 상담시간
+      info8: rowData[IDX.score] ? String(rowData[IDX.score]) : null,        // 점수
+      info9: rowData[IDX.peerAverage] ? String(rowData[IDX.peerAverage]) : null, // 평균보험료
+      info10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyId})`, // 연동정보
+      
+      // memo1은 사용자가 추후 입력할 수 있는 메모 필드로 비워둠
+      memo1: null,
+      
+      surveyId: surveyId,
+      surveyCompletedAt: rowData[IDX.responseTime] ? new Date(rowData[IDX.responseTime]).toISOString() : new Date().toISOString()
+    };
+
+    Logger.log('📤 마셈블 CRM 전송 데이터 (Row ' + rowNumber + '): ' + JSON.stringify(crmPayload, null, 2));
+
+    // 마셈블 CRM API 호출
+    const response = UrlFetchApp.fetch(`${MASSEMBLE_CRM_URL}/api/survey/import`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${MASSEMBLE_API_KEY}`,
+        'X-API-Key': MASSEMBLE_API_KEY
+      },
+      payload: JSON.stringify(crmPayload),
+      muteHttpExceptions: true
+    });
+
+    const responseText = response.getContentText();
+    const statusCode = response.getResponseCode();
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+    
+    Logger.log(`📥 마셈블 CRM 응답 (Row ${rowNumber}, ${statusCode}): ${responseText}`);
+
+    if (statusCode === 200) {
+      const result = JSON.parse(responseText);
+      
+      if (result.success) {
+        // 성공 상태 업데이트
+        surveySheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('success');
+        surveySheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+        surveySheet.getRange(rowNumber, IDX.massembleCustomerId + 1).setValue(result.customerId || '');
+        
+        Logger.log(`✅ 마셈블 CRM 전송 성공 (Row ${rowNumber}): ${surveyId} → ${result.customerId}`);
+        
+        return {
+          success: true,
+          message: '마셈블 CRM 전송 성공',
+          row: rowNumber,
+          surveyId: surveyId,
+          customerId: result.customerId,
+          isNewCustomer: result.isNewCustomer,
+          name: rowData[IDX.name],
+          phone: phone
+        };
+      } else {
+        // API는 성공했지만 비즈니스 로직 실패
+        surveySheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('api_error');
+        surveySheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+        
+        return {
+          success: false,
+          message: `마셈블 CRM API 오류: ${result.message}`,
+          error: result.message,
+          row: rowNumber
+        };
+      }
+    } else {
+      // HTTP 오류
+      surveySheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('http_error');
+      surveySheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+      
+      return {
+        success: false,
+        message: `마셈블 CRM HTTP 오류 (${statusCode}): ${responseText}`,
+        error: `HTTP ${statusCode}`,
+        row: rowNumber
+      };
+    }
+
+  } catch (error) {
+    Logger.log('❌ 마셈블 CRM 전송 오류 (Row ' + rowNumber + '): ' + error);
+    
+    // 에러 상태 업데이트
+    try {
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      const surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+      const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+      surveySheet.getRange(rowNumber, 14).setValue('error'); // CRM전송상태
+      surveySheet.getRange(rowNumber, 15).setValue(now); // CRM전송시간
+    } catch (e) {
+      Logger.log('상태 업데이트 실패: ' + e);
+    }
+    
+    return {
+      success: false,
+      message: '마셈블 CRM 전송 중 오류 발생: ' + error.message,
+      error: error.message,
+      row: rowNumber
+    };
+  }
+}
+
+/** surveyId로(있으면) 또는 마지막 행으로 마셈블 CRM 전송 */
+function sendToMassembleCRM(targetSurveyId = null) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: false, message: '전송할 데이터가 없습니다.' };
+
+    if (targetSurveyId) {
+      // 특정 surveyId 찾기
+      const allData = sheet.getDataRange().getValues();
+      for (let i = 1; i < allData.length; i++) {
+        if (allData[i][1] === targetSurveyId) { // ID 컬럼
+          return sendToMassembleCRMByRow(i + 1); // 1-based row number
+        }
+      }
+      throw new Error(`설문 ID ${targetSurveyId}를 찾을 수 없습니다.`);
+    } else {
+      // 마지막 행 전송
+      return sendToMassembleCRMByRow(lastRow);
+    }
+  } catch (e) {
+    return { success: false, message: `마셈블 CRM 전송 오류: ${e.message}` };
+  }
+}
+
+/** 모든 미전송 데이터를 마셈블 CRM으로 일괄 전송 */
+function sendAllToMassembleCRM() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const rows = data.slice(1);
+
+    const statusIdx = headers.indexOf('CRM전송상태');
+    if (statusIdx === -1) throw new Error('CRM전송상태 컬럼을 찾을 수 없습니다. setupInitialSheet() 실행 필요');
+
+    let successCount = 0;
+    let failCount = 0;
+    const results = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const status = String(row[statusIdx] || '').trim().toLowerCase();
+      const surveyId = row[1]; // ID 컬럼
+
+      // pending, 빈 상태, 또는 실패 상태인 항목만 전송
+      if (status === 'pending' || !status || status === 'fail' || status === 'error' || status === 'api_error' || status === 'http_error') {
+        try {
+          const result = sendToMassembleCRMByRow(i + 2); // +2: 헤더 행 때문에
+          results.push({ 
+            row: i + 2, 
+            surveyId: surveyId, 
+            result: result 
+          });
+          
+          if (result.success) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+          
+          // API 호출 간격 (Rate Limiting 방지)
+          Utilities.sleep(1000);
+          
+        } catch (error) {
+          failCount++;
+          results.push({
+            row: i + 2,
+            surveyId: surveyId,
+            result: {
+              success: false,
+              error: error.message
+            }
+          });
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: `마셈블 CRM 일괄 전송 완료: 성공 ${successCount}건, 실패 ${failCount}건`,
+      successCount: successCount,
+      failCount: failCount,
+      results: results
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      message: '마셈블 CRM 일괄 전송 중 오류 발생: ' + error.message,
+      error: error.message
+    };
+  }
+}
+
+/** 마셈블 CRM 연동 상태 확인 */
+function checkMassembleCRMStatus() {
+  try {
+    // 1. 마셈블 CRM 서버 상태 확인
+    const response = UrlFetchApp.fetch(`${MASSEMBLE_CRM_URL}/api/survey/status`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${MASSEMBLE_API_KEY}`,
+        'X-API-Key': MASSEMBLE_API_KEY
+      },
+      muteHttpExceptions: true
+    });
+
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+
+    let serverStatus = {};
+    if (statusCode === 200) {
+      const result = JSON.parse(responseText);
+      serverStatus = {
+        connected: true,
+        status: result.status || 'operational',
+        recentCustomers: result.recentCustomers || 0,
+        message: result.message || '마셈블 CRM 연동 정상'
+      };
+    } else {
+      serverStatus = {
+        connected: false,
+        error: `HTTP ${statusCode}`,
+        message: `마셈블 CRM 연결 실패 (${statusCode}): ${responseText}`
+      };
+    }
+
+    // 2. 로컬 스프레드시트 전송 상태 집계
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const rows = data.slice(1);
+    const statusIdx = headers.indexOf('CRM전송상태');
+    
+    let localStatus = { total: 0, success: 0, pending: 0, failed: 0 };
+    
+    if (statusIdx !== -1) {
+      localStatus.total = rows.length;
+      
+      rows.forEach(row => {
+        const status = String(row[statusIdx] || '').trim().toLowerCase();
+        if (status === 'success') {
+          localStatus.success++;
+        } else if (status === 'pending' || !status) {
+          localStatus.pending++;
+        } else {
+          localStatus.failed++;
+        }
+      });
+    }
+
+    localStatus.successRate = localStatus.total ? Math.round((localStatus.success / localStatus.total) * 100) : 0;
+
+    return {
+      success: true,
+      server: serverStatus,
+      local: localStatus,
+      summary: {
+        isHealthy: serverStatus.connected && localStatus.successRate > 80,
+        pendingCount: localStatus.pending,
+        failedCount: localStatus.failed
+      }
+    };
+
+  } catch (error) {
+    return {
+      success: false,
+      message: '마셈블 CRM 상태 확인 오류: ' + error.message,
+      error: error.message
+    };
+  }
+}
+
+/** 성별 매핑 함수 */
+function mapGender(gender) {
+  if (!gender) return 'N';
+  const g = String(gender).toLowerCase();
+  if (g.includes('남') || g.includes('male') || g === 'm') return 'M';
+  if (g.includes('여') || g.includes('female') || g === 'f') return 'F';
+  return 'N';
+}
+
+/** 생년월일 포맷 함수 */
+function formatBirthDate(birthDate) {
+  if (!birthDate) return null;
+  
+  try {
+    let dateStr = String(birthDate);
+    
+    // 이미 Date 객체인 경우
+    if (birthDate instanceof Date) {
+      return Utilities.formatDate(birthDate, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+    
+    // YYYY-MM-DD 형식은 그대로 반환
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return dateStr;
+    }
+    
+    // YYYYMMDD 형식 처리
+    if (/^\d{8}$/.test(dateStr)) {
+      return `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)}`;
+    }
+    
+    // YYYY.MM.DD 형식 처리
+    if (/^\d{4}\.\d{2}\.\d{2}$/.test(dateStr)) {
+      return dateStr.replace(/\./g, '-');
+    }
+    
+    // YYYY/MM/DD 형식 처리
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(dateStr)) {
+      return dateStr.replace(/\//g, '-');
+    }
+    
+    return null;
+  } catch (e) {
+    Logger.log('생년월일 포맷 오류: ' + e);
+    return null;
+  }
+}
+
+/** 통계 조회 */
+function getStatistics() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    
+    const surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    const analysisSheet = ss.getSheetByName(SHEETS.ANALYSIS);
+    const phoneSheet = ss.getSheetByName(SHEETS.PHONE_LOG);
+    const consultationSheet = ss.getSheetByName(SHEETS.CONSULTATION);
+    
+    const stats = {
+      totalSurveys: surveySheet ? Math.max(0, surveySheet.getLastRow() - 1) : 0,
+      totalAnalysis: analysisSheet ? Math.max(0, analysisSheet.getLastRow() - 1) : 0,
+      totalPhoneCalls: phoneSheet ? Math.max(0, phoneSheet.getLastRow() - 1) : 0,
+      totalConsultations: consultationSheet ? Math.max(0, consultationSheet.getLastRow() - 1) : 0,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    // CRM 전송 상태 집계
+    if (surveySheet && surveySheet.getLastRow() > 1) {
+      const data = surveySheet.getDataRange().getValues();
+      const headers = data[0];
+      const statusIdx = headers.indexOf('CRM전송상태');
+      
+      if (statusIdx !== -1) {
+        const rows = data.slice(1);
+        stats.crmStatus = { success: 0, pending: 0, failed: 0 };
+        
+        rows.forEach(row => {
+          const status = String(row[statusIdx] || '').trim().toLowerCase();
+          if (status === 'success') stats.crmStatus.success++;
+          else if (status === 'pending' || !status) stats.crmStatus.pending++;
+          else stats.crmStatus.failed++;
+        });
+        
+        stats.crmStatus.total = rows.length;
+        stats.crmStatus.successRate = Math.round((stats.crmStatus.success / stats.crmStatus.total) * 100);
+      }
+    }
+    
+    return { success: true, data: stats };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/** 최근 데이터 조회 */
+function getRecentData(limit = 20) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success: true, data: [] };
+    
+    const startRow = Math.max(2, lastRow - limit + 1);
+    const range = sheet.getRange(startRow, 1, lastRow - startRow + 1, sheet.getLastColumn());
+    const values = range.getValues();
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    const data = values.map(row => {
+      const obj = {};
+      headers.forEach((header, index) => {
+        obj[header] = row[index];
+      });
+      return obj;
+    }).reverse(); // 최신 순으로 정렬
+    
+    return { success: true, data: data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/** 데이터 내보내기 */
+function exportData() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const result = {};
+    
+    Object.values(SHEETS).forEach(sheetName => {
+      const sheet = ss.getSheetByName(sheetName);
+      if (sheet && sheet.getLastRow() > 1) {
+        const data = sheet.getDataRange().getValues();
+        const headers = data[0];
+        const rows = data.slice(1);
+        
+        result[sheetName] = {
+          headers: headers,
+          data: rows,
+          total: rows.length
+        };
+      }
+    });
+    
+    return { success: true, data: result, exportedAt: new Date().toISOString() };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/** 고유 ID 생성 */
+function generateId() {
+  return Utilities.getUuid().substring(0, 8);
+}
+
+/** 1분 주기 크론 트리거 생성 */
+function createCronTrigger() {
+  try {
+    // 기존 트리거 삭제
+    ScriptApp.getProjectTriggers().forEach(trigger => {
+      if (trigger.getHandlerFunction() === 'cronJob') {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+    
+    // 새 트리거 생성 (1분 주기)
+    ScriptApp.newTrigger('cronJob')
+      .timeBased()
+      .everyMinutes(1)
+      .create();
+      
+    Logger.log('✅ 1분 주기 크론 트리거 생성 완료');
+    return '크론 트리거 생성 완료';
+  } catch (error) {
+    Logger.log('❌ 크론 트리거 생성 오류: ' + error);
+    throw error;
+  }
+}
+
+/** 주기적 실행 함수 */
+function cronJob() {
+  try {
+    Logger.log('🔄 크론 작업 시작: ' + new Date());
+    
+    // 1. 미전송 데이터 자동 재전송 (최대 5건)
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    
+    if (sheet && sheet.getLastRow() > 1) {
+      const data = sheet.getDataRange().getValues();
+      const headers = data[0];
+      const statusIdx = headers.indexOf('CRM전송상태');
+      
+      if (statusIdx !== -1) {
+        const rows = data.slice(1);
+        let retryCount = 0;
+        const maxRetries = 5;
+        
+        for (let i = 0; i < rows.length && retryCount < maxRetries; i++) {
+          const row = rows[i];
+          const status = String(row[statusIdx] || '').trim().toLowerCase();
+          
+          // 실패 상태인 항목만 재시도
+          if (status === 'error' || status === 'api_error' || status === 'http_error') {
+            try {
+              const result = sendToMassembleCRMByRow(i + 2);
+              retryCount++;
+              
+              if (result.success) {
+                Logger.log(`✅ 크론 재전송 성공: Row ${i + 2}`);
+              } else {
+                Logger.log(`❌ 크론 재전송 실패: Row ${i + 2} - ${result.message}`);
+              }
+              
+              // API 호출 간격
+              Utilities.sleep(2000);
+            } catch (e) {
+              Logger.log(`❌ 크론 재전송 오류: Row ${i + 2} - ${e.message}`);
+              retryCount++;
+            }
+          }
+        }
+        
+        if (retryCount > 0) {
+          Logger.log(`🔄 크론 작업 완료: ${retryCount}건 재시도`);
+        }
+      }
+    }
+    
+  } catch (error) {
+    Logger.log('❌ 크론 작업 오류: ' + error);
+  }
+}
+
+/** 트리거 삭제 */
+function deleteTriggers() {
+  try {
+    ScriptApp.getProjectTriggers().forEach(trigger => {
+      ScriptApp.deleteTrigger(trigger);
+    });
+    Logger.log('✅ 모든 트리거 삭제 완료');
+    return '모든 트리거 삭제 완료';
+  } catch (error) {
+    Logger.log('❌ 트리거 삭제 오류: ' + error);
+    throw error;
+  }
+}
