@@ -217,41 +217,7 @@ interface SmsTask {
   requestId: string;
 }
 
-/**
- * 병렬 SMS 발송 처리 함수 (concurrency limit 적용)
- */
-async function processSmsTasksInParallel(
-  smsTasks: SmsTask[],
-  concurrencyLimit = 5
-): Promise<SmsAssignmentResult[]> {
-  const results: SmsAssignmentResult[] = [];
-  
-  // 작업을 청크로 나누어 병렬 처리
-  for (let i = 0; i < smsTasks.length; i += concurrencyLimit) {
-    const chunk = smsTasks.slice(i, i + concurrencyLimit);
-    
-    // 현재 청크의 모든 SMS 발송을 병렬로 실행
-    const chunkPromises = chunk.map(async (task) => {
-      return await sendCustomerAssignmentSms(
-        task.customerId,
-        task.assignedUserId,
-        task.customer,
-        task.requestId
-      );
-    });
-    
-    // 모든 병렬 작업이 완료될 때까지 대기
-    const chunkResults = await Promise.all(chunkPromises);
-    results.push(...chunkResults);
-    
-    // 다음 청크 처리 전에 약간의 지연 (API 속도 제한 완화)
-    if (i + concurrencyLimit < smsTasks.length) {
-      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms 지연
-    }
-  }
-  
-  return results;
-}
+// processSmsTasksInParallel 함수 제거됨 - 이제 sendBatchAssignmentSms로 통합 처리
 
 /**
  * 일괄 고객 배정 변경 시 통합 SMS 발송 처리 함수
@@ -353,17 +319,7 @@ async function sendBatchAssignmentSms(
       };
     }
     
-    // SMS 템플릿 데이터 준비 (기존 방식과 호환)
-    const templateData = {
-      customerName: firstCustomer.name,
-      customerPhone: firstCustomer.phone,
-      status: firstCustomer.status || '인텍',
-      assignedTime: assignedTime,
-      additionalCount: additionalCount,
-      totalCount: customers.length
-    };
-
-    // 기존 템플릿 방식 대신 직접 SMS 발송
+    // 직접 SMS 발송 (통합 메시지 사용)
     const smsResult = await smsService.sendSms(assignedUser.phone, message, {
       type: 'LMS',
       subject: '[마셈블] 고객 배정 알림'
