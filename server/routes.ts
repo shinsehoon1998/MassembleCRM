@@ -265,6 +265,20 @@ async function sendBatchAssignmentSms(
   const currentRequestId = requestId || generateRequestId();
   
   try {
+    // 빈 배열 검증
+    if (!customers || customers.length === 0) {
+      secureLog(LogLevel.WARNING, 'SMS', '통합 SMS 발송 생략 - 고객 목록 없음', {
+        assignedUserId,
+        customerCount: 0
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId: 'batch',
+        attempted: false,
+        reason: '고객 목록 없음'
+      };
+    }
+
     // 담당자 정보 조회
     const assignedUser = await storage.getUser(assignedUserId);
     if (!assignedUser) {
@@ -281,7 +295,7 @@ async function sendBatchAssignmentSms(
     }
 
     // 담당자 전화번호 확인
-    if (!assignedUser.phone) {
+    if (!assignedUser.phone || assignedUser.phone.trim() === '') {
       secureLog(LogLevel.WARNING, 'SMS', '통합 SMS 발송 생략 - 담당자 전화번호 없음', {
         assignedUserId,
         customerCount: customers.length
@@ -299,22 +313,20 @@ async function sendBatchAssignmentSms(
     const additionalCount = customers.length - 1;
     let message: string;
     
+    // 정확한 시간 포맷팅 (toLocaleString 사용)
+    const assignedTime = new Date().toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
     if (customers.length === 1) {
-      message = `[마셈블] 고객 배정 알림\n\n고객 "${firstCustomer.name}"이 귀하에게 배정되었습니다.\n\n배정 시간: ${new Date().toLocaleDateString('ko-KR', { 
-        year: 'numeric',
-        month: '2-digit', 
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      })}\n\n관리자`;
+      message = `[마셈블] 고객 배정 알림\n\n고객 "${firstCustomer.name}"이 귀하에게 배정되었습니다.\n\n배정 시간: ${assignedTime}\n\n관리자`;
     } else {
-      message = `[마셈블] 고객 배정 알림\n\n"${firstCustomer.name}" 외 ${additionalCount}건의 고객이 귀하에게 배정되었습니다.\n\n총 배정 고객: ${customers.length}명\n배정 시간: ${new Date().toLocaleDateString('ko-KR', { 
-        year: 'numeric',
-        month: '2-digit', 
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      })}\n\n관리자`;
+      message = `[마셈블] 고객 배정 알림\n\n"${firstCustomer.name}" 외 ${additionalCount}건의 고객이 귀하에게 배정되었습니다.\n\n총 배정 고객: ${customers.length}명\n배정 시간: ${assignedTime}\n\n관리자`;
     }
 
     secureLog(LogLevel.INFO, 'SMS', '통합 SMS 발송 시도', {
@@ -341,7 +353,17 @@ async function sendBatchAssignmentSms(
       };
     }
     
-    // SMS 발송 (LMS 타입으로 발송하여 긴 메시지 지원)
+    // SMS 템플릿 데이터 준비 (기존 방식과 호환)
+    const templateData = {
+      customerName: firstCustomer.name,
+      customerPhone: firstCustomer.phone,
+      status: firstCustomer.status || '인텍',
+      assignedTime: assignedTime,
+      additionalCount: additionalCount,
+      totalCount: customers.length
+    };
+
+    // 기존 템플릿 방식 대신 직접 SMS 발송
     const smsResult = await smsService.sendSms(assignedUser.phone, message, {
       type: 'LMS',
       subject: '[마셈블] 고객 배정 알림'
@@ -1091,7 +1113,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const results = [];
       let updateCount = 0;
-      const smsTasks: SmsTask[] = [];
+      // 담당자별 고객 그룹핑을 위한 Map
+      const assignmentGroups = new Map<string, any[]>();
       
       // Step 1: 고객 정보 업데이트 (순차 처리)
       for (const customerId of customerIds) {
@@ -1126,7 +1149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: `고객 "${customer.name}"을(를) 일괄 수정했습니다.`,
           });
 
-          // assignedUserId가 변경된 경우 통합 SMS를 위한 고객 정보 수집
+          // assignedUserId가 변경된 경우 담당자별로 고객 그룹핑
           if (isAssigningUsers && originalCustomer) {
             const assignedUserChanged = hasAssignedUserChanged(
               originalCustomer.assignedUserId,
@@ -1134,22 +1157,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             );
 
             if (assignedUserChanged && updates.assignedUserId) {
-              // 개별 SMS 대신 통합 SMS를 위한 정보만 수집
-              if (!smsTasks.find(task => task.assignedUserId === updates.assignedUserId)) {
-                smsTasks.push({
-                  customerId: 'batch', // 통합 SMS 표시
-                  assignedUserId: updates.assignedUserId,
-                  customer: customer, // 대표 고객 정보
-                  requestId: requestId,
-                  customers: [] // 변경된 모든 고객 리스트
-                });
+              // 담당자별로 고객 그룹핑
+              if (!assignmentGroups.has(updates.assignedUserId)) {
+                assignmentGroups.set(updates.assignedUserId, []);
               }
-              // 해당 담당자의 고객 리스트에 추가
-              const smsTask = smsTasks.find(task => task.assignedUserId === updates.assignedUserId);
-              if (smsTask) {
-                smsTask.customers = smsTask.customers || [];
-                smsTask.customers.push(customer);
-              }
+              assignmentGroups.get(updates.assignedUserId)!.push(customer);
             }
           }
         } catch (error) {
@@ -1165,36 +1177,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Step 2: 통합 SMS 발송 (담당자별로 1건씩)
+      // Step 2: 담당자별 통합 SMS 발송
       let smsResults: SmsAssignmentResult[] = [];
-      if (smsTasks.length > 0) {
-        secureLog(LogLevel.INFO, 'SMS', '통합 SMS 발송 시작', {
-          smsTaskCount: smsTasks.length
+      if (assignmentGroups.size > 0) {
+        secureLog(LogLevel.INFO, 'SMS', '담당자별 통합 SMS 발송 시작', {
+          assignedUserCount: assignmentGroups.size,
+          totalCustomers: Array.from(assignmentGroups.values()).reduce((sum, customers) => sum + customers.length, 0)
         }, requestId);
         
         try {
-          // 각 담당자별로 통합 SMS 발송
-          for (const smsTask of smsTasks) {
-            if (smsTask.customers && smsTask.customers.length > 0) {
+          // 각 담당자별로 통합 SMS 발송 (순차 처리)
+          for (const [assignedUserId, customers] of assignmentGroups) {
+            if (customers && customers.length > 0) {
               const result = await sendBatchAssignmentSms(
-                smsTask.assignedUserId,
-                smsTask.customers,
+                assignedUserId,
+                customers,
                 requestId
               );
               smsResults.push(result);
             }
           }
           
-          secureLog(LogLevel.INFO, 'SMS', '통합 SMS 발송 완료', {
-            totalTasks: smsTasks.length,
+          secureLog(LogLevel.INFO, 'SMS', '담당자별 통합 SMS 발송 완료', {
+            assignedUserCount: assignmentGroups.size,
             successCount: smsResults.filter(r => r.success).length,
             failureCount: smsResults.filter(r => !r.success).length,
             attemptedCount: smsResults.filter(r => r.attempted).length
           }, requestId);
         } catch (error) {
-          secureLog(LogLevel.ERROR, 'SMS', '통합 SMS 발송 중 오류 발생', {
+          secureLog(LogLevel.ERROR, 'SMS', '담당자별 통합 SMS 발송 중 오류 발생', {
             error: error instanceof Error ? error.message : 'Unknown error',
-            smsTaskCount: smsTasks.length
+            assignedUserCount: assignmentGroups.size
           }, requestId);
         }
       }
@@ -1207,7 +1220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       secureLog(LogLevel.INFO, 'CUSTOMER', '일괄 고객 수정 완료', {
         updatedCount: updateCount,
         totalCount: customerIds.length,
-        smsTaskCount: smsTasks.length,
+        assignedUserCount: assignmentGroups.size,
         smsSuccessCount,
         smsFailureCount,
         smsSkippedCount,
@@ -1219,7 +1232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         total: customerIds.length,
         customers: results,
         sms: {
-          attempted: smsTasks.length,
+          attempted: assignmentGroups.size,
           success: smsSuccessCount,
           failed: smsFailureCount,
           skipped: smsSkippedCount,
