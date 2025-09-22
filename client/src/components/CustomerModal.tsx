@@ -62,7 +62,16 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
       department: "",
       team: "",
       source: "manual",
-      memo: "",
+      memo1: "",
+      memo2: "",
+      memo3: "",
+      memo4: "",
+      memo5: "",
+      memo6: "",
+      memo7: "",
+      memo8: "",
+      memo9: "",
+      memo10: "",
     },
   });
 
@@ -91,7 +100,16 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         department: customer.department || "",
         team: customer.team || "",
         source: customer.source || "manual",
-        memo: customer.memo || "",
+        memo1: customer.memo1 || "",
+        memo2: customer.memo2 || "",
+        memo3: customer.memo3 || "",
+        memo4: customer.memo4 || "",
+        memo5: customer.memo5 || "",
+        memo6: customer.memo6 || "",
+        memo7: customer.memo7 || "",
+        memo8: customer.memo8 || "",
+        memo9: customer.memo9 || "",
+        memo10: customer.memo10 || "",
       });
     } else {
       reset({
@@ -115,7 +133,16 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         department: "",
         team: "",
         source: "manual",
-        memo: "",
+        memo1: "",
+        memo2: "",
+        memo3: "",
+        memo4: "",
+        memo5: "",
+        memo6: "",
+        memo7: "",
+        memo8: "",
+        memo9: "",
+        memo10: "",
       });
     }
   }, [customer, reset]);
@@ -140,7 +167,16 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         department: data.department || null,
         team: data.team || null,
         source: data.source || "manual",
-        memo: data.memo || null,
+        memo1: data.memo1 || null,
+        memo2: data.memo2 || null,
+        memo3: data.memo3 || null,
+        memo4: data.memo4 || null,
+        memo5: data.memo5 || null,
+        memo6: data.memo6 || null,
+        memo7: data.memo7 || null,
+        memo8: data.memo8 || null,
+        memo9: data.memo9 || null,
+        memo10: data.memo10 || null,
       };
       
       if (customer) {
@@ -454,14 +490,109 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
           </div>
           
           <div className="border-t pt-6">
-            <Label htmlFor="memo">메모</Label>
-            <Textarea
-              id="memo"
-              rows={3}
-              {...register("memo")}
-              data-testid="input-customer-memo"
-              placeholder="고객에 대한 추가 정보나 메모를 입력하세요..."
-            />
+            <Label className="text-lg font-semibold mb-4 block">메모 (1~10)</Label>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="memo1">메모 1</Label>
+                <Textarea
+                  id="memo1"
+                  rows={2}
+                  {...register("memo1")}
+                  data-testid="input-customer-memo1"
+                  placeholder="메모 1을 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo2">메모 2</Label>
+                <Textarea
+                  id="memo2"
+                  rows={2}
+                  {...register("memo2")}
+                  data-testid="input-customer-memo2"
+                  placeholder="메모 2를 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo3">메모 3</Label>
+                <Textarea
+                  id="memo3"
+                  rows={2}
+                  {...register("memo3")}
+                  data-testid="input-customer-memo3"
+                  placeholder="메모 3을 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo4">메모 4</Label>
+                <Textarea
+                  id="memo4"
+                  rows={2}
+                  {...register("memo4")}
+                  data-testid="input-customer-memo4"
+                  placeholder="메모 4를 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo5">메모 5</Label>
+                <Textarea
+                  id="memo5"
+                  rows={2}
+                  {...register("memo5")}
+                  data-testid="input-customer-memo5"
+                  placeholder="메모 5를 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo6">메모 6</Label>
+                <Textarea
+                  id="memo6"
+                  rows={2}
+                  {...register("memo6")}
+                  data-testid="input-customer-memo6"
+                  placeholder="메모 6을 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo7">메모 7</Label>
+                <Textarea
+                  id="memo7"
+                  rows={2}
+                  {...register("memo7")}
+                  data-testid="input-customer-memo7"
+                  placeholder="메모 7을 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo8">메모 8</Label>
+                <Textarea
+                  id="memo8"
+                  rows={2}
+                  {...register("memo8")}
+                  data-testid="input-customer-memo8"
+                  placeholder="메모 8을 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo9">메모 9</Label>
+                <Textarea
+                  id="memo9"
+                  rows={2}
+                  {...register("memo9")}
+                  data-testid="input-customer-memo9"
+                  placeholder="메모 9를 입력하세요..."
+                />
+              </div>
+              <div>
+                <Label htmlFor="memo10">메모 10</Label>
+                <Textarea
+                  id="memo10"
+                  rows={2}
+                  {...register("memo10")}
+                  data-testid="input-customer-memo10"
+                  placeholder="메모 10을 입력하세요..."
+                />
+              </div>
+            </div>
           </div>
           
           <DialogFooter className="pt-6 border-t border-gray-200">
