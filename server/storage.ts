@@ -883,6 +883,50 @@ export class DatabaseStorage implements IStorage {
     } as CustomerWithUser;
   }
 
+  async getCustomerByPhone(phone: string): Promise<CustomerWithUser | undefined> {
+    const [customer] = await db
+      .select({
+        id: customers.id,
+        name: customers.name,
+        phone: customers.phone,
+        secondaryPhone: customers.secondaryPhone,
+        birthDate: customers.birthDate,
+        gender: customers.gender,
+        zipcode: customers.zipcode,
+        address: customers.address,
+        addressDetail: customers.addressDetail,
+        monthlyIncome: customers.monthlyIncome,
+        jobType: customers.jobType,
+        companyName: customers.companyName,
+        consultType: customers.consultType,
+        consultPath: customers.consultPath,
+        status: customers.status,
+        assignedUserId: customers.assignedUserId,
+        secondaryUserId: customers.secondaryUserId,
+        department: customers.department,
+        team: customers.team,
+        source: customers.source,
+        marketingConsent: customers.marketingConsent,
+        marketingConsentDate: customers.marketingConsentDate,
+        marketingConsentMethod: customers.marketingConsentMethod,
+        memo: customers.memo,
+        createdAt: customers.createdAt,
+        updatedAt: customers.updatedAt,
+        assignedUser: users,
+      })
+      .from(customers)
+      .leftJoin(users, eq(customers.assignedUserId, users.id))
+      .where(eq(customers.phone, phone));
+
+    if (!customer) return undefined;
+
+    return {
+      ...customer,
+      assignedUser: customer.assignedUser,
+      secondaryUser: null, // Since we're not joining secondary user here
+    } as CustomerWithUser;
+  }
+
   async createCustomer(customer: InsertCustomer): Promise<Customer> {
     const [newCustomer] = await db
       .insert(customers)

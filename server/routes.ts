@@ -5229,13 +5229,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // 기존 고객 정보 업데이트 (설문조사 데이터 추가)
         const updateData = {
-          ...surveyData,
-          birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : null,
-          marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate).toISOString() : null,
+          name: surveyData.name,
+          phone: surveyData.phone,
+          email: surveyData.email || existingCustomer.email,
+          birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : existingCustomer.birthDate,
+          gender: surveyData.gender || existingCustomer.gender,
+          consultType: surveyData.consultType || existingCustomer.consultType,
+          consultPath: surveyData.consultPath || existingCustomer.consultPath,
+          source: surveyData.source || existingCustomer.source,
+          marketingConsent: surveyData.marketingConsent !== undefined ? surveyData.marketingConsent : existingCustomer.marketingConsent,
+          marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate).toISOString() : existingCustomer.marketingConsentDate,
+          marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : existingCustomer.marketingConsentMethod,
           memo: existingCustomer.memo ? 
             `${existingCustomer.memo}\n\n[${new Date().toLocaleString('ko-KR')}] 설문조사 추가 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` :
-            `[${new Date().toLocaleString('ko-KR')}] 설문조사 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}`,
-          updatedAt: new Date()
+            `[${new Date().toLocaleString('ko-KR')}] 설문조사 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}`
         };
         
         const updatedCustomer = await storage.updateCustomer(existingCustomer.id, updateData);
@@ -5257,6 +5264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerData = {
         name: surveyData.name,
         phone: surveyData.phone,
+        email: surveyData.email,
         birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : null,
         gender: surveyData.gender || 'N',
         consultType: surveyData.consultType || '보험상담',
@@ -5268,9 +5276,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: '인텍', // 기본 상태
         memo: surveyData.surveyResults ? 
           `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 결과:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` : 
-          `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 고객`,
-        createdAt: new Date(),
-        updatedAt: new Date()
+          `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 고객`
+        // createdAt과 updatedAt는 데이터베이스에서 자동 설정되므로 제외
       };
 
       const newCustomer = await storage.createCustomer(customerData);
@@ -5282,18 +5289,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         source: newCustomer.source
       }, requestId);
 
-      // 활동 로그 기록
-      await storage.createActivityLog({
-        userId: 'system', // 시스템에서 자동 생성
+      // 활동 로그는 생략 (설문조사 자동 생성이므로 별도 로그 불필요)
+      secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '설문조사 고객 생성 완료 (활동로그 생략)', {
         customerId: newCustomer.id,
-        action: 'customer_created_from_survey',
-        description: '보탐정 설문조사를 통해 고객이 등록되었습니다.',
-        metadata: {
-          source: 'botamjeong_survey',
-          surveyId: surveyData.surveyId,
-          marketingConsent: surveyData.marketingConsent
-        }
-      });
+        source: 'botamjeong_survey'
+      }, requestId);
 
       res.json({
         success: true,
