@@ -77,7 +77,16 @@ export const customers = pgTable("customers", {
   marketingConsent: boolean("marketing_consent").default(false),
   marketingConsentDate: timestamp("marketing_consent_date"),
   marketingConsentMethod: varchar("marketing_consent_method"),
-  memo: text("memo"),
+  memo1: text("memo1"),
+  memo2: text("memo2"),
+  memo3: text("memo3"),
+  memo4: text("memo4"),
+  memo5: text("memo5"),
+  memo6: text("memo6"),
+  memo7: text("memo7"),
+  memo8: text("memo8"),
+  memo9: text("memo9"),
+  memo10: text("memo10"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1230,9 +1239,36 @@ export const surveyImportSchema = z.object({
   surveyResults: z.record(z.any())
     .optional(),
   
-  // 메모/특이사항
-  memo: z.string()
-    .max(1000, '메모는 최대 1000자까지 허용됩니다.')
+  // 메모/특이사항 (10개 필드)
+  memo1: z.string()
+    .max(1000, '메모1은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo2: z.string()
+    .max(1000, '메모2는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo3: z.string()
+    .max(1000, '메모3은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo4: z.string()
+    .max(1000, '메모4는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo5: z.string()
+    .max(1000, '메모5는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo6: z.string()
+    .max(1000, '메모6은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo7: z.string()
+    .max(1000, '메모7은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo8: z.string()
+    .max(1000, '메모8은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo9: z.string()
+    .max(1000, '메모9는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  memo10: z.string()
+    .max(1000, '메모10은 최대 1000자까지 허용됩니다.')
     .optional(),
   
   // 소스 정보
