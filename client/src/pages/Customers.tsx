@@ -703,16 +703,16 @@ export default function Customers() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">공유담당자</th>
                     <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">메모</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">병원방문</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">성별</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">지역</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">보험료구간</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">생년월일</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">보험종류</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">상담시간</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">점수</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">평균보험료</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">연동정보</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보1</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보2</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보3</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보4</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보5</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보6</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보7</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보8</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보9</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보10</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">등록일</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
                   </tr>
@@ -829,7 +829,7 @@ export default function Customers() {
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
                           const field = `info${num}`;
                           const infoValue = customer[field];
-                          const infoLabels = ['병원방문', '성별', '지역', '보험료구간', '생년월일', '보험종류', '상담시간', '점수', '평균보험료', '연동정보'];
+                          const infoLabels = ['정보1', '정보2', '정보3', '정보4', '정보5', '정보6', '정보7', '정보8', '정보9', '정보10'];
                           
                           return (
                             <td key={field} className="px-2 py-4 text-xs w-24">
@@ -1016,7 +1016,7 @@ export default function Customers() {
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
                               const field = `info${num}`;
                               const infoValue = customer[field];
-                              const infoLabels = ['병원방문', '성별', '지역', '보험료구간', '생년월일', '보험종류', '상담시간', '점수', '평균보험료', '연동정보'];
+                              const infoLabels = ['정보1', '정보2', '정보3', '정보4', '정보5', '정보6', '정보7', '정보8', '정보9', '정보10'];
                               if (!infoValue) return null;
                               
                               return (

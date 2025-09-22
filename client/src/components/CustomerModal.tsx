@@ -475,7 +475,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {customer.info1 && (
                   <div>
-                    <Label className="text-sm text-gray-600">병원방문</Label>
+                    <Label className="text-sm text-gray-600">정보1</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info1">
                       {customer.info1}
                     </div>
@@ -483,7 +483,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info2 && (
                   <div>
-                    <Label className="text-sm text-gray-600">성별</Label>
+                    <Label className="text-sm text-gray-600">정보2</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info2">
                       {customer.info2}
                     </div>
@@ -491,7 +491,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info3 && (
                   <div>
-                    <Label className="text-sm text-gray-600">지역</Label>
+                    <Label className="text-sm text-gray-600">정보3</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info3">
                       {customer.info3}
                     </div>
@@ -499,7 +499,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info4 && (
                   <div>
-                    <Label className="text-sm text-gray-600">보험료구간</Label>
+                    <Label className="text-sm text-gray-600">정보4</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info4">
                       {customer.info4}
                     </div>
@@ -507,7 +507,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info5 && (
                   <div>
-                    <Label className="text-sm text-gray-600">생년월일</Label>
+                    <Label className="text-sm text-gray-600">정보5</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info5">
                       {customer.info5}
                     </div>
@@ -515,7 +515,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info6 && (
                   <div>
-                    <Label className="text-sm text-gray-600">보험종류</Label>
+                    <Label className="text-sm text-gray-600">정보6</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info6">
                       {customer.info6}
                     </div>
@@ -523,7 +523,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info7 && (
                   <div>
-                    <Label className="text-sm text-gray-600">상담시간</Label>
+                    <Label className="text-sm text-gray-600">정보7</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info7">
                       {customer.info7}
                     </div>
@@ -531,7 +531,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info8 && (
                   <div>
-                    <Label className="text-sm text-gray-600">점수</Label>
+                    <Label className="text-sm text-gray-600">정보8</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info8">
                       {customer.info8}
                     </div>
@@ -539,7 +539,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info9 && (
                   <div>
-                    <Label className="text-sm text-gray-600">평균보험료</Label>
+                    <Label className="text-sm text-gray-600">정보9</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info9">
                       {customer.info9}
                     </div>
@@ -547,7 +547,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 )}
                 {customer.info10 && (
                   <div className="lg:col-span-2">
-                    <Label className="text-sm text-gray-600">연동정보</Label>
+                    <Label className="text-sm text-gray-600">정보10</Label>
                     <div className="p-2 bg-gray-50 rounded text-sm" data-testid="text-info10">
                       {customer.info10}
                     </div>
