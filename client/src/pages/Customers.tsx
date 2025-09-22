@@ -689,8 +689,8 @@ export default function Customers() {
           ) : (
             <div>
               {/* Desktop Table View */}
-              <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full">
+              <div className="hidden lg:block overflow-x-auto min-w-full">
+              <table className="min-w-max w-full table-fixed" style={{ minWidth: '1600px' }}>
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left">
@@ -783,72 +783,58 @@ export default function Customers() {
                             <div className="text-sm text-gray-500">{customer.secondaryUser.department}</div>
                           )}
                         </td>
-                        <td className="px-6 py-4">
-                          {editingMemo[customer.id] !== undefined ? (
-                            <div className="flex flex-col space-y-2 min-w-48">
-                              <div className="grid grid-cols-2 gap-1">
-                                {[1, 2, 3, 4, 5].map(num => {
-                                  const field = `memo${num}`;
-                                  return (
-                                    <Input
-                                      key={field}
-                                      value={editingMemo[customer.id]?.[field] || ''}
-                                      onChange={(e) => updateMemoField(customer.id, field, e.target.value)}
-                                      placeholder={`메모${num}`}
-                                      className="text-xs h-6 text-[10px]"
-                                      data-testid={`input-${field}-${customer.id}`}
-                                    />
-                                  );
-                                })}
-                              </div>
-                              <div className="grid grid-cols-2 gap-1">
-                                {[6, 7, 8, 9, 10].map(num => {
-                                  const field = `memo${num}`;
-                                  return (
-                                    <Input
-                                      key={field}
-                                      value={editingMemo[customer.id]?.[field] || ''}
-                                      onChange={(e) => updateMemoField(customer.id, field, e.target.value)}
-                                      placeholder={`메모${num}`}
-                                      className="text-xs h-6 text-[10px]"
-                                      data-testid={`input-${field}-${customer.id}`}
-                                    />
-                                  );
-                                })}
-                              </div>
-                              <div className="flex space-x-1">
-                                <Button 
-                                  size="sm" 
-                                  className="h-6 px-2 text-xs bg-green-500 hover:bg-green-600"
-                                  onClick={() => handleMemoSave(customer.id)}
-                                  data-testid={`button-memo-save-${customer.id}`}
+                        {/* memo1 ~ memo10 개별 컬럼들 */}
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
+                          const field = `memo${num}`;
+                          const memoValue = customer[field];
+                          const isEditing = editingMemo[customer.id] !== undefined;
+                          
+                          return (
+                            <td key={field} className="px-2 py-4 text-xs w-24">
+                              {isEditing ? (
+                                <div className="flex flex-col space-y-1">
+                                  <Input
+                                    value={editingMemo[customer.id]?.[field] || ''}
+                                    onChange={(e) => updateMemoField(customer.id, field, e.target.value)}
+                                    placeholder={`정보${num}`}
+                                    className="text-xs h-6 w-20"
+                                    data-testid={`input-${field}-${customer.id}`}
+                                  />
+                                  <div className="flex space-x-1">
+                                    <Button 
+                                      size="sm" 
+                                      className="h-5 px-1 text-[10px] bg-green-500 hover:bg-green-600"
+                                      onClick={() => handleMemoSave(customer.id)}
+                                      data-testid={`button-save-${field}-${customer.id}`}
+                                    >
+                                      저장
+                                    </Button>
+                                    <Button 
+                                      size="sm" 
+                                      variant="outline"
+                                      className="h-5 px-1 text-[10px]"
+                                      onClick={() => handleMemoCancel(customer.id)}
+                                      data-testid={`button-cancel-${field}-${customer.id}`}
+                                    >
+                                      취소
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div 
+                                  className="text-gray-600 max-w-20 truncate cursor-pointer hover:text-blue-600"
+                                  title={memoValue || '클릭하여 편집'}
+                                  onClick={() => handleMemoEdit(customer.id, customer)}
+                                  data-testid={`text-${field}-${customer.id}`}
                                 >
-                                  저장
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline"
-                                  className="h-6 px-2 text-xs"
-                                  onClick={() => handleMemoCancel(customer.id)}
-                                  data-testid={`button-memo-cancel-${customer.id}`}
-                                >
-                                  취소
-                                </Button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div 
-                              className="text-sm text-gray-600 cursor-pointer hover:text-blue-600 max-w-32 truncate"
-                              onClick={() => handleMemoEdit(customer.id, customer)}
-                              title={getMemoSummary(customer) || '클릭하여 메모 추가'}
-                              data-testid={`text-memo-${customer.id}`}
-                            >
-                              {getMemoSummary(customer) || (
-                                <span className="text-gray-400 italic">메모 추가</span>
+                                  {memoValue || (
+                                    <span className="text-gray-300">-</span>
+                                  )}
+                                </div>
                               )}
-                            </div>
-                          )}
-                        </td>
+                            </td>
+                          );
+                        })}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}
                         </td>
