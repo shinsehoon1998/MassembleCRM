@@ -1,0 +1,549 @@
+/**
+ * 보탐정(https://botamjeong.replit.app) 구글 스프레드시트 연동 스크립트
+ * 스프레드시트 ID: 1YgaUh70gLugjYcIV_y6jN1R96aEbEcRNb4Sr5OSkOdw
+ *
+ * 설정:
+ * 1) setupInitialSheet() 1회 실행
+ * 2) 웹앱으로 배포(실행: 나, 액세스: 모든 사용자) → 보탐정에 URL 등록
+ * 3) createCronTrigger() 1회 실행(1분 주기 크론 생성)
+ */
+
+// ===== 설정 =====
+const SPREADSHEET_ID = '1YgaUh70gLugjYcIV_y6jN1R96aEbEcRNb4Sr5OSkOdw';
+const BOTAMJEONG_URL = 'https://botamjeong.replit.app';
+
+// CRM
+const CRM_API_URL = 'https://jcrm2504.mycafe24.com/crm/api.php';
+const CRM_API_KEY = '315e2fa5ad';
+
+// 시트 이름
+const SHEETS = {
+  SURVEY: '설문_응답',
+  ANALYSIS: '분석_결과',
+  PHONE_LOG: '전화_문의',
+  CONSULTATION: '상담_신청'
+};
+
+/** 초기 스프레드시트 설정 */
+function setupInitialSheet() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+    // 기존 시트 정리
+    const existingSheets = ss.getSheets();
+    if (existingSheets.length === 1 && existingSheets[0].getName() === 'Sheet1') {
+      existingSheets[0].setName(SHEETS.SURVEY);
+    }
+
+    // 설문 응답 시트
+    let surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!surveySheet) surveySheet = ss.insertSheet(SHEETS.SURVEY);
+
+    const surveyHeaders = [
+      '응답시간','ID','병원방문','성별','지역','보험료구간',
+      '생년월일','보험종류','이름','전화번호','상담시간','점수','평균보험료',
+      'CRM전송상태','CRM전송시간'
+    ];
+
+    if (surveySheet.getLastRow() === 0) {
+      surveySheet.getRange(1,1,1,surveyHeaders.length).setValues([surveyHeaders]);
+      surveySheet.getRange(1,1,1,surveyHeaders.length)
+        .setFontWeight('bold').setBackground('#4285F4').setFontColor('#FFFFFF');
+    }
+
+    // 분석 결과
+    let analysisSheet = ss.getSheetByName(SHEETS.ANALYSIS);
+    if (!analysisSheet) analysisSheet = ss.insertSheet(SHEETS.ANALYSIS);
+
+    const analysisHeaders = [
+      '분석시간','설문ID','점수','또래평균','차이','연령','연령그룹',
+      '추천사항1','추천사항2','추천사항3','추천사항4'
+    ];
+    if (analysisSheet.getLastRow() === 0) {
+      analysisSheet.getRange(1,1,1,analysisHeaders.length).setValues([analysisHeaders]);
+      analysisSheet.getRange(1,1,1,analysisHeaders.length)
+        .setFontWeight('bold').setBackground('#34A853').setFontColor('#FFFFFF');
+    }
+
+    // 전화 문의
+    let phoneSheet = ss.getSheetByName(SHEETS.PHONE_LOG);
+    if (!phoneSheet) phoneSheet = ss.insertSheet(SHEETS.PHONE_LOG);
+
+    const phoneHeaders = ['문의시간','설문ID','이름','전화번호','문의방법','IP주소','페이지경로'];
+    if (phoneSheet.getLastRow() === 0) {
+      phoneSheet.getRange(1,1,1,phoneHeaders.length).setValues([phoneHeaders]);
+      phoneSheet.getRange(1,1,1,phoneHeaders.length)
+        .setFontWeight('bold').setBackground('#EA4335').setFontColor('#FFFFFF');
+    }
+
+    // 상담 신청
+    let consultationSheet = ss.getSheetByName(SHEETS.CONSULTATION);
+    if (!consultationSheet) consultationSheet = ss.insertSheet(SHEETS.CONSULTATION);
+
+    const consultationHeaders = ['신청시간','상담ID','이름','전화번호','희망시간','개인정보동의','설문ID'];
+    if (consultationSheet.getLastRow() === 0) {
+      consultationSheet.getRange(1,1,1,consultationHeaders.length).setValues([consultationHeaders]);
+      consultationSheet.getRange(1,1,1,consultationHeaders.length)
+        .setFontWeight('bold').setBackground('#FF9900').setFontColor('#FFFFFF');
+    }
+
+    // 너비 자동
+    surveySheet.autoResizeColumns(1, surveyHeaders.length);
+    analysisSheet.autoResizeColumns(1, analysisHeaders.length);
+    phoneSheet.autoResizeColumns(1, phoneHeaders.length);
+    consultationSheet.autoResizeColumns(1, consultationHeaders.length);
+
+    Logger.log('✅ 스프레드시트 초기 설정 완료');
+    return '스프레드시트 초기 설정 완료';
+  } catch (err) {
+    Logger.log('❌ 초기 설정 오류: ' + err);
+    throw err;
+  }
+}
+
+/** 웹앱 POST */
+function doPost(e) {
+  try {
+    Logger.log('🔥 doPost 호출됨');
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({success:false,error:'데이터가 없습니다.'}))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const data = JSON.parse(e.postData.contents);
+    const { action, payload } = data || {};
+    Logger.log('🎯 액션: ' + action);
+
+    let result = { success:false, message:'알 수 없는 액션입니다.' };
+
+    switch (action) {
+      case 'survey_complete':      result = handleSurveyComplete(payload); break;
+      case 'phone_inquiry':        result = handlePhoneInquiry(payload);   break;
+      case 'consultation_request': result = handleConsultationRequest(payload); break;
+      case 'get_stats':            result = getStatistics();               break;
+      case 'send_crm':             result = sendToCRM(payload?.surveyId || null); break;
+      case 'send_all_crm':         result = sendAllToCRM();                break;
+      case 'check_crm':            result = checkCRMStatus();              break;
+      default:                     result = { success:false, message:'지원하지 않는 액션: ' + action };
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    Logger.log('❌ doPost 오류: ' + error + '\n' + error.stack);
+    return ContentService.createTextOutput(JSON.stringify({success:false,error:'서버 오류: ' + error.message}))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/** 웹앱 GET */
+function doGet(e) {
+  try {
+    const action = e.parameter.action || 'stats';
+    let result = {};
+    if (action === 'stats')        result = getStatistics();
+    else if (action === 'recent')  result = getRecentData(parseInt(e.parameter.limit) || 20);
+    else if (action === 'export')  result = exportData();
+    else                           result = { error: '알 수 없는 액션: ' + action };
+
+    return ContentService.createTextOutput(JSON.stringify(result, null, 2))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ error: '조회 오류: ' + error.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/** 설문 완료 저장 + 즉시 CRM 전송 */
+function handleSurveyComplete(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    const analysisSheet = ss.getSheetByName(SHEETS.ANALYSIS);
+    if (!surveySheet || !analysisSheet) throw new Error('시트를 찾을 수 없습니다. 먼저 setupInitialSheet() 실행');
+
+    const now = new Date();
+    const surveyId = payload.surveyId || generateId();
+
+    const surveyRow = [
+      now, surveyId, payload.hospitalVisits || '', payload.gender || '', payload.region || '',
+      payload.premiumRange || '', payload.birthDate || '',
+      Array.isArray(payload.insuranceTypes) ? payload.insuranceTypes.join(', ') : '',
+      payload.name || '', payload.phone || '', payload.consultationTime || '',
+      payload.analysis?.score || 0, payload.analysis?.peerAverage || 0
+    ];
+    surveySheet.appendRow(surveyRow);
+
+    if (payload.analysis) {
+      const r = payload.analysis.recommendations || [];
+      const analysisRow = [
+        now, surveyId, payload.analysis.score || 0, payload.analysis.peerAverage || 0,
+        payload.analysis.difference || 0, payload.analysis.age || 0, payload.analysis.ageGroup || '',
+        r[0] || '', r[1] || '', r[2] || '', r[3] || ''
+      ];
+      analysisSheet.appendRow(analysisRow);
+    }
+
+    const last = surveySheet.getLastRow();
+    surveySheet.getRange(last,1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    surveySheet.getRange(last,12,1,2).setNumberFormat('#,##0');
+    if (payload.analysis) {
+      const la = analysisSheet.getLastRow();
+      analysisSheet.getRange(la,1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+      analysisSheet.getRange(la,3,1,3).setNumberFormat('#,##0');
+    }
+
+    // 즉시 전송
+    try { sendToCRM(surveyId); } catch (e) { Logger.log('CRM 자동 전송 실패: ' + e); }
+
+    return { success:true, message:'저장 완료', surveyId, timestamp: now.toISOString() };
+  } catch (error) {
+    return { success:false, error: error.message };
+  }
+}
+
+/** 전화 문의 로그 */
+function handlePhoneInquiry(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEETS.PHONE_LOG);
+    if (!sh) throw new Error('전화 문의 시트를 찾을 수 없습니다.');
+
+    const now = new Date();
+    const row = [
+      now, payload.surveyId || '', payload.name || '미제공', payload.phone || '1660-2426',
+      payload.method || 'button_click', payload.ip || '', payload.page || ''
+    ];
+    sh.appendRow(row);
+    sh.getRange(sh.getLastRow(),1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    return { success:true, message:'전화 문의 기록됨', timestamp: now.toISOString() };
+  } catch (e) {
+    return { success:false, error: e.message };
+  }
+}
+
+/** 상담 신청 저장 */
+function handleConsultationRequest(payload) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEETS.CONSULTATION);
+    if (!sh) throw new Error('상담 신청 시트를 찾을 수 없습니다. setupInitialSheet() 실행');
+
+    const now = new Date();
+    const row = [
+      now, payload.requestId || '', payload.name || '', payload.phone || '',
+      payload.preferredTime || '', payload.privacyConsent ? '동의' : '거부',
+      payload.surveyResponseId || ''
+    ];
+    sh.appendRow(row);
+    sh.getRange(sh.getLastRow(),1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    return { success:true, message:'상담 신청 저장', requestId: payload.requestId, timestamp: now.toISOString() };
+  } catch (e) {
+    return { success:false, error: e.message };
+  }
+}
+
+/** 통계 */
+function getStatistics() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const surveySheet = ss.getSheetByName(SHEETS.SURVEY);
+    const phoneSheet  = ss.getSheetByName(SHEETS.PHONE_LOG);
+    const consultationSheet = ss.getSheetByName(SHEETS.CONSULTATION);
+    if (!surveySheet || !phoneSheet) return { error:'시트를 찾을 수 없습니다.' };
+
+    const surveyData = surveySheet.getDataRange().getValues();
+    const phoneData  = phoneSheet.getDataRange().getValues();
+    const consultationData = consultationSheet ? consultationSheet.getDataRange().getValues() : [];
+
+    const surveys = surveyData.slice(1);
+    const phones  = phoneData.slice(1);
+    const consultations = consultationData.slice(1);
+
+    const totalSurveys = surveys.length;
+    const totalPhoneCalls = phones.length;
+    const totalConsultations = consultations.length;
+
+    const scores = surveys.map(r => r[11]).filter(v => v > 0);
+    const avgScore = scores.length ? (scores.reduce((a,b)=>a+b,0) / scores.length) : 0;
+
+    const regionStats = {}, genderStats = {}, premiumStats = {};
+    surveys.forEach(r => {
+      regionStats[r[4] || '미지정']  = (regionStats[r[4] || '미지정']  || 0) + 1;
+      genderStats[r[3] || '미지정']  = (genderStats[r[3] || '미지정']  || 0) + 1;
+      premiumStats[r[5] || '미지정'] = (premiumStats[r[5] || '미지정'] || 0) + 1;
+    });
+
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todaySurveys = surveys.filter(r => new Date(r[0]) >= start).length;
+    const todayPhones  = phones.filter(r => new Date(r[0]) >= start).length;
+    const todayCons    = consultations.filter(r => new Date(r[0]) >= start).length;
+
+    const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
+    const weekSurveys = surveys.filter(r => new Date(r[0]) >= weekAgo).length;
+    const weekPhones  = phones.filter(r => new Date(r[0]) >= weekAgo).length;
+    const weekCons    = consultations.filter(r => new Date(r[0]) >= weekAgo).length;
+
+    return {
+      success:true,
+      data:{
+        overview:{
+          totalSurveys, totalPhoneCalls, totalConsultations,
+          averageScore: Math.round(avgScore*10)/10,
+          conversionRate: totalSurveys ? Math.round((totalConsultations/totalSurveys)*1000)/10 : 0
+        },
+        today: { surveys: todaySurveys, phoneCalls: todayPhones, consultations: todayCons },
+        week:  { surveys: weekSurveys,  phoneCalls: weekPhones, consultations: weekCons },
+        demographics: { regions: regionStats, genders: genderStats, premiumRanges: premiumStats },
+        recentSurveys: surveys.slice(-5).map(r => ({ time:r[0], name:r[8]||'익명', region:r[4], score:r[11] })).reverse()
+      },
+      timestamp: new Date().toISOString()
+    };
+  } catch (e) {
+    return { success:false, error: e.message };
+  }
+}
+
+/** 최근 데이터 */
+function getRecentData(limit = 20) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEETS.SURVEY);
+    const data = sh.getDataRange().getValues();
+    const headers = data[0], rows = data.slice(1).slice(-limit).reverse();
+
+    const out = rows.map(r => {
+      const o = {}; headers.forEach((h, i) => o[h] = r[i]); return o;
+    });
+    return { success:true, data: out, count: out.length };
+  } catch (e) { return { success:false, error: e.message }; }
+}
+
+/** CSV export */
+function exportData() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sh = ss.getSheetByName(SHEETS.SURVEY);
+    const data = sh.getDataRange().getValues();
+    const csv = data.map(row =>
+      row.map(cell => (typeof cell === 'string' && cell.includes(',')) ? `"${cell}"` : cell).join(',')
+    ).join('\n');
+    return { success:true, data: csv, rowCount: data.length - 1, message:'CSV 데이터 생성 완료' };
+  } catch (e) { return { success:false, error: e.message }; }
+}
+
+/** 고유 ID */
+function generateId() {
+  const ts = Date.now().toString(36);
+  const rnd = Math.random().toString(36).substring(2,8);
+  return `BT_${ts}_${rnd}`.toUpperCase();
+}
+
+/** (핵심) 특정 행 번호로 CRM 전송 */
+function sendToCRMByRow(rowNumber) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEETS.SURVEY);
+  if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+  const rowData = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  // 0-based 인덱스: 상태/시간/이름/전화번호
+  const IDX = { status: 13, sentAt: 14, name: 8, phone: 9 };
+
+  let status = String(rowData[IDX.status] || '').trim().toLowerCase();
+  if (status === 'yes' || status === 'sending') return { success:false, message:`already ${status}`, row: rowNumber };
+
+  // 'sending'
+  sheet.getRange(rowNumber, IDX.status + 1).setValue('sending');
+
+  // 전화번호 정제
+  let tel = String(rowData[IDX.phone] || '').replace(/^p:/i,'').replace(/^\+82/,'0').replace(/[^0-9]/g,'');
+  if (tel.length === 10 && tel.startsWith('10')) {
+    tel = '0' + tel;
+    sheet.getRange(rowNumber, IDX.phone + 1).setValue(tel);
+  }
+  const name = rowData[IDX.name] || '';
+
+  const memo2 = `보탐정분석결과 - 응답시간:${rowData[0]}, 설문ID:${rowData[1]}, 병원방문:${rowData[2]}, 성별:${rowData[3]}, 지역:${rowData[4]}, 보험료구간:${rowData[5]}, 생년월일:${rowData[6]}, 보험종류:${rowData[7]}, 이름:${rowData[8]}, 전화번호:${tel}, 상담시간:${rowData[10]}, 분석점수:${rowData[11]}, 평균보험료:${rowData[12]}`;
+
+  const resp = UrlFetchApp.fetch(CRM_API_URL, {
+    method:'post', contentType:'application/x-www-form-urlencoded',
+    payload:{ mode:'db_ins', key:CRM_API_KEY, tel, name, memo2 }
+  });
+  const result = JSON.parse(resp.getContentText());
+  const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+
+  if (result.result_code === '0' || result.result_code === 0) {
+    sheet.getRange(rowNumber, IDX.status + 1).setValue('yes');
+    sheet.getRange(rowNumber, IDX.sentAt + 1).setValue(now);
+    return { success:true, row:rowNumber, name, tel };
+  } else {
+    sheet.getRange(rowNumber, IDX.status + 1).setValue('fail');
+    return { success:false, message:`CRM 실패: ${result.result_msg}`, code:result.result_code, row:rowNumber };
+  }
+}
+
+/** surveyId로(있으면) 또는 마지막 행으로 CRM 전송 */
+function sendToCRM(targetSurveyId = null) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { success:false, message:'전송할 데이터가 없습니다.' };
+
+    if (targetSurveyId) {
+      const all = sheet.getDataRange().getValues();
+      for (let i = 1; i < all.length; i++) {
+        if (all[i][1] === targetSurveyId) return sendToCRMByRow(i + 1);
+      }
+      throw new Error(`설문 ID ${targetSurveyId}를 찾을 수 없습니다.`);
+    } else {
+      return sendToCRMByRow(lastRow);
+    }
+  } catch (e) {
+    return { success:false, message:`CRM 전송 오류: ${e.message}` };
+  }
+}
+
+/** 수동 일괄 전송 (미전송/실패 포함) */
+function sendAllToCRM() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const rows = data.slice(1);
+
+    const statusIdx = headers.indexOf('CRM전송상태');
+    const idIdx = 1;
+
+    let successCount = 0, failCount = 0;
+    const results = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const status = String(rows[i][statusIdx] || '').trim().toLowerCase();
+      if (status === 'yes') continue;
+
+      const surveyId = rows[i][idIdx] || null;
+      let res = surveyId ? sendToCRM(surveyId) : sendToCRMByRow(i + 2); // +2: 헤더 포함 보정
+      results.push({ i: i + 2, surveyId, res });
+      if (res && res.success) successCount++; else failCount++;
+      Utilities.sleep(1000);
+    }
+
+    return { success:true, message:`일괄 CRM 전송 완료: 성공 ${successCount}건, 실패 ${failCount}건`, successCount, failCount, details: results };
+  } catch (e) {
+    return { success:false, message:`일괄 CRM 전송 오류: ${e.message}` };
+  }
+}
+
+/** 전송 상태 집계 */
+function checkCRMStatus() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) throw new Error('설문_응답 시트를 찾을 수 없습니다.');
+
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0], rows = data.slice(1);
+    const statusIdx = headers.indexOf('CRM전송상태');
+    if (statusIdx === -1) return { success:false, message:'CRM전송상태 컬럼 없음. setupInitialSheet() 실행' };
+
+    let total = rows.length, sent=0, fail=0, pending=0;
+    rows.forEach(r => {
+      const s = String(r[statusIdx] || '').trim().toLowerCase();
+      if (s === 'yes') sent++; else if (s === 'fail') fail++; else pending++;
+    });
+    return { success:true, data:{ total, sent, failed:fail, pending, sentRate: total ? Math.round((sent/total)*100) : 0 } };
+  } catch (e) { return { success:false, message:`CRM 상태 확인 오류: ${e.message}` }; }
+}
+
+/** (테스트용) 전체 기능 스모크 테스트 */
+function testConnection() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheets = ss.getSheets().map(s => s.getName());
+    Logger.log('✅ 연결 시트: ' + sheets.join(', '));
+    return 'OK';
+  } catch (e) { return '오류: ' + e.message; }
+}
+
+/** 크론: 미전송/실패건 주기적 처리 */
+function cronSendPendingToCRM() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return; // 동시 실행 방지
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.SURVEY);
+    if (!sheet) return;
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return;
+
+    const headers = data[0];
+    const idx = {
+      id: 1, // 'ID'
+      status: headers.indexOf('CRM전송상태'),
+      sentAt: headers.indexOf('CRM전송시간')
+    };
+    if (idx.status === -1) { Logger.log('CRM전송상태 컬럼 없음'); return; }
+
+    const now = Date.now();
+    const SENDING_TIMEOUT_MS = 5 * 60 * 1000;
+
+    for (let r = 1; r < data.length; r++) {
+      const row = data[r];
+      let status = String(row[idx.status] || '').trim().toLowerCase();
+      const surveyId = row[idx.id] || null;
+
+      // 오래된 'sending' → fail로 복구
+      if (status === 'sending' && idx.sentAt !== -1) {
+        const sentAt = row[idx.sentAt];
+        const sentAtMs = sentAt ? new Date(sentAt).getTime() : 0;
+        if (!sentAt || (now - sentAtMs) > SENDING_TIMEOUT_MS) {
+          sheet.getRange(r + 1, idx.status + 1).setValue('fail');
+          status = 'fail';
+        } else {
+          continue;
+        }
+      }
+
+      if (status === '' || status === 'fail') {
+        if (surveyId) sendToCRM(surveyId);
+        else          sendToCRMByRow(r + 1);
+        Utilities.sleep(400);
+      }
+    }
+  } catch (e) {
+    Logger.log('cronSendPendingToCRM 오류: ' + e);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** (1회) 크론 트리거 생성 */
+function createCronTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(t => t.getHandlerFunction() === 'cronSendPendingToCRM')
+    .forEach(t => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger('cronSendPendingToCRM')
+    .timeBased().everyMinutes(1).create();
+
+  Logger.log('✅ 시간기반 트리거 생성: cronSendPendingToCRM (1분 간격)');
+}
+
+/** (선택) 과거 행에 ID가 비어있다면 자동 채우기 */
+function backfillMissingSurveyIds() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sh = ss.getSheetByName(SHEETS.SURVEY);
+  const data = sh.getDataRange().getValues();
+  for (let r = 1; r < data.length; r++) {
+    if (!data[r][1]) sh.getRange(r + 1, 2).setValue(generateId()); // 2번째 컬럼(ID)
+  }
+}
