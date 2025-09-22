@@ -162,18 +162,18 @@ export class SolapiSmsService {
    * HMAC-SHA256 기반 인증 헤더 생성
    */
   private async generateAuthHeaders(): Promise<{ [key: string]: string }> {
-    const timestamp = Date.now().toString();
+    const date = new Date().toISOString(); // ISO 8601 형식으로 변경
     const salt = this.generateRandomString(32);
     
     // Node.js crypto 모듈 사용
     const crypto = await import('crypto');
     const signature = crypto
       .createHmac('sha256', this.secretKey)
-      .update(timestamp + salt)
+      .update(date + salt)
       .digest('hex');
 
     return {
-      'Authorization': `HMAC-SHA256 ApiKey=${this.apiKey}, Date=${timestamp}, salt=${salt}, signature=${signature}`,
+      'Authorization': `HMAC-SHA256 ApiKey=${this.apiKey}, Date=${date}, salt=${salt}, signature=${signature}`,
       'Content-Type': 'application/json'
     };
   }
@@ -282,9 +282,11 @@ export class SolapiSmsService {
           }, currentRequestId);
         }
 
-        // API 호출 결과 로깅 (v4 구조에 맞게 수정)
+        // API 호출 결과 로깅 (Solapi 응답 구조 디버깅)
         secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'API response parsed', {
           httpStatus: response.status,
+          responseKeys: Object.keys(result || {}),
+          fullResponse: result, // 실제 응답 구조 확인
           hasGroupId: !!result.groupId,
           hasMessageId: !!result.messageId,
           successCount: result.successCount,
@@ -466,28 +468,32 @@ https://massemble-crm-shinsehoona.replit.app`;
         hasSubject: !!messageData.subject
       }, requestId);
 
-      // Solapi API v4 호출 (단일 메시지도 /send-many/detail 엔드포인트 사용)
+      // ISO 8601 Date 헤더 수정 후 원래 엔드포인트로 복귀
       const response = await this.makeApiCall('/messages/v4/send-many/detail', apiRequest, 'POST', requestId);
 
-      // HTTP 2xx와 groupId/messageId 기반 성공 판단 (v4 API 구조)
-      const hasSuccessfulMessages = (response.successCount || 0) > 0;
-      const hasGroupId = !!response.groupInfo?.groupId;
-      const messageResult = response.groupInfo?.resultList?.[0];
-      const messageId = messageResult?.messageId;
+      // Solapi v4 실제 응답 구조에 맞춘 성공 판단
+      const groupInfo = response.groupInfo;
+      const hasGroupId = !!groupInfo?.groupId;
+      const isSuccessStatus = groupInfo?.status === 'SENDING' || groupInfo?.status === 'SENT';
+      const hasRegisteredSuccess = (groupInfo?.count?.registeredSuccess || 0) > 0;
+      const hasNoFailed = (response.failedMessageList || []).length === 0;
+      const groupId = groupInfo?.groupId;
+      const messageId = groupInfo?._id; // Solapi는 _id를 메시지 ID로 사용
       
-      if (hasSuccessfulMessages && hasGroupId && messageId) {
+      if (hasGroupId && isSuccessStatus && hasRegisteredSuccess && hasNoFailed) {
         secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'SMS 발송 성공', {
           recipientPhone: maskPhoneNumber(phoneValidation.normalized),
           messageId: messageId,
-          groupId: response.groupInfo?.groupId,
-          successCount: response.successCount || 0,
-          failCount: response.failCount || 0
+          groupId: groupId,
+          status: groupInfo?.status,
+          registeredSuccess: groupInfo?.count?.registeredSuccess,
+          balanceUsed: groupInfo?.balance?.sum
         }, requestId);
         
         return {
           success: true,
           messageId: messageId,
-          groupId: response.groupInfo?.groupId,
+          groupId: groupId,
           message: '✅ SMS 발송이 완료되었습니다.'
         };
       } else {
