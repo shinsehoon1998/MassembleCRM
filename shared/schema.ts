@@ -1181,10 +1181,82 @@ export const smsHistoryRequestSchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/, '유효한 메시지 ID 형식이 아닙니다.'),
 });
 
+// ============================================
+// 설문조사 연동 스키마 (botamjeong)
+// ============================================
+
+// 설문조사 데이터 수신 스키마
+export const surveyImportSchema = z.object({
+  // 고객 기본 정보 (필수)
+  name: z.string()
+    .min(1, '고객명은 필수입니다.')
+    .max(50, '고객명은 최대 50자까지 허용됩니다.')
+    .trim(),
+  phone: z.string()
+    .min(9, '전화번호는 최소 9자리 이상이어야 합니다.')
+    .max(15, '전화번호는 최대 15자리까지 허용됩니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  
+  // 고객 추가 정보 (선택)
+  birthDate: z.string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, '생년월일은 YYYY-MM-DD 형식이어야 합니다.')
+    .optional(),
+  gender: z.enum(['M', 'F', 'N'])
+    .optional()
+    .default('N'),
+  email: z.string()
+    .email('유효한 이메일 형식이 아닙니다.')
+    .optional(),
+  
+  // 상담 관련 정보
+  consultType: z.string()
+    .max(100, '상담유형은 최대 100자까지 허용됩니다.')
+    .optional()
+    .default('보험상담'),
+  consultPath: z.string()
+    .max(100, '상담경로는 최대 100자까지 허용됩니다.')
+    .optional()
+    .default('보탐정설문'),
+  
+  // 마케팅 동의
+  marketingConsent: z.boolean()
+    .optional()
+    .default(false),
+  marketingConsentDate: z.string()
+    .datetime()
+    .optional(),
+  
+  // 설문 응답 데이터 (JSON)
+  surveyResults: z.record(z.any())
+    .optional(),
+  
+  // 메모/특이사항
+  memo: z.string()
+    .max(1000, '메모는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  
+  // 소스 정보
+  source: z.string()
+    .max(50, '소스는 최대 50자까지 허용됩니다.')
+    .optional()
+    .default('botamjeong_survey'),
+  
+  // 설문 메타데이터
+  surveyId: z.string()
+    .max(100, '설문 ID는 최대 100자까지 허용됩니다.')
+    .optional(),
+  surveyCompletedAt: z.string()
+    .datetime()
+    .optional(),
+});
+
 // SMS 발송 결과 타입
 export type SmsSendRequest = z.infer<typeof smsSendRequestSchema>;
 export type SmsCustomerAssignment = z.infer<typeof smsCustomerAssignmentSchema>;
 export type SmsHistoryRequest = z.infer<typeof smsHistoryRequestSchema>;
+
+// 설문조사 연동 타입
+export type SurveyImport = z.infer<typeof surveyImportSchema>;
 
 // 파일명 생성 유틸리티 함수들
 export const generateExportFileName = {

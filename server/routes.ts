@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, surveyImportSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -5130,6 +5130,229 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         message: 'SMS 발솠 이력 조회 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  // ============================================
+  // 설문조사 연동 API (botamjeong)
+  // ============================================
+
+  /**
+   * API 키 기반 인증 미들웨어 (설문조사 전용)
+   */
+  const validateSurveyApiKey = (req: any, res: any, next: any) => {
+    const requestId = generateRequestId();
+    
+    try {
+      const authHeader = req.headers.authorization;
+      const apiKey = authHeader?.replace('Bearer ', '');
+      
+      if (!apiKey || apiKey !== process.env.SURVEY_API_KEY) {
+        secureLog(LogLevel.WARNING, 'SURVEY_AUTH', '잘못된 API 키로 설문조사 API 접근 시도', {
+          clientIp: req.ip,
+          userAgent: req.get('User-Agent'),
+          endpoint: req.path,
+          hasApiKey: !!apiKey
+        }, requestId);
+        
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Invalid API key' 
+        });
+      }
+      
+      secureLog(LogLevel.INFO, 'SURVEY_AUTH', '설문조사 API 인증 성공', {
+        clientIp: req.ip,
+        endpoint: req.path
+      }, requestId);
+      
+      req.requestId = requestId;
+      next();
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SURVEY_AUTH', '설문조사 API 인증 오류', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({ 
+        success: false, 
+        message: 'Authentication error' 
+      });
+    }
+  };
+
+  /**
+   * 설문조사 데이터 수신 API
+   * POST /api/survey/import
+   */
+  app.post('/api/survey/import', validateSurveyApiKey, async (req: any, res) => {
+    const requestId = req.requestId || generateRequestId();
+    
+    try {
+      // 요청 데이터 검증
+      const validationResult = surveyImportSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        secureLog(LogLevel.WARNING, 'SURVEY_IMPORT', '설문조사 데이터 검증 실패', {
+          errors: validationResult.error.errors,
+          dataKeys: Object.keys(req.body)
+        }, requestId);
+        
+        return res.status(400).json({
+          success: false,
+          message: '설문조사 데이터 형식이 올바르지 않습니다.',
+          errors: validationResult.error.errors
+        });
+      }
+
+      const surveyData = validationResult.data;
+      
+      secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '설문조사 데이터 수신', {
+        customerName: maskName(surveyData.name),
+        customerPhone: maskPhoneNumber(surveyData.phone),
+        consultType: surveyData.consultType,
+        consultPath: surveyData.consultPath,
+        source: surveyData.source,
+        hasMarketingConsent: surveyData.marketingConsent,
+        hasSurveyResults: !!surveyData.surveyResults
+      }, requestId);
+
+      // 중복 고객 체크 (전화번호 기준)
+      const existingCustomer = await storage.getCustomerByPhone(surveyData.phone);
+      
+      if (existingCustomer) {
+        secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '기존 고객 발견 - 설문조사 데이터로 업데이트', {
+          existingCustomerId: existingCustomer.id,
+          customerName: maskName(surveyData.name),
+          customerPhone: maskPhoneNumber(surveyData.phone)
+        }, requestId);
+        
+        // 기존 고객 정보 업데이트 (설문조사 데이터 추가)
+        const updateData = {
+          ...surveyData,
+          birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : null,
+          marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate).toISOString() : null,
+          memo: existingCustomer.memo ? 
+            `${existingCustomer.memo}\n\n[${new Date().toLocaleString('ko-KR')}] 설문조사 추가 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` :
+            `[${new Date().toLocaleString('ko-KR')}] 설문조사 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}`,
+          updatedAt: new Date()
+        };
+        
+        const updatedCustomer = await storage.updateCustomer(existingCustomer.id, updateData);
+        
+        secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '기존 고객 정보 업데이트 완료', {
+          customerId: updatedCustomer.id,
+          customerName: maskName(updatedCustomer.name)
+        }, requestId);
+        
+        return res.json({
+          success: true,
+          customerId: updatedCustomer.id,
+          isNewCustomer: false,
+          message: '기존 고객 정보가 설문조사 데이터로 업데이트되었습니다.'
+        });
+      }
+
+      // 새 고객 생성
+      const customerData = {
+        name: surveyData.name,
+        phone: surveyData.phone,
+        birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : null,
+        gender: surveyData.gender || 'N',
+        consultType: surveyData.consultType || '보험상담',
+        consultPath: surveyData.consultPath || '보탐정설문',
+        source: surveyData.source || 'botamjeong_survey',
+        marketingConsent: surveyData.marketingConsent || false,
+        marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate).toISOString() : null,
+        marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : null,
+        status: '인텍', // 기본 상태
+        memo: surveyData.surveyResults ? 
+          `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 결과:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` : 
+          `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 고객`,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      const newCustomer = await storage.createCustomer(customerData);
+      
+      secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '새 고객 생성 완료', {
+        customerId: newCustomer.id,
+        customerName: maskName(newCustomer.name),
+        customerPhone: maskPhoneNumber(newCustomer.phone),
+        source: newCustomer.source
+      }, requestId);
+
+      // 활동 로그 기록
+      await storage.createActivityLog({
+        userId: 'system', // 시스템에서 자동 생성
+        customerId: newCustomer.id,
+        action: 'customer_created_from_survey',
+        description: '보탐정 설문조사를 통해 고객이 등록되었습니다.',
+        metadata: {
+          source: 'botamjeong_survey',
+          surveyId: surveyData.surveyId,
+          marketingConsent: surveyData.marketingConsent
+        }
+      });
+
+      res.json({
+        success: true,
+        customerId: newCustomer.id,
+        isNewCustomer: true,
+        message: '설문조사 데이터가 성공적으로 등록되었습니다.'
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      secureLog(LogLevel.ERROR, 'SURVEY_IMPORT_ERROR', '설문조사 데이터 처리 오류', {
+        error: errorMessage,
+        requestBody: maskApiData(req.body)
+      }, requestId);
+      
+      res.status(500).json({
+        success: false,
+        message: '설문조사 데이터 처리 중 오류가 발생했습니다.'
+      });
+    }
+  });
+
+  /**
+   * 설문조사 연동 상태 확인 API
+   * GET /api/survey/status
+   */
+  app.get('/api/survey/status', validateSurveyApiKey, async (req: any, res) => {
+    const requestId = req.requestId || generateRequestId();
+    
+    try {
+      secureLog(LogLevel.INFO, 'SURVEY_STATUS', '설문조사 연동 상태 확인 요청', {
+        clientIp: req.ip
+      }, requestId);
+      
+      // 최근 24시간 설문조사 고객 수 조회
+      const recentSurveyCustomers = await storage.getCustomers({
+        source: 'botamjeong_survey',
+        dateFrom: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        page: 1,
+        limit: 1000
+      });
+      
+      res.json({
+        success: true,
+        status: 'operational',
+        recentCustomers: recentSurveyCustomers.customers.length,
+        totalCustomers: recentSurveyCustomers.total,
+        message: '설문조사 연동이 정상적으로 작동 중입니다.'
+      });
+      
+    } catch (error) {
+      secureLog(LogLevel.ERROR, 'SURVEY_STATUS_ERROR', '설문조사 상태 확인 오류', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      
+      res.status(500).json({
+        success: false,
+        message: '설문조사 연동 상태 확인 중 오류가 발생했습니다.'
       });
     }
   });
