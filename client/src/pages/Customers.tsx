@@ -386,15 +386,6 @@ export default function Customers() {
   const handleMemoEdit = (customerId: string, customer: CustomerWithUser) => {
     const currentMemos = {
       memo1: customer.memo1 || '',
-      memo2: customer.memo2 || '',
-      memo3: customer.memo3 || '',
-      memo4: customer.memo4 || '',
-      memo5: customer.memo5 || '',
-      memo6: customer.memo6 || '',
-      memo7: customer.memo7 || '',
-      memo8: customer.memo8 || '',
-      memo9: customer.memo9 || '',
-      memo10: customer.memo10 || '',
     };
     setEditingMemo({ ...editingMemo, [customerId]: currentMemos });
   };
@@ -412,16 +403,21 @@ export default function Customers() {
     });
   };
 
-  // memo1~memo10 중 값이 있는 것들을 요약해서 표시하는 함수
+  // memo1 표시하는 함수
   const getMemoSummary = (customer: CustomerWithUser) => {
-    const memos = [
-      customer.memo1, customer.memo2, customer.memo3, customer.memo4, customer.memo5,
-      customer.memo6, customer.memo7, customer.memo8, customer.memo9, customer.memo10
-    ].filter(memo => memo && memo.trim());
+    return customer.memo1 && customer.memo1.trim() ? customer.memo1 : null;
+  };
+
+  // info1~info10 중 값이 있는 것들을 요약해서 표시하는 함수
+  const getInfoSummary = (customer: CustomerWithUser) => {
+    const infos = [
+      customer.info1, customer.info2, customer.info3, customer.info4, customer.info5,
+      customer.info6, customer.info7, customer.info8, customer.info9, customer.info10
+    ].filter(info => info && info.trim());
     
-    if (memos.length === 0) return null;
-    if (memos.length === 1) return memos[0];
-    return `${memos[0]} (+${memos.length - 1}개 더)`;
+    if (infos.length === 0) return null;
+    if (infos.length === 1) return infos[0];
+    return `${infos[0]} (+${infos.length - 1}개 더)`;
   };
 
   // memo 편집 모드에서 특정 memo 필드 값 업데이트
@@ -706,16 +702,17 @@ export default function Customers() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">담당자</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">공유담당자</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보1</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보2</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보3</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보4</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보5</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보6</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보7</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보8</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보9</th>
-                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">정보10</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-32">메모</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">병원방문</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">성별</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">지역</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">보험료구간</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">생년월일</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">보험종류</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">상담시간</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">점수</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">평균보험료</th>
+                    <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider min-w-20">연동정보</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">등록일</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
                   </tr>
@@ -783,55 +780,68 @@ export default function Customers() {
                             <div className="text-sm text-gray-500">{customer.secondaryUser.department}</div>
                           )}
                         </td>
-                        {/* memo1 ~ memo10 개별 컬럼들 */}
+                        {/* memo1 컬럼 */}
+                        <td className="px-2 py-4 text-xs w-32">
+                          {editingMemo[customer.id] !== undefined ? (
+                            <div className="flex flex-col space-y-1">
+                              <Input
+                                value={editingMemo[customer.id]?.memo1 || ''}
+                                onChange={(e) => updateMemoField(customer.id, 'memo1', e.target.value)}
+                                placeholder="메모"
+                                className="text-xs h-6 w-28"
+                                data-testid={`input-memo1-${customer.id}`}
+                              />
+                              <div className="flex space-x-1">
+                                <Button 
+                                  size="sm" 
+                                  className="h-5 px-1 text-[10px] bg-green-500 hover:bg-green-600"
+                                  onClick={() => handleMemoSave(customer.id)}
+                                  data-testid={`button-save-memo1-${customer.id}`}
+                                >
+                                  저장
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  className="h-5 px-1 text-[10px]"
+                                  onClick={() => handleMemoCancel(customer.id)}
+                                  data-testid={`button-cancel-memo1-${customer.id}`}
+                                >
+                                  취소
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div 
+                              className="text-gray-600 max-w-28 truncate cursor-pointer hover:text-blue-600"
+                              title={customer.memo1 || '클릭하여 편집'}
+                              onClick={() => handleMemoEdit(customer.id, customer)}
+                              data-testid={`text-memo1-${customer.id}`}
+                            >
+                              {customer.memo1 || (
+                                <span className="text-gray-300">-</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        
+                        {/* info1 ~ info10 읽기전용 컬럼들 */}
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
-                          const field = `memo${num}`;
-                          const memoValue = customer[field];
-                          const isEditing = editingMemo[customer.id] !== undefined;
+                          const field = `info${num}`;
+                          const infoValue = customer[field];
+                          const infoLabels = ['병원방문', '성별', '지역', '보험료구간', '생년월일', '보험종류', '상담시간', '점수', '평균보험료', '연동정보'];
                           
                           return (
                             <td key={field} className="px-2 py-4 text-xs w-24">
-                              {isEditing ? (
-                                <div className="flex flex-col space-y-1">
-                                  <Input
-                                    value={editingMemo[customer.id]?.[field] || ''}
-                                    onChange={(e) => updateMemoField(customer.id, field, e.target.value)}
-                                    placeholder={`정보${num}`}
-                                    className="text-xs h-6 w-20"
-                                    data-testid={`input-${field}-${customer.id}`}
-                                  />
-                                  <div className="flex space-x-1">
-                                    <Button 
-                                      size="sm" 
-                                      className="h-5 px-1 text-[10px] bg-green-500 hover:bg-green-600"
-                                      onClick={() => handleMemoSave(customer.id)}
-                                      data-testid={`button-save-${field}-${customer.id}`}
-                                    >
-                                      저장
-                                    </Button>
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline"
-                                      className="h-5 px-1 text-[10px]"
-                                      onClick={() => handleMemoCancel(customer.id)}
-                                      data-testid={`button-cancel-${field}-${customer.id}`}
-                                    >
-                                      취소
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div 
-                                  className="text-gray-600 max-w-20 truncate cursor-pointer hover:text-blue-600"
-                                  title={memoValue || '클릭하여 편집'}
-                                  onClick={() => handleMemoEdit(customer.id, customer)}
-                                  data-testid={`text-${field}-${customer.id}`}
-                                >
-                                  {memoValue || (
-                                    <span className="text-gray-300">-</span>
-                                  )}
-                                </div>
-                              )}
+                              <div 
+                                className="text-gray-600 max-w-20 truncate"
+                                title={infoValue ? `${infoLabels[num-1]}: ${infoValue}` : '-'}
+                                data-testid={`text-${field}-${customer.id}`}
+                              >
+                                {infoValue || (
+                                  <span className="text-gray-300">-</span>
+                                )}
+                              </div>
                             </td>
                           );
                         })}
@@ -989,19 +999,30 @@ export default function Customers() {
                           </div>
                         </div>
                         
-                        {/* 정보1~정보10 개별 표시 */}
+                        {/* 메모 표시 */}
+                        {customer.memo1 && (
+                          <div className="text-sm">
+                            <span className="text-gray-500 font-medium">메모:</span>
+                            <div className="text-xs bg-yellow-50 p-2 rounded mt-1">
+                              <div className="text-gray-700">{customer.memo1}</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 설문조사 정보 표시 */}
                         <div className="text-sm">
-                          <span className="text-gray-500 font-medium">추가정보:</span>
+                          <span className="text-gray-500 font-medium">설문조사 정보:</span>
                           <div className="grid grid-cols-2 gap-2 mt-2">
                             {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => {
-                              const field = `memo${num}`;
-                              const memoValue = customer[field];
-                              if (!memoValue) return null;
+                              const field = `info${num}`;
+                              const infoValue = customer[field];
+                              const infoLabels = ['병원방문', '성별', '지역', '보험료구간', '생년월일', '보험종류', '상담시간', '점수', '평균보험료', '연동정보'];
+                              if (!infoValue) return null;
                               
                               return (
-                                <div key={field} className="text-xs bg-gray-50 p-1 rounded">
-                                  <span className="font-medium text-gray-600">정보{num}:</span>
-                                  <div className="text-gray-700 truncate">{memoValue}</div>
+                                <div key={field} className="text-xs bg-blue-50 p-1 rounded">
+                                  <span className="font-medium text-blue-600">{infoLabels[num-1]}:</span>
+                                  <div className="text-gray-700 truncate">{infoValue}</div>
                                 </div>
                               );
                             })}
