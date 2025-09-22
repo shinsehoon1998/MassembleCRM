@@ -292,7 +292,7 @@ function sendToMassembleCRMByRow(rowNumber) {
       surveySheet.getRange(rowNumber, IDX.phone + 1).setValue(phone); // 정제된 번호로 업데이트
     }
 
-    // 마셈블 CRM 형식으로 데이터 변환
+    // 🔥 NEW: 마셈블 CRM 형식으로 데이터 변환 (memo1~memo10 개별 매핑)
     const crmPayload = {
       name: rowData[IDX.name] || '',
       phone: phone,
@@ -302,27 +302,19 @@ function sendToMassembleCRMByRow(rowNumber) {
       consultPath: '보탐정설문',
       source: 'botamjeong_survey',
       marketingConsent: false,
-      surveyResults: {
-        surveyId: surveyId,
-        hospitalVisits: rowData[IDX.hospitalVisits] || '',
-        region: rowData[IDX.region] || '',
-        premiumRange: rowData[IDX.premiumRange] || '',
-        insuranceTypes: rowData[IDX.insuranceTypes] || '',
-        consultationTime: rowData[IDX.consultationTime] || '',
-        score: rowData[IDX.score] || 0,
-        peerAverage: rowData[IDX.peerAverage] || 0,
-        analysisData: analysisData ? {
-          age: analysisData[5] || 0,
-          ageGroup: analysisData[6] || '',
-          recommendations: [
-            analysisData[7] || '',
-            analysisData[8] || '',
-            analysisData[9] || '',
-            analysisData[10] || ''
-          ].filter(r => r)
-        } : null
-      },
-      memo: `보탐정 설문조사 응답 (ID: ${surveyId}) - 응답시간: ${rowData[IDX.responseTime]}, 병원방문: ${rowData[IDX.hospitalVisits]}, 성별: ${rowData[IDX.gender]}, 지역: ${rowData[IDX.region]}, 보험료구간: ${rowData[IDX.premiumRange]}, 생년월일: ${rowData[IDX.birthDate]}, 보험종류: ${rowData[IDX.insuranceTypes]}, 상담시간: ${rowData[IDX.consultationTime]}, 분석점수: ${rowData[IDX.score]}, 평균보험료: ${rowData[IDX.peerAverage]}`,
+      
+      // 보탐정 설문조사 데이터를 memo1~memo10에 개별 매핑
+      memo1: rowData[IDX.hospitalVisits] ? `병원방문: ${rowData[IDX.hospitalVisits]}` : null,
+      memo2: rowData[IDX.region] ? `지역: ${rowData[IDX.region]}` : null,
+      memo3: rowData[IDX.premiumRange] ? `보험료구간: ${rowData[IDX.premiumRange]}` : null,
+      memo4: rowData[IDX.insuranceTypes] ? `보험종류: ${rowData[IDX.insuranceTypes]}` : null,
+      memo5: rowData[IDX.consultationTime] ? `상담시간: ${rowData[IDX.consultationTime]}` : null,
+      memo6: rowData[IDX.score] ? `점수: ${rowData[IDX.score]}점` : null,
+      memo7: rowData[IDX.peerAverage] ? `또래평균: ${rowData[IDX.peerAverage]}점` : null,
+      memo8: analysisData && analysisData[7] ? `추천1: ${analysisData[7]}` : null,
+      memo9: analysisData && analysisData[8] ? `추천2: ${analysisData[8]}` : null,
+      memo10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyId})`,
+      
       surveyId: surveyId,
       surveyCompletedAt: rowData[IDX.responseTime] ? new Date(rowData[IDX.responseTime]).toISOString() : new Date().toISOString()
     };
