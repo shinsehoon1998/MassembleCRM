@@ -866,7 +866,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customer.assignedUser?.name || '',
         customer.secondaryUser?.name || '',
         customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ko-KR') : '',
-        customer.memo || ''
+        customer.memo1 || ''
       ]);
 
       // 헤더와 데이터 결합
@@ -1318,7 +1318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/customers/:id/memo', isAuthenticated, async (req: any, res) => {
     try {
       const { memo } = req.body;
-      const customer = await storage.updateCustomer(req.params.id, { memo });
+      const customer = await storage.updateCustomer(req.params.id, { memo1: memo });
 
       // Log activity
       await storage.createActivityLog({
@@ -1966,7 +1966,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             gender: gender,
             monthlyIncome: row['월소득'] ? row['월소득'].toString().replace(/[^0-9]/g, '') : null,
             status: status,
-            memo: row['메모'] || null
+            memo1: row['메모'] || null
           };
 
           // 고객 생성
@@ -3627,7 +3627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             phone: testPhoneNumber,
             status: 'interested',
             assignedUserId: req.user.id,
-            memo: `캠페인 ${campaignId} 테스트 발송`
+            memo1: `캠페인 ${campaignId} 테스트 발송`
           });
           
           // 단순화된 테스트 발송 - 실제 API 호출 없이 성공으로 처리
@@ -5232,22 +5232,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const updateData: any = {
           name: surveyData.name,
           phone: surveyData.phone,
-          email: surveyData.email || existingCustomer.email,
+          // email: customers 테이블에 email 필드가 없으므로 제외
           gender: surveyData.gender || existingCustomer.gender,
           consultType: surveyData.consultType || existingCustomer.consultType,
           consultPath: surveyData.consultPath || existingCustomer.consultPath,
           source: surveyData.source || existingCustomer.source,
           marketingConsent: surveyData.marketingConsent !== undefined ? surveyData.marketingConsent : existingCustomer.marketingConsent,
           marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : existingCustomer.marketingConsentMethod,
-          memo: existingCustomer.memo ? 
-            `${existingCustomer.memo}\n\n[${new Date().toLocaleString('ko-KR')}] 설문조사 추가 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` :
-            `[${new Date().toLocaleString('ko-KR')}] 설문조사 정보:\n${JSON.stringify(surveyData.surveyResults, null, 2)}`
+          // 보탐정 설문조사 데이터를 memo1~memo10에 개별 매핑
+          memo1: surveyData.surveyResults?.hospitalVisits ? `병원방문: ${surveyData.surveyResults.hospitalVisits}` : existingCustomer.memo1,
+          memo2: surveyData.surveyResults?.region ? `지역: ${surveyData.surveyResults.region}` : existingCustomer.memo2,
+          memo3: surveyData.surveyResults?.premiumRange ? `보험료구간: ${surveyData.surveyResults.premiumRange}` : existingCustomer.memo3,
+          memo4: surveyData.surveyResults?.insuranceTypes ? `보험종류: ${surveyData.surveyResults.insuranceTypes}` : existingCustomer.memo4,
+          memo5: surveyData.surveyResults?.consultationTime ? `상담시간: ${surveyData.surveyResults.consultationTime}` : existingCustomer.memo5,
+          memo6: surveyData.surveyResults?.score ? `점수: ${surveyData.surveyResults.score}점` : existingCustomer.memo6,
+          memo7: surveyData.surveyResults?.peerAverage ? `또래평균: ${surveyData.surveyResults.peerAverage}점` : existingCustomer.memo7,
+          memo8: surveyData.surveyResults?.analysisData?.recommendations?.[0] ? `추천1: ${surveyData.surveyResults.analysisData.recommendations[0]}` : existingCustomer.memo8,
+          memo9: surveyData.surveyResults?.analysisData?.recommendations?.[1] ? `추천2: ${surveyData.surveyResults.analysisData.recommendations[1]}` : existingCustomer.memo9,
+          memo10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyData.surveyId || 'unknown'})`
         };
 
         // 날짜 필드는 별도 처리 (문자열을 날짜로 변환할 때 오류 방지)
         if (surveyData.birthDate) {
           try {
-            updateData.birthDate = new Date(surveyData.birthDate).toISOString();
+            updateData.birthDate = new Date(surveyData.birthDate);
           } catch (error) {
             updateData.birthDate = existingCustomer.birthDate;
           }
@@ -5257,7 +5265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (surveyData.marketingConsentDate) {
           try {
-            updateData.marketingConsentDate = new Date(surveyData.marketingConsentDate).toISOString();
+            updateData.marketingConsentDate = new Date(surveyData.marketingConsentDate);
           } catch (error) {
             updateData.marketingConsentDate = existingCustomer.marketingConsentDate;
           }
@@ -5284,19 +5292,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const customerData = {
         name: surveyData.name,
         phone: surveyData.phone,
-        email: surveyData.email,
-        birthDate: surveyData.birthDate ? new Date(surveyData.birthDate).toISOString() : null,
+        // email: customers 테이블에 email 필드가 없으므로 제외
+        birthDate: surveyData.birthDate ? new Date(surveyData.birthDate) : null,
         gender: surveyData.gender || 'N',
         consultType: surveyData.consultType || '보험상담',
         consultPath: surveyData.consultPath || '보탐정설문',
         source: surveyData.source || 'botamjeong_survey',
         marketingConsent: surveyData.marketingConsent || false,
-        marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate).toISOString() : null,
+        marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate) : null,
         marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : null,
         status: '인텍', // 기본 상태
-        memo: surveyData.surveyResults ? 
-          `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 결과:\n${JSON.stringify(surveyData.surveyResults, null, 2)}` : 
-          `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문조사 고객`
+        // 보탐정 설문조사 데이터를 memo1~memo10에 개별 매핑 (새 고객)
+        memo1: surveyData.surveyResults?.hospitalVisits ? `병원방문: ${surveyData.surveyResults.hospitalVisits}` : null,
+        memo2: surveyData.surveyResults?.region ? `지역: ${surveyData.surveyResults.region}` : null,
+        memo3: surveyData.surveyResults?.premiumRange ? `보험료구간: ${surveyData.surveyResults.premiumRange}` : null,
+        memo4: surveyData.surveyResults?.insuranceTypes ? `보험종류: ${surveyData.surveyResults.insuranceTypes}` : null,
+        memo5: surveyData.surveyResults?.consultationTime ? `상담시간: ${surveyData.surveyResults.consultationTime}` : null,
+        memo6: surveyData.surveyResults?.score ? `점수: ${surveyData.surveyResults.score}점` : null,
+        memo7: surveyData.surveyResults?.peerAverage ? `또래평균: ${surveyData.surveyResults.peerAverage}점` : null,
+        memo8: surveyData.surveyResults?.analysisData?.recommendations?.[0] ? `추천1: ${surveyData.surveyResults.analysisData.recommendations[0]}` : null,
+        memo9: surveyData.surveyResults?.analysisData?.recommendations?.[1] ? `추천2: ${surveyData.surveyResults.analysisData.recommendations[1]}` : null,
+        memo10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 신규고객 (ID: ${surveyData.surveyId || 'unknown'})`
         // createdAt과 updatedAt는 데이터베이스에서 자동 설정되므로 제외
       };
 
