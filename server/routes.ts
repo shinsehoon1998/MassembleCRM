@@ -1849,7 +1849,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         '성별',
         '월소득',
         '상태',
-        '메모'
+        '메모',
+        '정보1',
+        '정보2',
+        '정보3',
+        '정보4',
+        '정보5',
+        '정보6',
+        '정보7',
+        '정보8',
+        '정보9',
+        '정보10'
       ];
 
       // 샘플 데이터 (1줄)
@@ -1861,7 +1871,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         '남성',
         '3000000',
         '상담접수',
-        '샘플 고객 데이터입니다.'
+        '샘플 고객 데이터입니다.',
+        '병원방문',
+        '남성',
+        '서울',
+        '월 30만원',
+        '1990-01-01',
+        '생명보험',
+        '오후 2시',
+        '85점',
+        '월 25만원',
+        '설문완료'
       ];
 
       // CSV 형식으로 변환
@@ -1966,7 +1986,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             gender: gender,
             monthlyIncome: row['월소득'] ? row['월소득'].toString().replace(/[^0-9]/g, '') : null,
             status: status,
-            memo1: row['메모'] || null
+            memo1: row['메모'] || null,
+            info1: row['정보1'] || null,
+            info2: row['정보2'] || null,
+            info3: row['정보3'] || null,
+            info4: row['정보4'] || null,
+            info5: row['정보5'] || null,
+            info6: row['정보6'] || null,
+            info7: row['정보7'] || null,
+            info8: row['정보8'] || null,
+            info9: row['정보9'] || null,
+            info10: row['정보10'] || null
           };
 
           // 고객 생성

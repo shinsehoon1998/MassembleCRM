@@ -131,6 +131,7 @@ export default function DataImport() {
                 <li>월소득 (숫자만)</li>
                 <li>상태 (상담접수, 상담진행, 상담완료, 수임, 불발, 보류)</li>
                 <li>메모</li>
+                <li>정보1~정보10 (설문조사 데이터)</li>
               </ul>
             </div>
             <Button 
