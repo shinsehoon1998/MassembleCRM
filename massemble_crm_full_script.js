@@ -303,17 +303,20 @@ function sendToMassembleCRMByRow(rowNumber) {
       source: 'botamjeong_survey',
       marketingConsent: false,
       
-      // 보탐정 설문조사 데이터를 memo1~memo10에 개별 매핑
-      memo1: rowData[IDX.hospitalVisits] ? `병원방문: ${rowData[IDX.hospitalVisits]}` : null,
-      memo2: rowData[IDX.region] ? `지역: ${rowData[IDX.region]}` : null,
-      memo3: rowData[IDX.premiumRange] ? `보험료구간: ${rowData[IDX.premiumRange]}` : null,
-      memo4: rowData[IDX.insuranceTypes] ? `보험종류: ${rowData[IDX.insuranceTypes]}` : null,
-      memo5: rowData[IDX.consultationTime] ? `상담시간: ${rowData[IDX.consultationTime]}` : null,
-      memo6: rowData[IDX.score] ? `점수: ${rowData[IDX.score]}점` : null,
-      memo7: rowData[IDX.peerAverage] ? `또래평균: ${rowData[IDX.peerAverage]}점` : null,
-      memo8: analysisData && analysisData[7] ? `추천1: ${analysisData[7]}` : null,
-      memo9: analysisData && analysisData[8] ? `추천2: ${analysisData[8]}` : null,
-      memo10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyId})`,
+      // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보)
+      info1: rowData[IDX.hospitalVisits] || null,        // 병원방문
+      info2: rowData[IDX.gender] || null,                // 성별
+      info3: rowData[IDX.region] || null,                // 지역
+      info4: rowData[IDX.premiumRange] || null,          // 보험료구간
+      info5: rowData[IDX.birthDate] || null,             // 생년월일
+      info6: rowData[IDX.insuranceTypes] || null,        // 보험종류
+      info7: rowData[IDX.consultationTime] || null,      // 상담시간
+      info8: rowData[IDX.score] ? String(rowData[IDX.score]) : null,        // 점수
+      info9: rowData[IDX.peerAverage] ? String(rowData[IDX.peerAverage]) : null, // 평균보험료
+      info10: `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyId})`, // 연동정보
+      
+      // memo1은 사용자가 추후 입력할 수 있는 메모 필드로 비워둠
+      memo1: null,
       
       surveyId: surveyId,
       surveyCompletedAt: rowData[IDX.responseTime] ? new Date(rowData[IDX.responseTime]).toISOString() : new Date().toISOString()
