@@ -60,6 +60,7 @@ export interface SmsMessage {
 // Solapi v4 API 요청 구조
 export interface SolapiSendRequest {
   messages: SmsMessage[];
+  date?: string; // 즉시 발송을 위한 현재 시간 (ISO 8601)
   scheduledDate?: string;
   strict?: boolean;
   allowDuplicates?: boolean;
@@ -229,6 +230,8 @@ export class SolapiSmsService {
 
         // 로그에서 민감정보 마스킹
         const maskedData = maskApiData(data);
+        
+        // 디버깅 로그 제거 (즉시 발송으로 변경)
         
         if (attempt > 0) {
           secureLog(LogLevel.INFO, 'SOLAPI_SMS', `${method} ${endpoint} (재시도 ${attempt}/${maxRetries})`, {
@@ -449,8 +452,10 @@ https://massemble-crm-shinsehoona.replit.app`;
         messageData.subject = options.subject;
       }
 
+      // Solapi API v4: 즉시 발송의 경우 date 필드 없이 전송
       const apiRequest: SolapiSendRequest = {
         messages: [messageData]
+        // 즉시 발송이므로 date 또는 scheduledDate 필드 제외
       };
 
       secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'SMS 발송 시도', {
