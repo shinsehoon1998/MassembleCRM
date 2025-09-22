@@ -44,7 +44,26 @@ export default function Login() {
       // Redirect will happen automatically when user data is refetched
     } catch (error: any) {
       console.error('Login error:', error);
-      setError(error.message || '로그인에 실패했습니다.');
+      
+      // API 오류 메시지에서 실제 메시지만 추출
+      let errorMessage = '로그인에 실패했습니다.';
+      
+      if (error.message) {
+        // "401: {"message":"메시지"}" 형태에서 메시지만 추출
+        const match = error.message.match(/^\d+:\s*(.+)$/);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[1]);
+            errorMessage = parsed.message || errorMessage;
+          } catch {
+            errorMessage = match[1];
+          }
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
