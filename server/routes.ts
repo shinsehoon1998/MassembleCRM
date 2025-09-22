@@ -1571,13 +1571,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Admin access required" });
       }
 
-      const { username, password, name, firstName, lastName, department, role, isActive } = req.body;
+      const { username, password, name, firstName, lastName, phone, department, role, isActive } = req.body;
       
       const updateData: any = {
         username,
         name: name || username, // Use username as name if name not provided
         firstName,
         lastName,
+        phone,
         department,
         role,
         isActive
