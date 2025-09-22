@@ -267,6 +267,18 @@ export class SolapiSmsService {
           };
         }
 
+        // 400 오류 상세 로깅 추가
+        if (response.status === 400) {
+          secureLog(LogLevel.ERROR, 'SOLAPI_SMS', 'HTTP 400 상세 오류 정보', {
+            requestUrl: url,
+            httpStatus: response.status,
+            responseBody: JSON.stringify(result),
+            errorMessage: result.errorMessage || result.message,
+            errorCode: result.errorCode,
+            attempt
+          }, currentRequestId);
+        }
+
         // API 호출 결과 로깅 (v4 구조에 맞게 수정)
         secureLog(LogLevel.INFO, 'SOLAPI_SMS', 'API response parsed', {
           httpStatus: response.status,
