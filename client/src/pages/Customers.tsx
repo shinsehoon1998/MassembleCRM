@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,9 @@ export default function Customers() {
     page: 1,
     limit: 20,
   });
+  
+  // 검색어 입력을 위한 별도 상태 (디바운싱용)
+  const [searchInput, setSearchInput] = useState("");
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithUser | null>(null);
@@ -77,6 +80,26 @@ export default function Customers() {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // 디바운싱된 검색어 처리
+  const debouncedSearchParams = useMemo(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchInput !== searchParams.search) {
+        setSearchParams(prev => ({ 
+          ...prev, 
+          search: searchInput,
+          page: 1  // 검색어 변경시 자동으로 첫 페이지로
+        }));
+      }
+    }, 500); // 500ms 디바운싱
+
+    return () => clearTimeout(timeoutId);
+  }, [searchInput, searchParams.search]);
+
+  // 컴포넌트가 언마운트될 때 타이머 정리
+  useEffect(() => {
+    return debouncedSearchParams;
+  }, [debouncedSearchParams]);
 
   const { data: customersData, isLoading } = useQuery<CustomersResponse>({
     queryKey: ["/api/customers", searchParams],
@@ -308,7 +331,21 @@ export default function Customers() {
   };
 
   const handleSearch = () => {
-    setSearchParams(prev => ({ ...prev, page: 1 }));
+    // 즉시 검색 실행 (디바운싱 무시)
+    setSearchParams(prev => ({ 
+      ...prev, 
+      search: searchInput,
+      page: 1 
+    }));
+  };
+
+  // 필터 변경시 자동으로 첫 페이지로 리셋
+  const handleFilterChange = (key: string, value: any) => {
+    setSearchParams(prev => ({ 
+      ...prev, 
+      [key]: value,
+      page: 1  // 필터 변경시 항상 첫 페이지로
+    }));
   };
 
   const handlePageChange = (page: number) => {
@@ -451,7 +488,7 @@ export default function Customers() {
       setIsResizing(null);
       
       // localStorage에 저장
-      setColumnWidths((currentWidths) => {
+      setColumnWidths((currentWidths: typeof defaultColumnWidths) => {
         localStorage.setItem('customer-table-column-widths', JSON.stringify(currentWidths));
         return currentWidths;
       });
@@ -559,8 +596,9 @@ export default function Customers() {
               <label className="block text-sm font-medium text-gray-700 mb-2">검색</label>
               <Input
                 placeholder="이름, 전화번호 검색"
-                value={searchParams.search}
-                onChange={(e) => setSearchParams(prev => ({ ...prev, search: e.target.value }))}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 data-testid="input-search"
                 className="w-full"
               />
@@ -572,7 +610,7 @@ export default function Customers() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">상태</label>
                 <Select
                   value={searchParams.status}
-                  onValueChange={(value) => setSearchParams(prev => ({ ...prev, status: value }))}
+                  onValueChange={(value) => handleFilterChange('status', value)}
                 >
                   <SelectTrigger data-testid="select-status">
                     <SelectValue placeholder="전체 상태" />
@@ -589,7 +627,7 @@ export default function Customers() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">담당자</label>
                 <Select
                   value={searchParams.assignedUserId}
-                  onValueChange={(value) => setSearchParams(prev => ({ ...prev, assignedUserId: value }))}
+                  onValueChange={(value) => handleFilterChange('assignedUserId', value)}
                 >
                   <SelectTrigger data-testid="select-counselor">
                     <SelectValue placeholder="전체 담당자" />
@@ -606,10 +644,32 @@ export default function Customers() {
               </div>
             </div>
             
+            {/* 담당자 미정/공유 미정 체크박스 */}
+            <div className="flex flex-wrap gap-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="unassigned"
+                  checked={searchParams.unassigned}
+                  onCheckedChange={(checked) => handleFilterChange('unassigned', checked)}
+                  data-testid="checkbox-unassigned"
+                />
+                <label htmlFor="unassigned" className="text-sm text-gray-700">담당자 미정</label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="unshared"
+                  checked={searchParams.unshared}
+                  onCheckedChange={(checked) => handleFilterChange('unshared', checked)}
+                  data-testid="checkbox-unshared"
+                />
+                <label htmlFor="unshared" className="text-sm text-gray-700">공유 미정</label>
+              </div>
+            </div>
+
             {/* Action Buttons - Stack on Mobile */}
             <div className="flex flex-col sm:flex-row gap-3">
               <Button onClick={handleSearch} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-search">
-                <i className="fas fa-search mr-2"></i>검색
+                <i className="fas fa-search mr-2"></i>즉시 검색
               </Button>
               <Button onClick={handleNewCustomer} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-add-customer">
                 <i className="fas fa-plus mr-2"></i>신규 등록
@@ -621,6 +681,25 @@ export default function Customers() {
                 data-testid="button-export-excel"
               >
                 <i className="fas fa-file-excel mr-2"></i>엑셀
+              </Button>
+              <Button 
+                onClick={() => {
+                  setSearchInput("");
+                  setSearchParams({
+                    search: "",
+                    status: "",
+                    assignedUserId: "",
+                    unassigned: false,
+                    unshared: false,
+                    page: 1,
+                    limit: 20,
+                  });
+                }}
+                variant="outline" 
+                className="text-gray-600 hover:text-gray-800"
+                data-testid="button-reset-filters"
+              >
+                <i className="fas fa-undo mr-2"></i>초기화
               </Button>
             </div>
           </div>
