@@ -817,17 +817,21 @@ export default function Customers() {
                 <label className="text-sm text-gray-500">페이지당</label>
                 <Select
                   value={searchParams.limit.toString()}
-                  onValueChange={(value) => setSearchParams(prev => ({ ...prev, limit: parseInt(value), page: 1 }))}
+                  onValueChange={(value) => handleFilterChange('limit', parseInt(value))}
+                  data-testid="select-page-size"
                 >
-                  <SelectTrigger className="w-20">
+                  <SelectTrigger className="w-28">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="20">20개</SelectItem>
                     <SelectItem value="50">50개</SelectItem>
                     <SelectItem value="100">100개</SelectItem>
+                    <SelectItem value="500">500개</SelectItem>
+                    <SelectItem value="1000">1000개</SelectItem>
                   </SelectContent>
                 </Select>
+                <span className="text-sm text-gray-500">씩 보기</span>
               </div>
             </div>
           </div>
