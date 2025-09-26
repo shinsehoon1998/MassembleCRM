@@ -740,7 +740,7 @@ export class DatabaseStorage implements IStorage {
     let processedUserData = { ...userData };
     
     if (userData.password !== undefined) {
-      if (userData.password === '' || userData.password.trim() === '') {
+      if (userData.password === '' || (userData.password && userData.password.trim() === '')) {
         // Security: Explicitly remove empty password strings to prevent accidental empty password updates
         delete processedUserData.password;
         console.warn('[SECURITY] Empty password field removed from user update data', {
@@ -749,7 +749,7 @@ export class DatabaseStorage implements IStorage {
         });
       } else {
         // 이미 해싱된 비밀번호인지 확인 (bcrypt 해시는 $2b$로 시작)
-        if (!userData.password.startsWith('$2b$')) {
+        if (userData.password && !userData.password.startsWith('$2b$')) {
           processedUserData.password = await bcrypt.hash(userData.password, 10);
         }
       }

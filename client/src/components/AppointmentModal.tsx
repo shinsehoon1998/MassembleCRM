@@ -35,10 +35,12 @@ export default function AppointmentModal({
   const queryClient = useQueryClient();
 
   // Fetch customers if customerId is not provided
-  const { data: customers = [] } = useQuery<any[]>({
+  const { data: customersResponse = { customers: [] } } = useQuery<{customers: any[]}>({
     queryKey: ["/api/customers"],
     enabled: !customerId, // Only fetch if customerId is not provided
   });
+  
+  const customers = customersResponse.customers || [];
 
   // Form state
   const [formData, setFormData] = useState({
