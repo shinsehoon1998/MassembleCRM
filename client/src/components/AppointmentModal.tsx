@@ -18,7 +18,7 @@ interface AppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
   appointment?: Appointment | null;
-  customerId: string;
+  customerId?: string;
   customerName?: string;
   counselors?: UserType[];
 }
@@ -34,12 +34,19 @@ export default function AppointmentModal({
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Fetch customers if customerId is not provided
+  const { data: customers = [] } = useQuery<any[]>({
+    queryKey: ["/api/customers"],
+    enabled: !customerId, // Only fetch if customerId is not provided
+  });
+
   // Form state
   const [formData, setFormData] = useState({
     title: "",
     startAt: "",
     endAt: "",
     counselorId: "",
+    selectedCustomerId: customerId || "",
     location: "",
     notes: "",
     remindSms: false,
@@ -59,6 +66,7 @@ export default function AppointmentModal({
           startAt: format(new Date(appointment.startAt), "yyyy-MM-dd'T'HH:mm"),
           endAt: format(new Date(appointment.endAt), "yyyy-MM-dd'T'HH:mm"),
           counselorId: appointment.counselorId || "",
+          selectedCustomerId: appointment.customerId || customerId || "",
           location: appointment.location || "",
           notes: appointment.notes || "",
           remindSms: appointment.remindSms || false,
@@ -75,6 +83,7 @@ export default function AppointmentModal({
           startAt: format(now, "yyyy-MM-dd'T'HH:mm"),
           endAt: format(oneHourLater, "yyyy-MM-dd'T'HH:mm"),
           counselorId: "",
+          selectedCustomerId: customerId || "",
           location: "",
           notes: "",
           remindSms: false,
@@ -89,12 +98,18 @@ export default function AppointmentModal({
   // Create appointment mutation
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
+      const finalCustomerId = data.selectedCustomerId || customerId;
+      if (!finalCustomerId) {
+        throw new Error("고객을 선택해주세요.");
+      }
+      
       const payload = {
         ...data,
-        customerId,
+        customerId: finalCustomerId,
         startAt: new Date(data.startAt).toISOString(),
         endAt: new Date(data.endAt).toISOString(),
       };
+      delete payload.selectedCustomerId; // Remove this as it's not part of the API schema
       return await apiRequest("POST", "/api/appointments", payload);
     },
     onSuccess: () => {
@@ -143,6 +158,11 @@ export default function AppointmentModal({
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
+
+    // Check customer selection if customerId is not provided
+    if (!customerId && !formData.selectedCustomerId) {
+      newErrors.selectedCustomerId = "고객을 선택해주세요.";
+    }
 
     if (!formData.title.trim()) {
       newErrors.title = "제목을 입력해주세요.";
@@ -213,6 +233,34 @@ export default function AppointmentModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Customer Selection (only if customerId not provided) */}
+          {!customerId && (
+            <div className="space-y-2">
+              <Label htmlFor="selectedCustomerId" className="text-sm font-medium flex items-center gap-1">
+                <User className="h-4 w-4" />
+                고객 선택 *
+              </Label>
+              <Select
+                value={formData.selectedCustomerId}
+                onValueChange={(value) => handleInputChange("selectedCustomerId", value)}
+              >
+                <SelectTrigger className={errors.selectedCustomerId ? "border-red-500" : ""} data-testid="select-customer">
+                  <SelectValue placeholder="고객을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map((customer: any) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      {customer.name} ({customer.phone})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.selectedCustomerId && (
+                <p className="text-sm text-red-500">{errors.selectedCustomerId}</p>
+              )}
+            </div>
+          )}
+
           {/* Title */}
           <div className="space-y-2">
             <Label htmlFor="title" className="text-sm font-medium">

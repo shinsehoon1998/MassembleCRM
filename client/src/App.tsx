@@ -9,6 +9,7 @@ import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
 import CustomerDetail from "@/pages/CustomerDetail";
+import Appointments from "@/pages/Appointments";
 import DataImport from "@/pages/DataImport";
 import ArsCampaigns from "@/pages/ArsCampaigns";
 import ScenarioManagement from "@/pages/ScenarioManagement";
@@ -64,6 +65,7 @@ function Router() {
             <Route path="/" component={Dashboard} />
             <Route path="/customers" component={Customers} />
             <Route path="/customers/:id" component={CustomerDetail} />
+            <Route path="/appointments" component={Appointments} />
             <Route path="/data-import" component={DataImport} />
             <Route path="/ars-campaigns" component={ArsCampaigns} />
             <Route path="/scenario-management" component={ScenarioManagement} />

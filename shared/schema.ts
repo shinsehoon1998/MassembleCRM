@@ -318,6 +318,12 @@ export type Appointment = typeof appointments.$inferSelect;
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
 export type UpdateAppointment = z.infer<typeof updateAppointmentSchema>;
 
+// Extended types with join data
+export type AppointmentWithDetails = Appointment & {
+  customerName?: string;
+  counselorName?: string;
+};
+
 // 고객 그룹 (arsCampaigns 앞에 먼저 정의)
 export const customerGroups = pgTable("customer_groups", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
