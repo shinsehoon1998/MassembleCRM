@@ -1191,6 +1191,28 @@ export const smsHistoryRequestSchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/, '유효한 메시지 ID 형식이 아닙니다.'),
 });
 
+// SMS 인증번호 발송 스키마
+export const smsVerificationSendSchema = z.object({
+  phone: z.string()
+    .min(10, '전화번호는 최소 10자리 이상이어야 합니다.')
+    .max(15, '전화번호는 최대 15자리까지 허용됩니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  purpose: z.enum(['registration', 'password_reset'])
+    .optional()
+    .default('registration'),
+});
+
+// SMS 인증번호 확인 스키마
+export const smsVerificationVerifySchema = z.object({
+  phone: z.string()
+    .min(10, '전화번호는 최소 10자리 이상이어야 합니다.')
+    .max(15, '전화번호는 최대 15자리까지 허용됩니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  code: z.string()
+    .length(6, '인증번호는 6자리여야 합니다.')
+    .regex(/^[0-9]+$/, '인증번호는 숫자만 입력해주세요.'),
+});
+
 // ============================================
 // 설문조사 연동 스키마 (botamjeong)
 // ============================================

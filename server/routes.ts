@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, surveyImportSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, smsVerificationSendSchema, smsVerificationVerifySchema, surveyImportSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -196,11 +196,17 @@ const smsVerificationStore = new Map<string, SmsVerification>();
  */
 setInterval(() => {
   const now = Date.now();
-  for (const [phone, verification] of smsVerificationStore.entries()) {
+  const expiredPhones: string[] = [];
+  
+  smsVerificationStore.forEach((verification, phone) => {
     if (now > verification.expiresAt) {
-      smsVerificationStore.delete(phone);
+      expiredPhones.push(phone);
     }
-  }
+  });
+  
+  expiredPhones.forEach(phone => {
+    smsVerificationStore.delete(phone);
+  });
 }, 5 * 60 * 1000); // 5분마다
 
 /**
@@ -819,14 +825,162 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // 회원가입 API
-  app.post('/api/register', async (req, res) => {
+  // SMS 인증번호 발송 API
+  app.post('/api/sms/send-verification', async (req, res) => {
+    const requestId = generateRequestId();
+    
     try {
-      const { username, password, name, email, role = 'counselor', department } = req.body;
+      // 입력 검증
+      const result = smsVerificationSendSchema.safeParse(req.body);
+      if (!result.success) {
+        secureLog(LogLevel.WARNING, 'SMS_VERIFICATION', 'SMS 인증번호 발송 유효성 검사 실패', {
+          errors: result.error.errors.map(e => ({ path: e.path, message: e.message }))
+        }, requestId);
+        return res.status(400).json({ 
+          success: false,
+          message: result.error.errors[0]?.message || '입력 데이터가 유효하지 않습니다.' 
+        });
+      }
+
+      const { phone, purpose } = result.data;
+      const formattedPhone = formatPhoneNumber(phone);
+
+      // SMS 서비스 확인
+      const sms = getSmsService();
+      if (!sms) {
+        secureLog(LogLevel.ERROR, 'SMS_VERIFICATION', 'SMS 서비스 사용 불가', { phone: maskPhoneNumber(formattedPhone) }, requestId);
+        return res.status(500).json({ 
+          success: false,
+          message: 'SMS 서비스를 사용할 수 없습니다.' 
+        });
+      }
+
+      // 인증번호 생성 및 저장
+      const verificationCode = generateVerificationCode();
+      storeVerificationCode(formattedPhone, verificationCode);
+
+      // SMS 메시지 구성
+      const message = `[마셈블] 인증번호는 ${verificationCode}입니다. 5분 내에 입력해주세요.`;
+      
+      secureLog(LogLevel.INFO, 'SMS_VERIFICATION', 'SMS 인증번호 발송 시도', {
+        phone: maskPhoneNumber(formattedPhone),
+        purpose,
+        messageLength: message.length
+      }, requestId);
+
+      // SMS 발송
+      const smsResult = await sms.sendSms(formattedPhone, message, {
+        type: 'SMS',
+        subject: '[마셈블] 인증번호'
+      });
+
+      secureLog(LogLevel.INFO, 'SMS_VERIFICATION', 'SMS 인증번호 발송 결과', {
+        phone: maskPhoneNumber(formattedPhone),
+        success: smsResult.success,
+        message: smsResult.message
+      }, requestId);
+
+      if (smsResult.success) {
+        res.json({ 
+          success: true,
+          message: '인증번호가 발송되었습니다. 5분 내에 입력해주세요.' 
+        });
+      } else {
+        res.status(500).json({ 
+          success: false,
+          message: `인증번호 발송에 실패했습니다: ${smsResult.message}` 
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      secureLog(LogLevel.ERROR, 'SMS_VERIFICATION', 'SMS 인증번호 발송 예외', {
+        error: errorMessage
+      }, requestId);
+      res.status(500).json({ 
+        success: false,
+        message: '인증번호 발송 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  // SMS 인증번호 확인 API
+  app.post('/api/sms/verify-code', async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      // 입력 검증
+      const result = smsVerificationVerifySchema.safeParse(req.body);
+      if (!result.success) {
+        secureLog(LogLevel.WARNING, 'SMS_VERIFICATION', 'SMS 인증번호 확인 유효성 검사 실패', {
+          errors: result.error.errors.map(e => ({ path: e.path, message: e.message }))
+        }, requestId);
+        return res.status(400).json({ 
+          success: false,
+          message: result.error.errors[0]?.message || '입력 데이터가 유효하지 않습니다.' 
+        });
+      }
+
+      const { phone, code } = result.data;
+      const formattedPhone = formatPhoneNumber(phone);
+
+      secureLog(LogLevel.INFO, 'SMS_VERIFICATION', 'SMS 인증번호 확인 시도', {
+        phone: maskPhoneNumber(formattedPhone)
+      }, requestId);
+
+      // 인증번호 확인
+      const verifyResult = verifyCode(formattedPhone, code);
+      
+      secureLog(LogLevel.INFO, 'SMS_VERIFICATION', 'SMS 인증번호 확인 결과', {
+        phone: maskPhoneNumber(formattedPhone),
+        success: verifyResult.success
+      }, requestId);
+
+      res.json({
+        success: verifyResult.success,
+        message: verifyResult.message
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      secureLog(LogLevel.ERROR, 'SMS_VERIFICATION', 'SMS 인증번호 확인 예외', {
+        error: errorMessage
+      }, requestId);
+      res.status(500).json({ 
+        success: false,
+        message: '인증번호 확인 중 오류가 발생했습니다.' 
+      });
+    }
+  });
+
+  // 회원가입 API (SMS 인증 통합)
+  app.post('/api/register', async (req, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      const { username, password, name, email, phone, verificationCode, role = 'counselor', department } = req.body;
 
       // 입력 검증
       if (!username || !password || !name || !email) {
         return res.status(400).json({ message: '모든 필수 필드를 입력해주세요.' });
+      }
+
+      // SMS 인증번호 확인 (phone과 verificationCode가 모두 제공된 경우)
+      if (phone && verificationCode) {
+        const formattedPhone = formatPhoneNumber(phone);
+        const verifyResult = verifyCode(formattedPhone, verificationCode);
+        
+        if (!verifyResult.success) {
+          secureLog(LogLevel.WARNING, 'AUTH', '회원가입 SMS 인증 실패', {
+            phone: maskPhoneNumber(formattedPhone),
+            username: maskName(username),
+            message: verifyResult.message
+          }, requestId);
+          return res.status(400).json({ message: verifyResult.message });
+        }
+        
+        secureLog(LogLevel.INFO, 'AUTH', '회원가입 SMS 인증 성공', {
+          phone: maskPhoneNumber(formattedPhone),
+          username: maskName(username)
+        }, requestId);
       }
 
       // 사용자명 중복 확인
@@ -842,6 +996,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: '이미 사용 중인 이메일입니다.' });
       }
 
+      // 전화번호 중복 확인 (phone이 제공된 경우)
+      if (phone) {
+        const formattedPhone = formatPhoneNumber(phone);
+        const phoneExists = users.some(user => user.phone && formatPhoneNumber(user.phone) === formattedPhone);
+        if (phoneExists) {
+          return res.status(400).json({ message: '이미 사용 중인 전화번호입니다.' });
+        }
+      }
+
       // 비밀번호 암호화
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -852,9 +1015,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: hashedPassword,
         name,
         email,
+        phone: phone ? formatPhoneNumber(phone) : undefined,
         role: role === 'admin' ? 'counselor' : role, // 보안상 admin은 직접 생성 불가
         department: department || '상담부'
       });
+
+      secureLog(LogLevel.INFO, 'AUTH', '신규 사용자 생성 완료', {
+        userId: newUser.id,
+        username: maskName(username),
+        name: maskName(name),
+        email: maskName(email),
+        phone: phone ? maskPhoneNumber(formatPhoneNumber(phone)) : 'none',
+        role: role,
+        department: department || '상담부'
+      }, requestId);
 
       // 비밀번호 제거하고 응답
       const { password: _, ...userResponse } = newUser;
@@ -866,7 +1040,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       secureLog(LogLevel.ERROR, 'AUTH', 'Registration error', {
         error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      }, requestId);
       res.status(500).json({ message: '회원가입 중 오류가 발생했습니다.' });
     }
   });
