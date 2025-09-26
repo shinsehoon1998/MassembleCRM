@@ -16,6 +16,7 @@ import ScenarioManagement from "@/pages/ScenarioManagement";
 import CustomerGroups from "@/pages/CustomerGroups";
 import Users from "@/pages/Users";
 import Settings from "@/pages/Settings";
+import SmsSettings from "@/pages/SmsSettings";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
 
@@ -72,6 +73,7 @@ function Router() {
             <Route path="/customer-groups" component={CustomerGroups} />
             <Route path="/users" component={Users} />
             <Route path="/settings" component={Settings} />
+            <Route path="/sms-settings" component={SmsSettings} />
             <Route>
               <NotFound />
             </Route>

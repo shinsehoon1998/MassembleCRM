@@ -34,6 +34,7 @@ export default function Layout({ children }: LayoutProps) {
       '/scenario-management': '시나리오 관리',
       '/customer-groups': '고객 그룹 관리',
       '/users': '사용자관리',
+      '/sms-settings': 'SMS 설정',
       '/settings': '환경설정',
     };
     return titles[location] || '마셈블 CRM';
@@ -49,6 +50,7 @@ export default function Layout({ children }: LayoutProps) {
       '/scenario-management': 'ARS 시나리오를 생성하고 관리하세요',
       '/customer-groups': '고객을 그룹으로 분류하여 효율적으로 관리하세요',
       '/users': '시스템 사용자를 관리하세요',
+      '/sms-settings': 'SMS 알림 및 템플릿을 관리하세요',
       '/settings': '시스템 환경을 설정하세요',
     };
     return descriptions[location] || '';
@@ -209,6 +211,19 @@ export default function Layout({ children }: LayoutProps) {
             </Link>
           )}
           
+          {user?.role === 'admin' && (
+            <Link 
+              href="/sms-settings"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/sms-settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-sms-settings"
+            >
+              <i className="fas fa-sms w-5"></i>
+              <span className="ml-3">SMS 설정</span>
+            </Link>
+          )}
+
           {user?.role === 'admin' && (
             <Link 
               href="/settings"
