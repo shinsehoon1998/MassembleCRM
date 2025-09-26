@@ -6138,5 +6138,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * 일괄 예약 생성
+   * POST /api/appointments/batch
+   */
+  app.post('/api/appointments/batch', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds, appointmentDate, appointmentTime, counselorId, consultationType, notes = '' } = req.body;
+      
+      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: '고객 ID 목록이 필요합니다.' });
+      }
+      
+      if (!appointmentDate || !appointmentTime || !counselorId || !consultationType) {
+        return res.status(400).json({ message: '예약 날짜, 시간, 담당자, 상담 유형이 모두 필요합니다.' });
+      }
+
+      // 시간 간격 설정 (기본 30분)
+      const appointmentDuration = 30; // 분
+      const startDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+      
+      const createdAppointments = [];
+      const errors = [];
+
+      // 각 고객에 대해 예약 생성 (시간을 30분씩 증가)
+      for (let i = 0; i < customerIds.length; i++) {
+        try {
+          const customerId = customerIds[i];
+          const appointmentStartTime = new Date(startDateTime.getTime() + (i * appointmentDuration * 60 * 1000));
+          const appointmentEndTime = new Date(appointmentStartTime.getTime() + (appointmentDuration * 60 * 1000));
+
+          // 충돌 확인
+          const conflicts = await storage.checkAppointmentConflicts(
+            appointmentStartTime,
+            appointmentEndTime,
+            counselorId,
+            customerId
+          );
+
+          if (conflicts.length > 0) {
+            errors.push({
+              customerId,
+              error: `시간 충돌이 있습니다: ${appointmentStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
+            });
+            continue;
+          }
+
+          // 예약 생성
+          const appointmentData = {
+            customerId,
+            counselorId,
+            type: consultationType,
+            startAt: appointmentStartTime,
+            endAt: appointmentEndTime,
+            status: 'scheduled' as const,
+            notes: notes || `일괄 예약 생성 (${new Date().toLocaleDateString('ko-KR')})`
+          };
+
+          const validatedData = insertAppointmentSchema.parse(appointmentData);
+          const newAppointment = await storage.createAppointment(validatedData);
+          
+          createdAppointments.push({
+            customerId,
+            appointmentId: newAppointment.id,
+            startTime: appointmentStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+          });
+
+        } catch (error: any) {
+          console.error(`Error creating appointment for customer ${customerIds[i]}:`, error);
+          errors.push({
+            customerId: customerIds[i],
+            error: error.message || '예약 생성 중 오류가 발생했습니다.'
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        created: createdAppointments.length,
+        total: customerIds.length,
+        appointments: createdAppointments,
+        errors: errors
+      });
+
+    } catch (error: any) {
+      console.error('Error creating batch appointments:', error);
+      res.status(500).json({ 
+        message: '일괄 예약 생성 중 오류가 발생했습니다.',
+        error: error.message 
+      });
+    }
+  });
+
   return httpServer;
 }

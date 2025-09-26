@@ -8,6 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import CustomerModal from "@/components/CustomerModal";
@@ -43,6 +46,7 @@ export default function Customers() {
   const [editingMemo, setEditingMemo] = useState<{ [key: string]: { [field: string]: string } }>({});
   const [showBatchActions, setShowBatchActions] = useState(false);
   const [showArsModal, setShowArsModal] = useState(false);
+  const [showBatchAppointmentModal, setShowBatchAppointmentModal] = useState(false);
   const [arsData, setArsData] = useState({
     sendNumber: "",
     scenarioId: "marketing_consent",
@@ -271,6 +275,38 @@ export default function Customers() {
     },
   });
 
+  const batchAppointmentMutation = useMutation({
+    mutationFn: async (data: { 
+      customerIds: string[], 
+      appointmentDate: string,
+      appointmentTime: string,
+      counselorId: string,
+      consultationType: string,
+      notes?: string
+    }) => {
+      const response = await apiRequest("POST", "/api/appointments/batch", data);
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setSelectedCustomers([]);
+      setShowBatchActions(false);
+      setShowBatchAppointmentModal(false);
+      toast({
+        title: "일괄 예약 생성 성공",
+        description: `${selectedCustomers.length}명의 고객에 대한 예약이 생성되었습니다.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "일괄 예약 생성 실패",
+        description: error.message || "예약 생성에 실패했습니다. 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const statusUpdateMutation = useMutation({
     mutationFn: async ({ customerId, status }: { customerId: string, status: string }) => {
       const response = await apiRequest("PATCH", `/api/customers/${customerId}/status`, { status });
@@ -390,6 +426,10 @@ export default function Customers() {
   const handleScheduleAppointment = (customer: CustomerWithUser) => {
     setAppointmentCustomer(customer);
     setIsAppointmentModalOpen(true);
+  };
+
+  const handleBatchAppointment = () => {
+    setShowBatchAppointmentModal(true);
   };
 
   const handleDeleteCustomer = async (customerId: string) => {
@@ -779,6 +819,15 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Button
+                  onClick={handleBatchAppointment}
+                  variant="outline"
+                  size="sm"
+                  className="bg-green-600 text-white hover:bg-green-700"
+                  data-testid="button-batch-appointment"
+                >
+                  <i className="fas fa-calendar mr-1"></i>일괄 예약
+                </Button>
                 <Button
                   onClick={() => setShowArsModal(true)}
                   variant="outline"
@@ -1571,6 +1620,144 @@ export default function Customers() {
         customerName={appointmentCustomer?.name}
         counselors={counselors}
       />
+
+      {/* Batch Appointment Modal */}
+      <Dialog open={showBatchAppointmentModal} onOpenChange={setShowBatchAppointmentModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <i className="fas fa-calendar text-green-600"></i>
+              <span>일괄 예약 생성</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-green-50 p-3 rounded-lg">
+              <p className="text-sm text-green-800">
+                <i className="fas fa-users mr-1"></i>
+                선택된 고객: {selectedCustomers.length}명
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {customersData?.customers
+                  .filter(customer => selectedCustomers.includes(customer.id))
+                  .slice(0, 5)
+                  .map(customer => (
+                    <Badge key={customer.id} variant="secondary" className="text-xs">
+                      {customer.name}
+                    </Badge>
+                  ))}
+                {selectedCustomers.length > 5 && (
+                  <Badge variant="secondary" className="text-xs">
+                    +{selectedCustomers.length - 5}명 더
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="appointment-date">예약 날짜</Label>
+                <Input
+                  id="appointment-date"
+                  type="date"
+                  min={new Date().toISOString().split('T')[0]}
+                  data-testid="input-batch-appointment-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="appointment-time">예약 시간</Label>
+                <Input
+                  id="appointment-time"
+                  type="time"
+                  data-testid="input-batch-appointment-time"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="counselor-select">담당 상담사</Label>
+              <Select data-testid="select-batch-counselor">
+                <SelectTrigger>
+                  <SelectValue placeholder="담당 상담사를 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {counselors?.map((counselor) => (
+                    <SelectItem key={counselor.id} value={counselor.id}>
+                      {counselor.username} ({counselor.lastName} {counselor.firstName})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="consultation-type">상담 유형</Label>
+              <Select data-testid="select-batch-consultation-type">
+                <SelectTrigger>
+                  <SelectValue placeholder="상담 유형을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="전화상담">전화상담</SelectItem>
+                  <SelectItem value="방문상담">방문상담</SelectItem>
+                  <SelectItem value="온라인상담">온라인상담</SelectItem>
+                  <SelectItem value="화상상담">화상상담</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="appointment-notes">메모 (선택사항)</Label>
+              <Textarea
+                id="appointment-notes"
+                placeholder="예약에 대한 추가 메모를 입력하세요..."
+                rows={3}
+                data-testid="textarea-batch-appointment-notes"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowBatchAppointmentModal(false)}
+                data-testid="button-cancel-batch-appointment"
+              >
+                취소
+              </Button>
+              <Button
+                onClick={() => {
+                  const dateInput = document.getElementById('appointment-date') as HTMLInputElement;
+                  const timeInput = document.getElementById('appointment-time') as HTMLInputElement;
+                  const counselorSelect = document.querySelector('[data-testid="select-batch-counselor"] [data-value]') as HTMLElement;
+                  const consultationTypeSelect = document.querySelector('[data-testid="select-batch-consultation-type"] [data-value]') as HTMLElement;
+                  const notesTextarea = document.getElementById('appointment-notes') as HTMLTextAreaElement;
+
+                  if (!dateInput.value || !timeInput.value) {
+                    toast({
+                      title: "입력 오류",
+                      description: "예약 날짜와 시간을 모두 입력해주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  batchAppointmentMutation.mutate({
+                    customerIds: selectedCustomers,
+                    appointmentDate: dateInput.value,
+                    appointmentTime: timeInput.value,
+                    counselorId: counselorSelect?.getAttribute('data-value') || '',
+                    consultationType: consultationTypeSelect?.getAttribute('data-value') || '전화상담',
+                    notes: notesTextarea?.value || ''
+                  });
+                }}
+                disabled={batchAppointmentMutation.isPending}
+                className="bg-green-600 hover:bg-green-700"
+                data-testid="button-create-batch-appointment"
+              >
+                {batchAppointmentMutation.isPending ? "생성 중..." : "예약 생성"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
