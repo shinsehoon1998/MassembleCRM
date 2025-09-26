@@ -273,7 +273,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">미지정</SelectItem>
-                  {counselors.map((counselor) => (
+                  {(counselors || []).map((counselor) => (
                     <SelectItem key={counselor.id} value={counselor.id}>
                       {counselor.name}
                     </SelectItem>
@@ -424,7 +424,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">선택 안함</SelectItem>
-                    {counselors.map((counselor) => (
+                    {(counselors || []).map((counselor) => (
                       <SelectItem key={counselor.id} value={counselor.id}>
                         {counselor.name}
                       </SelectItem>
