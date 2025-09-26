@@ -18,6 +18,7 @@ import { ko } from "date-fns/locale";
 import { ArrowLeft, Edit, Plus, FileText, Clock, User, Phone, MapPin, Briefcase, Calendar } from "lucide-react";
 import type { CustomerWithUser, Consultation, Attachment, ActivityLog } from "@shared/schema";
 import CustomerModal from "@/components/CustomerModal";
+import AppointmentModal from "@/components/AppointmentModal";
 
 export default function CustomerDetail() {
   const params = useParams<{ id: string }>();
@@ -26,6 +27,8 @@ export default function CustomerDetail() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [newConsultNote, setNewConsultNote] = useState("");
   const [newConsultType, setNewConsultType] = useState("");
+  const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<any>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -117,6 +120,16 @@ export default function CustomerDetail() {
       type: newConsultType,
       notes: newConsultNote.trim(),
     });
+  };
+
+  const handleAddAppointment = () => {
+    setEditingAppointment(null);
+    setIsAppointmentModalOpen(true);
+  };
+
+  const handleEditAppointment = (appointment: any) => {
+    setEditingAppointment(appointment);
+    setIsAppointmentModalOpen(true);
   };
 
   const getUploadParameters = async () => {
@@ -618,6 +631,7 @@ export default function CustomerDetail() {
                 <div className="flex justify-end">
                   <Button 
                     className="bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={handleAddAppointment}
                     data-testid="button-add-appointment"
                   >
                     <Plus className="h-4 w-4 mr-2" />
@@ -682,6 +696,7 @@ export default function CustomerDetail() {
                               variant="ghost" 
                               size="sm" 
                               className="text-blue-600 hover:text-blue-700"
+                              onClick={() => handleEditAppointment(appointment)}
                               data-testid={`button-edit-appointment-${appointment.id}`}
                             >
                               <Edit className="h-4 w-4" />
@@ -711,6 +726,16 @@ export default function CustomerDetail() {
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
         customer={customer}
+        counselors={counselors}
+      />
+
+      {/* Appointment Modal */}
+      <AppointmentModal
+        isOpen={isAppointmentModalOpen}
+        onClose={() => setIsAppointmentModalOpen(false)}
+        appointment={editingAppointment}
+        customerId={params.id || ""}
+        customerName={customer?.name}
         counselors={counselors}
       />
     </div>

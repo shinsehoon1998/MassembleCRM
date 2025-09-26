@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import CustomerModal from "@/components/CustomerModal";
+import AppointmentModal from "@/components/AppointmentModal";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import type { CustomerWithUser, User } from "@shared/schema";
@@ -37,6 +38,8 @@ export default function Customers() {
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<CustomerWithUser | null>(null);
+  const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
+  const [appointmentCustomer, setAppointmentCustomer] = useState<CustomerWithUser | null>(null);
   const [editingMemo, setEditingMemo] = useState<{ [key: string]: { [field: string]: string } }>({});
   const [showBatchActions, setShowBatchActions] = useState(false);
   const [showArsModal, setShowArsModal] = useState(false);
@@ -385,12 +388,8 @@ export default function Customers() {
   };
 
   const handleScheduleAppointment = (customer: CustomerWithUser) => {
-    // TODO: 예약 모달을 열거나 예약 페이지로 이동
-    console.log('Schedule appointment for customer:', customer.id);
-    toast({
-      title: "예약 기능",
-      description: `${customer.name}님의 예약을 생성하겠습니다.`,
-    });
+    setAppointmentCustomer(customer);
+    setIsAppointmentModalOpen(true);
   };
 
   const handleDeleteCustomer = async (customerId: string) => {
@@ -1555,6 +1554,23 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      {/* Customer Edit Modal */}
+      <CustomerModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        customer={editingCustomer}
+        counselors={counselors}
+      />
+
+      {/* Appointment Modal */}
+      <AppointmentModal
+        isOpen={isAppointmentModalOpen}
+        onClose={() => setIsAppointmentModalOpen(false)}
+        customerId={appointmentCustomer?.id || ""}
+        customerName={appointmentCustomer?.name}
+        counselors={counselors}
+      />
     </div>
   );
 }
