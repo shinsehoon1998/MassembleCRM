@@ -923,20 +923,6 @@ export default function Customers() {
                         onMouseDown={(e) => handleResizeStart(e, 'status')}
                       />
                     </th>
-                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.assignedUser}px` }}>
-                      담당자
-                      <div 
-                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
-                        onMouseDown={(e) => handleResizeStart(e, 'assignedUser')}
-                      />
-                    </th>
-                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.secondaryUser}px` }}>
-                      공유담당자
-                      <div 
-                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
-                        onMouseDown={(e) => handleResizeStart(e, 'secondaryUser')}
-                      />
-                    </th>
                     <th className="relative px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.memo}px` }}>
                       메모
                       <div 
@@ -1014,6 +1000,20 @@ export default function Customers() {
                         onMouseDown={(e) => handleResizeStart(e, 'info10')}
                       />
                     </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.assignedUser}px` }}>
+                      담당자
+                      <div 
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
+                        onMouseDown={(e) => handleResizeStart(e, 'assignedUser')}
+                      />
+                    </th>
+                    <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.secondaryUser}px` }}>
+                      공유담당자
+                      <div 
+                        className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
+                        onMouseDown={(e) => handleResizeStart(e, 'secondaryUser')}
+                      />
+                    </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.registeredAt}px` }}>
                       등록일
                       <div 
@@ -1079,22 +1079,6 @@ export default function Customers() {
                                 ))}
                               </SelectContent>
                             </Select>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.assignedUser}px` }}>
-                          <div className="overflow-hidden">
-                            <div className="text-sm text-gray-900 truncate" title={customer.assignedUser?.name || '-'}>{customer.assignedUser?.name || '-'}</div>
-                            {customer.assignedUser?.department && (
-                              <div className="text-sm text-gray-500 truncate" title={customer.assignedUser.department}>{customer.assignedUser.department}</div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.secondaryUser}px` }}>
-                          <div className="overflow-hidden">
-                            <div className="text-sm text-gray-900 truncate" title={customer.secondaryUser?.name || '-'}>{customer.secondaryUser?.name || '-'}</div>
-                            {customer.secondaryUser?.department && (
-                              <div className="text-sm text-gray-500 truncate" title={customer.secondaryUser.department}>{customer.secondaryUser.department}</div>
-                            )}
                           </div>
                         </td>
                         {/* memo1 컬럼 */}
@@ -1166,6 +1150,27 @@ export default function Customers() {
                             </td>
                           );
                         })}
+                        
+                        {/* 담당자 컬럼 */}
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.assignedUser}px` }}>
+                          <div className="overflow-hidden">
+                            <div className="text-sm text-gray-900 truncate" title={customer.assignedUser?.name || '-'}>{customer.assignedUser?.name || '-'}</div>
+                            {customer.assignedUser?.department && (
+                              <div className="text-sm text-gray-500 truncate" title={customer.assignedUser.department}>{customer.assignedUser.department}</div>
+                            )}
+                          </div>
+                        </td>
+                        
+                        {/* 공유담당자 컬럼 */}
+                        <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.secondaryUser}px` }}>
+                          <div className="overflow-hidden">
+                            <div className="text-sm text-gray-900 truncate" title={customer.secondaryUser?.name || '-'}>{customer.secondaryUser?.name || '-'}</div>
+                            {customer.secondaryUser?.department && (
+                              <div className="text-sm text-gray-500 truncate" title={customer.secondaryUser.department}>{customer.secondaryUser.department}</div>
+                            )}
+                          </div>
+                        </td>
+                        
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500" style={{ width: `${columnWidths.registeredAt}px` }}>
                           <div className="overflow-hidden">
                             <div className="truncate" title={customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd', { locale: ko }) : '-'}>
