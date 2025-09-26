@@ -636,7 +636,7 @@ export default function Customers() {
                     <SelectItem value="all">전체 담당자</SelectItem>
                     {counselors?.map(counselor => (
                       <SelectItem key={counselor.id} value={counselor.id}>
-                        {counselor.name}
+                        {counselor.username} ({counselor.name})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -751,23 +751,23 @@ export default function Customers() {
                   </SelectContent>
                 </Select>
                 <Select onValueChange={(assignedUserId) => handleBatchUpdate({ assignedUserId })}>
-                  <SelectTrigger className="w-36">
+                  <SelectTrigger className="w-44">
                     <SelectValue placeholder="담당자 변경" />
                   </SelectTrigger>
                   <SelectContent>
                     {counselors?.map((counselor) => (
-                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.name}</SelectItem>
+                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.name})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <Select onValueChange={(secondaryUserId) => handleBatchUpdate({ secondaryUserId })}>
-                  <SelectTrigger className="w-36">
+                  <SelectTrigger className="w-44">
                     <SelectValue placeholder="공유 담당자" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="CLEAR">공유 해제</SelectItem>
                     {counselors?.map((counselor) => (
-                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.name}</SelectItem>
+                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.name})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

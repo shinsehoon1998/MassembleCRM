@@ -1,0 +1,845 @@
+// ===== 고정 설정 =====
+const SHEET_ID = '1MRW4lwA8gbPrdv-Gu_NxdY4oVd8cc9VoOPBG60bwYaE';
+const SHEET_NAME = '진단데이터';
+
+// 마셈블 CRM API 설정 (실제 API 키로 수정됨)
+const CRM_API_URL = 'https://massemble-crm-shinsehoona.replit.app/api/survey/import';
+const CRM_API_KEY = 'survey_2025_secure_key_abc123xyz';  // 실제 SURVEY_API_KEY
+
+// 컬럼 인덱스 상수 (0-based)
+const COLUMN_INDEX = {
+  TIMESTAMP: 0,      // A: 빅데이터(타임스탬프)
+  NAME: 1,          // B: 이름
+  PHONE: 2,         // C: 연락처
+  JOB: 3,           // D: 직업
+  INCOME: 4,        // E: 월소득
+  DEBT: 5,          // F: 총채무
+  ASSET: 6,         // G: 총자산
+  MARRIAGE: 7,      // H: 결혼
+  CHILDREN: 8,      // I: 자녀
+  REDUCTION_AMT: 9, // J: 예상탕감액
+  REDUCTION_RATE: 10, // K: 탕감률
+  AI_APPROVAL: 11,  // L: AI승인확률
+  RECOMMEND: 12,    // M: 추천제도
+  CREATED_AT: 13,   // N: createdAt
+  CRM_STATUS: 14,   // O: CRM전송상태
+  SENT_TIME: 15     // P: 전송시간
+};
+
+// ===== 유틸리티 함수 =====
+/**
+ * 전화번호 정제 함수
+ */
+function formatPhoneNumber(phone) {
+  if (!phone) return '';
+  
+  let tel = String(phone)
+    .replace(/^p:/i, '')
+    .replace(/^\+82/, '0')
+    .replace(/[^0-9]/g, '');
+  
+  // 10자리 번호가 10으로 시작하면 앞에 0 추가
+  if (tel.length === 10 && tel.startsWith('10')) {
+    tel = '0' + tel;
+  }
+  
+  return tel;
+}
+
+/**
+ * 현재 시간을 포맷된 문자열로 반환
+ */
+function getCurrentTimestamp() {
+  return Utilities.formatDate(
+    new Date(), 
+    Session.getScriptTimeZone(), 
+    'yyyy-MM-dd HH:mm:ss'
+  );
+}
+
+// ===== CRM 전송 함수 =====
+/**
+ * 특정 행의 데이터를 CRM으로 전송
+ */
+function sendToCRMRow(rowNumber) {
+  const lock = LockService.getScriptLock();
+  
+  try {
+    // 동시 실행 방지
+    if (!lock.tryLock(10000)) {
+      return { 
+        success: false, 
+        message: '다른 작업이 진행 중입니다. 잠시 후 다시 시도해주세요.' 
+      };
+    }
+
+    // 시트 가져오기
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      throw new Error(`시트를 찾을 수 없습니다: ${SHEET_NAME}`);
+    }
+
+    // 데이터 유효성 검사
+    if (rowNumber < 2) {
+      return { 
+        success: false, 
+        message: '유효하지 않은 행 번호입니다.' 
+      };
+    }
+
+    const lastCol = sheet.getLastColumn();
+    const rowData = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+
+    // 현재 상태 확인
+    const currentStatus = String(rowData[COLUMN_INDEX.CRM_STATUS] || '').trim().toLowerCase();
+    
+    if (currentStatus === 'yes' || currentStatus === 'sent') {
+      return { 
+        success: false, 
+        message: '이미 전송 완료된 데이터입니다.',
+        row: rowNumber
+      };
+    }
+    
+    if (currentStatus === 'sending') {
+      return { 
+        success: false, 
+        message: '현재 전송 중인 데이터입니다.',
+        row: rowNumber
+      };
+    }
+
+    // 필수 데이터 확인
+    const name = String(rowData[COLUMN_INDEX.NAME] || '').trim();
+    const phoneRaw = rowData[COLUMN_INDEX.PHONE];
+    
+    if (!name || !phoneRaw) {
+      sheet.getRange(rowNumber, COLUMN_INDEX.CRM_STATUS + 1).setValue('skip');
+      return { 
+        success: false, 
+        message: '필수 데이터(이름, 연락처)가 없습니다.',
+        row: rowNumber
+      };
+    }
+
+    // 상태를 'sending'으로 업데이트
+    sheet.getRange(rowNumber, COLUMN_INDEX.CRM_STATUS + 1).setValue('sending');
+    SpreadsheetApp.flush(); // 즉시 반영
+
+    // 전화번호 정제
+    const tel = formatPhoneNumber(phoneRaw);
+    
+    // 정제된 전화번호가 원본과 다르면 업데이트
+    if (tel !== phoneRaw) {
+      sheet.getRange(rowNumber, COLUMN_INDEX.PHONE + 1).setValue(tel);
+    }
+
+    // 마셈블 CRM API 호출을 위한 데이터 준비 (수정됨 - surveyImportSchema 형식)
+    const leadData = {
+      // 필수 필드
+      name: name,
+      phone: tel,
+      
+      // 상담 정보
+      consultType: '채무상담',
+      consultPath: '보탐정설문',
+      source: 'GoogleSheet',
+      
+      // 설문 정보를 info1~info10에 매핑
+      info1: rowData[COLUMN_INDEX.JOB] || '',           // 직업
+      info2: rowData[COLUMN_INDEX.INCOME] || '',        // 월소득(만원)
+      info3: rowData[COLUMN_INDEX.DEBT] || '',          // 총채무(만원)
+      info4: rowData[COLUMN_INDEX.MARRIAGE] || '',      // 결혼상태
+      info5: rowData[COLUMN_INDEX.CHILDREN] || '',      // 자녀유무
+      info6: rowData[COLUMN_INDEX.REDUCTION_AMT] || '', // 탕감액(만원)
+      info7: rowData[COLUMN_INDEX.REDUCTION_RATE] || '', // 탕감률(%)
+      info8: rowData[COLUMN_INDEX.AI_APPROVAL] || '',   // 승인확률(%)
+      info9: rowData[COLUMN_INDEX.RECOMMEND] || '',     // 권장방안
+      info10: rowData[COLUMN_INDEX.CREATED_AT] || getCurrentTimestamp(), // 진단일시
+      
+      // 설문 결과를 JSON으로 저장
+      surveyResults: {
+        timestamp: rowData[COLUMN_INDEX.TIMESTAMP],
+        job: rowData[COLUMN_INDEX.JOB],
+        income: rowData[COLUMN_INDEX.INCOME],
+        debt: rowData[COLUMN_INDEX.DEBT],
+        asset: rowData[COLUMN_INDEX.ASSET],
+        marriage: rowData[COLUMN_INDEX.MARRIAGE],
+        children: rowData[COLUMN_INDEX.CHILDREN],
+        reductionAmount: rowData[COLUMN_INDEX.REDUCTION_AMT],
+        reductionRate: rowData[COLUMN_INDEX.REDUCTION_RATE],
+        approvalProbability: rowData[COLUMN_INDEX.AI_APPROVAL],
+        recommend: rowData[COLUMN_INDEX.RECOMMEND]
+      },
+      
+      // 메타 정보
+      surveyId: rowData[COLUMN_INDEX.TIMESTAMP] || Date.now().toString(),
+      surveyCompletedAt: new Date().toISOString()
+    };
+
+    // API 호출 (헤더 수정됨)
+    const response = UrlFetchApp.fetch(CRM_API_URL, {
+      method: 'POST',
+      contentType: 'application/json',
+      headers: {
+        'X-Survey-API-Key': CRM_API_KEY,  // 올바른 헤더 형식
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(leadData),
+      muteHttpExceptions: true
+    });
+
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    const timestamp = getCurrentTimestamp();
+    
+    Logger.log(`API 응답 코드: ${responseCode}`);
+    Logger.log(`API 응답 내용: ${responseText}`);
+
+    // 응답 처리
+    if (responseCode === 200 || responseCode === 201) {
+      // 성공
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        // JSON 파싱 실패 시에도 응답 코드가 성공이면 성공으로 처리
+        result = { success: true, message: responseText };
+      }
+      
+      sheet.getRange(rowNumber, COLUMN_INDEX.CRM_STATUS + 1).setValue('sent');
+      sheet.getRange(rowNumber, COLUMN_INDEX.SENT_TIME + 1).setValue(timestamp);
+      
+      Logger.log(`✅ CRM 전송 성공: 행 ${rowNumber}, ${name}, ${tel}`);
+      
+      return { 
+        success: true, 
+        row: rowNumber, 
+        name: name, 
+        tel: tel,
+        timestamp: timestamp,
+        response: result
+      };
+      
+    } else {
+      // 실패
+      let errorDetail;
+      try {
+        errorDetail = JSON.parse(responseText);
+      } catch (e) {
+        errorDetail = { message: responseText };
+      }
+      
+      const errorMsg = errorDetail.message || errorDetail.error || `HTTP ${responseCode}`;
+      
+      sheet.getRange(rowNumber, COLUMN_INDEX.CRM_STATUS + 1).setValue('fail');
+      sheet.getRange(rowNumber, COLUMN_INDEX.SENT_TIME + 1).setValue(`${timestamp} (실패: ${errorMsg})`);
+      
+      Logger.log(`❌ CRM 전송 실패: 행 ${rowNumber}, ${errorMsg}`);
+      
+      return { 
+        success: false, 
+        message: `CRM 전송 실패: ${errorMsg}`,
+        code: responseCode,
+        row: rowNumber
+      };
+    }
+
+  } catch (error) {
+    // 예외 처리
+    Logger.log(`⚠️ 예외 발생: 행 ${rowNumber}, ${error.toString()}`);
+    
+    try {
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      const sheet = ss.getSheetByName(SHEET_NAME);
+      if (sheet) {
+        sheet.getRange(rowNumber, COLUMN_INDEX.CRM_STATUS + 1).setValue('error');
+        sheet.getRange(rowNumber, COLUMN_INDEX.SENT_TIME + 1)
+          .setValue(`${getCurrentTimestamp()} (오류: ${error.message})`);
+      }
+    } catch (updateError) {
+      Logger.log(`상태 업데이트 실패: ${updateError.toString()}`);
+    }
+    
+    return { 
+      success: false, 
+      message: `오류 발생: ${error.message}`,
+      row: rowNumber
+    };
+    
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 마지막 행의 데이터를 CRM으로 전송 (트리거용)
+ */
+function sendToCRM() {
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      Logger.log('시트를 찾을 수 없습니다.');
+      return { success: false, message: '시트를 찾을 수 없습니다.' };
+    }
+    
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow <= 1) {
+      Logger.log('전송할 데이터가 없습니다.');
+      return { success: false, message: '전송할 데이터가 없습니다.' };
+    }
+    
+    return sendToCRMRow(lastRow);
+    
+  } catch (error) {
+    Logger.log(`sendToCRM 오류: ${error.toString()}`);
+    return { success: false, message: error.message };
+  }
+}
+
+/**
+ * 전송되지 않은 모든 데이터 일괄 전송
+ */
+function sendAllPendingToCRM() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  
+  if (!sheet) {
+    Logger.log('시트를 찾을 수 없습니다.');
+    return;
+  }
+  
+  const lastRow = sheet.getLastRow();
+  const results = {
+    success: 0,
+    fail: 0,
+    skip: 0,
+    errors: []
+  };
+  
+  Logger.log(`📋 일괄 전송 시작: 총 ${lastRow - 1}개 행 검사`);
+  
+  for (let row = 2; row <= lastRow; row++) {
+    const status = sheet.getRange(row, COLUMN_INDEX.CRM_STATUS + 1).getValue();
+    const statusLower = String(status).toLowerCase();
+    
+    if (!status || status === '' || statusLower === 'fail' || statusLower === 'error') {
+      Logger.log(`🔄 행 ${row} 전송 시도...`);
+      const result = sendToCRMRow(row);
+      
+      if (result.success) {
+        results.success++;
+      } else if (result.message?.includes('필수 데이터')) {
+        results.skip++;
+      } else {
+        results.fail++;
+        results.errors.push(`행 ${row}: ${result.message}`);
+      }
+      
+      // API 과부하 방지를 위한 딜레이
+      Utilities.sleep(1000);
+    }
+  }
+  
+  Logger.log(`✅ 일괄 전송 완료: 성공 ${results.success}, 실패 ${results.fail}, 건너뜀 ${results.skip}`);
+  
+  if (results.errors.length > 0) {
+    Logger.log('❌ 실패 목록:');
+    results.errors.forEach(error => Logger.log(error));
+  }
+  
+  return results;
+}
+
+// ===== 웹훅 처리 (Replit → Google Apps Script) =====
+/**
+ * POST 요청 처리 (웹훅)
+ */
+function doPost(e) {
+  try {
+    Logger.log('📥 웹훅 요청 수신');
+    
+    // 시트 확인
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      Logger.log('❌ 시트를 찾을 수 없습니다');
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          success: false,
+          error: '시트를 찾을 수 없습니다.'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 요청 데이터 파싱
+    const data = JSON.parse(e.postData.contents || '{}');
+    Logger.log('📝 수신 데이터:', JSON.stringify(data));
+
+    // Ping 테스트
+    if (data.action === 'ping') {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          success: true,
+          message: '마셈블 CRM 웹훅 연결 성공!',
+          timestamp: getCurrentTimestamp()
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 데이터 추가 및 CRM 전송
+    if (data.name && data.phone) {
+      // 새 행 데이터 준비 (CRM 필드 순서와 매칭)
+      const newRow = [
+        data.timestamp || Date.now().toString(),         // A: 빅데이터(타임스탬프)
+        data.name,                                       // B: 이름
+        data.phone,                                      // C: 연락처
+        data.정보1 || data.jobType || data.job || '',  // D: 직업
+        data.정보2 || data.monthlyIncome || '',         // E: 월소득(만원)
+        data.정보3 || data.totalDebt || '',             // F: 총채무(만원)
+        data.totalAsset || '',                          // G: 총자산
+        data.정보4 || data.marriageStatus || '',        // H: 결혼상태
+        data.정보5 || data.hasChildren || '',           // I: 자녀유무
+        data.정보6 || data.reductionAmount || '',       // J: 예상탕감액(만원)
+        data.정보7 || data.reductionRate || '',         // K: 탕감률(%)
+        data.정보8 || data.approvalProbability || '',   // L: AI승인확률(%)
+        data.정보9 || data.recommendedScheme || '',     // M: 권장방안(추천제도)
+        data.정보10 || data.createdAt || getCurrentTimestamp(), // N: 진단일시
+        '',                                              // O: CRM전송상태
+        ''                                               // P: 전송시간
+      ];
+
+      // 시트에 데이터 추가
+      sheet.appendRow(newRow);
+      SpreadsheetApp.flush(); // 즉시 반영
+      
+      // 추가된 행 번호 확인
+      const newRowNumber = sheet.getLastRow();
+      Logger.log(`✅ 새 데이터 추가: 행 ${newRowNumber}`);
+
+      // CRM으로 자동 전송 (옵션)
+      let crmResult = null;
+      if (data.autoSend !== false) {  // autoSend가 명시적으로 false가 아니면 자동 전송
+        crmResult = sendToCRMRow(newRowNumber);
+      }
+      
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          success: true,
+          message: '데이터가 성공적으로 추가되었습니다.',
+          row: newRowNumber,
+          crm: crmResult
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 잘못된 요청
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: '필수 데이터(name, phone)가 없습니다.'
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    Logger.log('❌ 웹훅 처리 오류:', error.toString());
+    
+    return ContentService
+      .createTextOutput(JSON.stringify({
+        success: false,
+        error: error.message
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * GET 요청 처리 (상태 확인)
+ */
+function doGet(e) {
+  const params = e.parameter;
+  
+  // 상태 확인
+  if (params.action === 'status') {
+    try {
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      const sheet = ss.getSheetByName(SHEET_NAME);
+      
+      if (!sheet) {
+        return ContentService
+          .createTextOutput(JSON.stringify({
+            success: false,
+            error: '시트를 찾을 수 없습니다.'
+          }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      const lastRow = sheet.getLastRow();
+      let sentCount = 0;
+      let pendingCount = 0;
+      let failCount = 0;
+      
+      if (lastRow > 1) {
+        const statusData = sheet.getRange(2, COLUMN_INDEX.CRM_STATUS + 1, lastRow - 1, 1).getValues();
+        statusData.forEach(row => {
+          const status = String(row[0]).toLowerCase();
+          if (status === 'yes' || status === 'sent') sentCount++;
+          else if (status === 'fail' || status === 'error') failCount++;
+          else if (!status || status === '') pendingCount++;
+        });
+      }
+      
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          success: true,
+          stats: {
+            total: lastRow - 1,
+            sent: sentCount,
+            pending: pendingCount,
+            failed: failCount
+          },
+          timestamp: getCurrentTimestamp()
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+        
+    } catch (error) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          success: false,
+          error: error.message
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  
+  // 기본 응답
+  return ContentService
+    .createTextOutput(JSON.stringify({
+      success: true,
+      message: '마셈블 CRM 웹훅이 활성화되어 있습니다.',
+      endpoints: {
+        post: '데이터 추가 및 CRM 전송',
+        get: '상태 확인 (?action=status)'
+      },
+      timestamp: getCurrentTimestamp()
+    }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== 자동 전송 트리거 함수 =====
+/**
+ * 시트에 변경사항이 있을 때 자동 실행 (onChange 트리거용)
+ */
+function onSheetChange(e) {
+  try {
+    // 변경 타입이 'INSERT_ROW' 또는 'OTHER'인 경우에만 처리
+    if (!e || (e.changeType !== 'INSERT_ROW' && e.changeType !== 'OTHER')) {
+      return;
+    }
+    
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) return;
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
+    
+    // 마지막 행의 CRM 상태 확인
+    const crmStatus = sheet.getRange(lastRow, COLUMN_INDEX.CRM_STATUS + 1).getValue();
+    
+    // 상태가 비어있거나 전송되지 않은 경우에만 전송
+    if (!crmStatus || crmStatus === '') {
+      Logger.log(`📤 새 데이터 감지 - 행 ${lastRow} CRM 자동 전송 시작`);
+      const result = sendToCRMRow(lastRow);
+      Logger.log(`전송 결과:`, JSON.stringify(result));
+    }
+  } catch (error) {
+    Logger.log(`onChange 에러: ${error.toString()}`);
+  }
+}
+
+/**
+ * 양식 제출 시 자동 실행 (onFormSubmit 트리거용)
+ */
+function onFormSubmit(e) {
+  try {
+    Logger.log('📥 양식 제출 감지');
+    
+    const sheet = e.range.getSheet();
+    if (sheet.getName() !== SHEET_NAME) return;
+    
+    const row = e.range.getRow();
+    Logger.log(`📤 행 ${row} CRM 자동 전송 시작`);
+    
+    // 잠시 대기 (데이터가 완전히 기록되도록)
+    Utilities.sleep(1000);
+    
+    const result = sendToCRMRow(row);
+    Logger.log(`전송 결과:`, JSON.stringify(result));
+    
+  } catch (error) {
+    Logger.log(`onFormSubmit 에러: ${error.toString()}`);
+  }
+}
+
+/**
+ * 시트 편집 시 자동 실행 (onEdit 트리거용 - 수동 입력 감지)
+ */
+function onEdit(e) {
+  try {
+    if (!e) return;
+    
+    const sheet = e.source.getActiveSheet();
+    if (sheet.getName() !== SHEET_NAME) return;
+    
+    const row = e.range.getRow();
+    const col = e.range.getColumn();
+    
+    // 헤더 행이거나 CRM 상태/전송시간 열 편집은 무시
+    if (row <= 1 || col === COLUMN_INDEX.CRM_STATUS + 1 || col === COLUMN_INDEX.SENT_TIME + 1) {
+      return;
+    }
+    
+    // B열(이름)이나 C열(전화번호)이 입력되었는지 확인
+    if (col === COLUMN_INDEX.NAME + 1 || col === COLUMN_INDEX.PHONE + 1) {
+      const nameValue = sheet.getRange(row, COLUMN_INDEX.NAME + 1).getValue();
+      const phoneValue = sheet.getRange(row, COLUMN_INDEX.PHONE + 1).getValue();
+      const crmStatus = sheet.getRange(row, COLUMN_INDEX.CRM_STATUS + 1).getValue();
+      
+      // 이름과 전화번호가 모두 있고, CRM 상태가 비어있으면 전송
+      if (nameValue && phoneValue && !crmStatus) {
+        Logger.log(`✍️ 수동 입력 감지 - 행 ${row} CRM 자동 전송 예약`);
+        
+        // 비동기 처리를 위해 시간 기반 트리거 생성
+        ScriptApp.newTrigger('processManualEntry')
+          .timeBased()
+          .after(5000) // 5초 후 실행
+          .create();
+        
+        // 임시로 행 번호 저장
+        PropertiesService.getScriptProperties().setProperty('pendingRow', row.toString());
+      }
+    }
+  } catch (error) {
+    Logger.log(`onEdit 에러: ${error.toString()}`);
+  }
+}
+
+/**
+ * 수동 입력 처리 (시간 기반 트리거에서 실행)
+ */
+function processManualEntry() {
+  try {
+    const rowStr = PropertiesService.getScriptProperties().getProperty('pendingRow');
+    if (!rowStr) return;
+    
+    const row = parseInt(rowStr);
+    PropertiesService.getScriptProperties().deleteProperty('pendingRow');
+    
+    Logger.log(`⏰ 지연 전송 실행 - 행 ${row}`);
+    const result = sendToCRMRow(row);
+    Logger.log(`전송 결과:`, JSON.stringify(result));
+    
+  } catch (error) {
+    Logger.log(`processManualEntry 에러: ${error.toString()}`);
+  }
+}
+
+// ===== 트리거 설정 함수 =====
+/**
+ * 모든 트리거 설치 (초기 설정용)
+ */
+function installTriggers() {
+  // 기존 트리거 모두 삭제
+  deleteTriggers();
+  
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  
+  // 1. onChange 트리거 - 시트 변경 감지
+  ScriptApp.newTrigger('onSheetChange')
+    .forSpreadsheet(ss)
+    .onChange()
+    .create();
+  
+  // 2. onEdit 트리거 - 수동 편집 감지
+  ScriptApp.newTrigger('onEdit')
+    .forSpreadsheet(ss)
+    .onEdit()
+    .create();
+  
+  // 3. onFormSubmit 트리거 (구글 폼 연결된 경우)
+  try {
+    ScriptApp.newTrigger('onFormSubmit')
+      .forSpreadsheet(ss)
+      .onFormSubmit()
+      .create();
+    Logger.log('✅ 양식 제출 트리거 설치 완료');
+  } catch (e) {
+    Logger.log('ℹ️ 양식이 연결되어 있지 않아 onFormSubmit 트리거는 생략됨');
+  }
+  
+  Logger.log('✅ 모든 트리거 설치 완료!');
+  
+  // 설치된 트리거 목록 표시
+  listTriggers();
+}
+
+/**
+ * 모든 트리거 삭제
+ */
+function deleteTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(trigger => {
+    ScriptApp.deleteTrigger(trigger);
+  });
+  Logger.log(`🗑️ ${triggers.length}개의 트리거가 삭제되었습니다.`);
+}
+
+/**
+ * 현재 설치된 트리거 목록 확인
+ */
+function listTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  
+  if (triggers.length === 0) {
+    Logger.log('❌ 설치된 트리거가 없습니다.');
+    return;
+  }
+  
+  Logger.log(`📋 현재 설치된 트리거 (${triggers.length}개):`);
+  triggers.forEach((trigger, index) => {
+    const handlerFunction = trigger.getHandlerFunction();
+    const eventType = trigger.getEventType();
+    Logger.log(`  ${index + 1}. ${handlerFunction} (${eventType})`);
+  });
+}
+/**
+ * 특정 행 테스트
+ */
+function testSendRow() {
+  const testRow = 2; // 테스트할 행 번호
+  Logger.log(`========== 행 ${testRow} 테스트 시작 ==========`);
+  const result = sendToCRMRow(testRow);
+  Logger.log('테스트 결과:', JSON.stringify(result, null, 2));
+  Logger.log(`========== 테스트 종료 ==========`);
+  return result;
+}
+
+/**
+ * 웹훅 테스트
+ */
+function testWebhook() {
+  const testData = {
+    postData: {
+      contents: JSON.stringify({
+        name: '테스트고객',
+        phone: '010-1234-5678',
+        jobType: '회사원',
+        monthlyIncome: '300',
+        totalDebt: '5000',
+        totalAsset: '1000',
+        marriageStatus: '기혼',
+        hasChildren: '있음',
+        reductionAmount: '2500',
+        reductionRate: '50',
+        approvalProbability: '75',
+        recommendedScheme: '개인회생',
+        autoSend: false,  // 테스트 시 자동 전송 비활성화
+        timestamp: Date.now().toString()
+      })
+    }
+  };
+  
+  Logger.log('========== 웹훅 테스트 시작 ==========');
+  const result = doPost(testData);
+  Logger.log('웹훅 테스트 결과:', result.getContent());
+  Logger.log('========== 웹훅 테스트 종료 ==========');
+  return JSON.parse(result.getContent());
+}
+
+/**
+ * API 연결 테스트
+ */
+function testAPIConnection() {
+  Logger.log('========== API 연결 테스트 시작 ==========');
+  
+  try {
+    const testData = {
+      // 필수 필드
+      name: 'API테스트',
+      phone: '01099999999',
+      
+      // 상담 정보
+      consultType: '채무상담',
+      consultPath: '보탐정설문',
+      source: 'GoogleSheetTest',
+      
+      // info1~info10에 테스트 데이터
+      info1: '회사원',        // 직업
+      info2: '400',          // 월소득(만원)
+      info3: '5000',         // 총채무(만원)
+      info4: '기혼',         // 결혼상태
+      info5: '있음',         // 자녀유무
+      info6: '2500',         // 탕감액(만원)
+      info7: '50',           // 탕감률(%)
+      info8: '75',           // 승인확률(%)
+      info9: '개인회생',      // 권장방안
+      info10: getCurrentTimestamp(), // 진단일시
+      
+      // 설문 결과 JSON
+      surveyResults: {
+        job: '회사원',
+        income: '400',
+        debt: '5000',
+        marriage: '기혼',
+        children: '있음',
+        reductionAmount: '2500',
+        reductionRate: '50',
+        approvalProbability: '75',
+        recommend: '개인회생'
+      },
+      
+      surveyId: Date.now().toString(),
+      surveyCompletedAt: new Date().toISOString()
+    };
+    
+    Logger.log('테스트 데이터:', JSON.stringify(testData, null, 2));
+    Logger.log('API URL:', CRM_API_URL);
+    
+    const response = UrlFetchApp.fetch(CRM_API_URL, {
+      method: 'POST',
+      contentType: 'application/json',
+      headers: {
+        'X-Survey-API-Key': CRM_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      payload: JSON.stringify(testData),
+      muteHttpExceptions: true
+    });
+    
+    Logger.log('응답 코드:', response.getResponseCode());
+    Logger.log('응답 내용:', response.getContentText());
+    
+    return {
+      success: response.getResponseCode() === 200 || response.getResponseCode() === 201,
+      code: response.getResponseCode(),
+      response: response.getContentText()
+    };
+    
+  } catch (error) {
+    Logger.log('API 연결 실패:', error.toString());
+    return {
+      success: false,
+      error: error.message
+    };
+  } finally {
+    Logger.log('========== API 연결 테스트 종료 ==========');
+  }
+}
