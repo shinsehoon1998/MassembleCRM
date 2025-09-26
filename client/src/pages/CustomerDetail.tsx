@@ -17,12 +17,13 @@ import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { ArrowLeft, Edit, Plus, FileText, Clock, User, Phone, MapPin, Briefcase, Calendar } from "lucide-react";
 import type { CustomerWithUser, Consultation, Attachment, ActivityLog } from "@shared/schema";
+import CustomerModal from "@/components/CustomerModal";
 
 export default function CustomerDetail() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
-  const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [newConsultNote, setNewConsultNote] = useState("");
   const [newConsultType, setNewConsultType] = useState("");
 
@@ -47,6 +48,10 @@ export default function CustomerDetail() {
   const { data: activityLogs = [] } = useQuery<ActivityLog[]>({
     queryKey: [`/api/customers/${params.id}/activity-logs`],
     enabled: !!params.id,
+  });
+
+  const { data: counselors = [] } = useQuery<any[]>({
+    queryKey: ["/api/users/counselors"],
   });
 
   const createConsultationMutation = useMutation({
@@ -201,7 +206,7 @@ export default function CustomerDetail() {
             </div>
           </div>
         </div>
-        <Button onClick={() => setIsEditMode(true)} data-testid="button-edit-customer">
+        <Button onClick={() => setIsEditModalOpen(true)} data-testid="button-edit-customer">
           <Edit className="h-4 w-4 mr-2" />
           수정
         </Button>
@@ -456,18 +461,18 @@ export default function CustomerDetail() {
                     >
                       <div className="flex items-center justify-between mb-2">
                         <Badge variant="outline" data-testid="consultation-type">
-                          {consultation.type}
+                          {consultation.consultType}
                         </Badge>
                         <span className="text-sm text-gray-500" data-testid="consultation-date">
                           {format(new Date(consultation.createdAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })}
                         </span>
                       </div>
                       <p className="whitespace-pre-wrap" data-testid="consultation-notes">
-                        {consultation.notes}
+                        {consultation.content}
                       </p>
-                      {consultation.counselorUser && (
+                      {consultation.user && (
                         <p className="text-sm text-gray-500 mt-2" data-testid="consultation-counselor">
-                          상담자: {consultation.counselorUser.name}
+                          상담자: {consultation.user.name}
                         </p>
                       )}
                     </div>
@@ -592,6 +597,14 @@ export default function CustomerDetail() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Customer Edit Modal */}
+      <CustomerModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        customer={customer}
+        counselors={counselors}
+      />
     </div>
   );
 }
