@@ -6188,11 +6188,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const appointmentData = {
             customerId,
             counselorId,
-            type: consultationType,
+            title: `${consultationType} - 일괄 예약`,
             startAt: appointmentStartTime,
             endAt: appointmentEndTime,
             status: 'scheduled' as const,
-            notes: notes || `일괄 예약 생성 (${new Date().toLocaleDateString('ko-KR')})`
+            location: consultationType === '방문상담' ? 'visit' : consultationType === '화상상담' ? 'video' : 'phone',
+            notes: notes || `일괄 예약 생성 (${new Date().toLocaleDateString('ko-KR')})`,
+            createdBy: req.user.id
           };
 
           const validatedData = insertAppointmentSchema.parse(appointmentData);
