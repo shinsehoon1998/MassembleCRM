@@ -144,12 +144,35 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Appointments table
+export const appointments = pgTable("appointments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  customerId: varchar("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  counselorId: varchar("counselor_id").notNull().references(() => users.id),
+  title: varchar("title").notNull(),
+  notes: text("notes"),
+  startAt: timestamp("start_at").notNull(),
+  endAt: timestamp("end_at").notNull(),
+  status: varchar("status").notNull().default("scheduled"), // scheduled, completed, cancelled
+  reminderOffsetMinutes: integer("reminder_offset_minutes").default(10),
+  remindPopup: boolean("remind_popup").default(true),
+  remindSms: boolean("remind_sms").default(false),
+  location: varchar("location").default("phone"), // phone, visit, video
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  lastPopupAt: timestamp("last_popup_at"),
+  lastSmsAt: timestamp("last_sms_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   customers: many(customers),
   consultations: many(consultations),
   activityLogs: many(activityLogs),
   attachments: many(attachments),
+  appointments: many(appointments),
+  createdAppointments: many(appointments, { relationName: "createdAppointments" }),
 }));
 
 export const customersRelations = relations(customers, ({ one, many }) => ({
@@ -164,6 +187,7 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   consultations: many(consultations),
   activityLogs: many(activityLogs),
   attachments: many(attachments),
+  appointments: many(appointments),
 }));
 
 export const consultationsRelations = relations(consultations, ({ one }) => ({
@@ -196,6 +220,22 @@ export const attachmentsRelations = relations(attachments, ({ one }) => ({
   uploader: one(users, {
     fields: [attachments.uploadedBy],
     references: [users.id],
+  }),
+}));
+
+export const appointmentsRelations = relations(appointments, ({ one }) => ({
+  customer: one(customers, {
+    fields: [appointments.customerId],
+    references: [customers.id],
+  }),
+  counselor: one(users, {
+    fields: [appointments.counselorId],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [appointments.createdBy],
+    references: [users.id],
+    relationName: "createdAppointments",
   }),
 }));
 
@@ -249,6 +289,16 @@ export const updateSystemSettingSchema = createInsertSchema(systemSettings).pick
   value: true,
 });
 
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastPopupAt: true,
+  lastSmsAt: true,
+});
+
+export const updateAppointmentSchema = insertAppointmentSchema.partial();
+
 // Types
 export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -264,6 +314,9 @@ export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
+export type Appointment = typeof appointments.$inferSelect;
+export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
+export type UpdateAppointment = z.infer<typeof updateAppointmentSchema>;
 
 // 고객 그룹 (arsCampaigns 앞에 먼저 정의)
 export const customerGroups = pgTable("customer_groups", {
