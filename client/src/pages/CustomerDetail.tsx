@@ -50,6 +50,11 @@ export default function CustomerDetail() {
     enabled: !!params.id,
   });
 
+  const { data: appointments = [] } = useQuery<any[]>({
+    queryKey: [`/api/appointments`, { customerId: params.id }],
+    enabled: !!params.id,
+  });
+
   const { data: counselors = [] } = useQuery<any[]>({
     queryKey: ["/api/users/counselors"],
   });
@@ -214,9 +219,10 @@ export default function CustomerDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview" data-testid="tab-overview">개요</TabsTrigger>
           <TabsTrigger value="consultations" data-testid="tab-consultations">상담 기록</TabsTrigger>
+          <TabsTrigger value="appointments" data-testid="tab-appointments">예약</TabsTrigger>
           <TabsTrigger value="attachments" data-testid="tab-attachments">첨부파일</TabsTrigger>
           <TabsTrigger value="timeline" data-testid="tab-timeline">활동 기록</TabsTrigger>
         </TabsList>
@@ -593,6 +599,108 @@ export default function CustomerDetail() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Appointments Tab */}
+        <TabsContent value="appointments" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                예약 관리
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Add New Appointment Button */}
+                <div className="flex justify-end">
+                  <Button 
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    data-testid="button-add-appointment"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    새 예약 추가
+                  </Button>
+                </div>
+
+                {/* Appointments List */}
+                {appointments.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                    <Calendar className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-500 text-lg font-medium mb-2">예약이 없습니다</p>
+                    <p className="text-gray-400 text-sm">첫 번째 예약을 추가해보세요.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {appointments.map((appointment) => (
+                      <div 
+                        key={appointment.id}
+                        className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                        data-testid={`appointment-${appointment.id}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h4 className="font-medium text-gray-900">{appointment.title}</h4>
+                              <Badge 
+                                variant={appointment.status === 'scheduled' ? 'default' : 
+                                        appointment.status === 'completed' ? 'success' :
+                                        appointment.status === 'cancelled' ? 'destructive' : 'secondary'}
+                                className="text-xs"
+                              >
+                                {appointment.status === 'scheduled' ? '예정' :
+                                 appointment.status === 'completed' ? '완료' :
+                                 appointment.status === 'cancelled' ? '취소' : '기타'}
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-gray-600 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4" />
+                                <span>
+                                  {format(new Date(appointment.startAt), 'yyyy년 MM월 dd일 (E) HH:mm', { locale: ko })}
+                                  {' - '}
+                                  {format(new Date(appointment.endAt), 'HH:mm', { locale: ko })}
+                                </span>
+                              </div>
+                              {appointment.location && (
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="h-4 w-4" />
+                                  <span>{appointment.location}</span>
+                                </div>
+                              )}
+                              {appointment.notes && (
+                                <div className="mt-2">
+                                  <p className="text-gray-700">{appointment.notes}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 ml-4">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-blue-600 hover:text-blue-700"
+                              data-testid={`button-edit-appointment-${appointment.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-700"
+                              data-testid={`button-delete-appointment-${appointment.id}`}
+                            >
+                              <i className="fas fa-trash text-sm"></i>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
