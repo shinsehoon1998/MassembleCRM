@@ -47,6 +47,13 @@ export default function Customers() {
   const [showBatchActions, setShowBatchActions] = useState(false);
   const [showArsModal, setShowArsModal] = useState(false);
   const [showBatchAppointmentModal, setShowBatchAppointmentModal] = useState(false);
+  const [batchAppointmentData, setBatchAppointmentData] = useState({
+    appointmentDate: "",
+    appointmentTime: "",
+    counselorId: "",
+    consultationType: "",
+    notes: ""
+  });
   const [arsData, setArsData] = useState({
     sendNumber: "",
     scenarioId: "marketing_consent",
@@ -429,6 +436,13 @@ export default function Customers() {
   };
 
   const handleBatchAppointment = () => {
+    setBatchAppointmentData({
+      appointmentDate: "",
+      appointmentTime: "",
+      counselorId: "",
+      consultationType: "",
+      notes: ""
+    });
     setShowBatchAppointmentModal(true);
   };
 
@@ -1660,6 +1674,8 @@ export default function Customers() {
                   id="appointment-date"
                   type="date"
                   min={new Date().toISOString().split('T')[0]}
+                  value={batchAppointmentData.appointmentDate}
+                  onChange={(e) => setBatchAppointmentData(prev => ({ ...prev, appointmentDate: e.target.value }))}
                   data-testid="input-batch-appointment-date"
                 />
               </div>
@@ -1668,6 +1684,8 @@ export default function Customers() {
                 <Input
                   id="appointment-time"
                   type="time"
+                  value={batchAppointmentData.appointmentTime}
+                  onChange={(e) => setBatchAppointmentData(prev => ({ ...prev, appointmentTime: e.target.value }))}
                   data-testid="input-batch-appointment-time"
                 />
               </div>
@@ -1675,7 +1693,11 @@ export default function Customers() {
 
             <div>
               <Label htmlFor="counselor-select">담당 상담사</Label>
-              <Select data-testid="select-batch-counselor">
+              <Select 
+                value={batchAppointmentData.counselorId}
+                onValueChange={(value) => setBatchAppointmentData(prev => ({ ...prev, counselorId: value }))}
+                data-testid="select-batch-counselor"
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="담당 상담사를 선택하세요" />
                 </SelectTrigger>
@@ -1691,7 +1713,11 @@ export default function Customers() {
 
             <div>
               <Label htmlFor="consultation-type">상담 유형</Label>
-              <Select data-testid="select-batch-consultation-type">
+              <Select 
+                value={batchAppointmentData.consultationType}
+                onValueChange={(value) => setBatchAppointmentData(prev => ({ ...prev, consultationType: value }))}
+                data-testid="select-batch-consultation-type"
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="상담 유형을 선택하세요" />
                 </SelectTrigger>
@@ -1707,9 +1733,10 @@ export default function Customers() {
             <div>
               <Label htmlFor="appointment-notes">메모 (선택사항)</Label>
               <Textarea
-                id="appointment-notes"
                 placeholder="예약에 대한 추가 메모를 입력하세요..."
                 rows={3}
+                value={batchAppointmentData.notes}
+                onChange={(e) => setBatchAppointmentData(prev => ({ ...prev, notes: e.target.value }))}
                 data-testid="textarea-batch-appointment-notes"
               />
             </div>
@@ -1724,13 +1751,7 @@ export default function Customers() {
               </Button>
               <Button
                 onClick={() => {
-                  const dateInput = document.getElementById('appointment-date') as HTMLInputElement;
-                  const timeInput = document.getElementById('appointment-time') as HTMLInputElement;
-                  const counselorSelect = document.querySelector('[data-testid="select-batch-counselor"] [data-value]') as HTMLElement;
-                  const consultationTypeSelect = document.querySelector('[data-testid="select-batch-consultation-type"] [data-value]') as HTMLElement;
-                  const notesTextarea = document.getElementById('appointment-notes') as HTMLTextAreaElement;
-
-                  if (!dateInput.value || !timeInput.value) {
+                  if (!batchAppointmentData.appointmentDate || !batchAppointmentData.appointmentTime) {
                     toast({
                       title: "입력 오류",
                       description: "예약 날짜와 시간을 모두 입력해주세요.",
@@ -1739,13 +1760,31 @@ export default function Customers() {
                     return;
                   }
 
+                  if (!batchAppointmentData.counselorId) {
+                    toast({
+                      title: "입력 오류",
+                      description: "담당 상담사를 선택해주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  if (!batchAppointmentData.consultationType) {
+                    toast({
+                      title: "입력 오류",
+                      description: "상담 유형을 선택해주세요.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
                   batchAppointmentMutation.mutate({
                     customerIds: selectedCustomers,
-                    appointmentDate: dateInput.value,
-                    appointmentTime: timeInput.value,
-                    counselorId: counselorSelect?.getAttribute('data-value') || '',
-                    consultationType: consultationTypeSelect?.getAttribute('data-value') || '전화상담',
-                    notes: notesTextarea?.value || ''
+                    appointmentDate: batchAppointmentData.appointmentDate,
+                    appointmentTime: batchAppointmentData.appointmentTime,
+                    counselorId: batchAppointmentData.counselorId,
+                    consultationType: batchAppointmentData.consultationType,
+                    notes: batchAppointmentData.notes
                   });
                 }}
                 disabled={batchAppointmentMutation.isPending}
