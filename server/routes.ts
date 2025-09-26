@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, smsVerificationSendSchema, smsVerificationVerifySchema, surveyImportSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, insertAppointmentSchema, updateAppointmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, smsVerificationSendSchema, smsVerificationVerifySchema, surveyImportSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -5896,6 +5896,245 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: '설문조사 연동 상태 확인 중 오류가 발생했습니다.'
       });
+    }
+  });
+
+  // ============================================
+  // APPOINTMENTS API ROUTES
+  // ============================================
+
+  /**
+   * 예약 목록 조회
+   * GET /api/appointments
+   */
+  app.get('/api/appointments', isAuthenticated, async (req: any, res) => {
+    try {
+      const {
+        from,
+        to,
+        counselorId,
+        customerId,
+        status,
+        page = 1,
+        limit = 20
+      } = req.query;
+
+      const user = req.user;
+      let filteredParams = { from, to, counselorId, customerId, status, page: Number(page), limit: Number(limit) };
+
+      // Role-based filtering: counselors can only see their own appointments
+      if (user.role === 'counselor') {
+        filteredParams.counselorId = user.id;
+      }
+
+      const result = await storage.getAppointments(filteredParams);
+      res.json(result);
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+      res.status(500).json({ message: '예약 목록을 불러오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  /**
+   * 개별 예약 조회
+   * GET /api/appointments/:id
+   */
+  app.get('/api/appointments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const appointment = await storage.getAppointment(id);
+      
+      if (!appointment) {
+        return res.status(404).json({ message: '예약을 찾을 수 없습니다.' });
+      }
+
+      // Role-based access control
+      const user = req.user;
+      if (user.role === 'counselor' && appointment.counselorId !== user.id) {
+        return res.status(403).json({ message: '이 예약에 접근할 권한이 없습니다.' });
+      }
+
+      res.json(appointment);
+    } catch (error) {
+      console.error('Error fetching appointment:', error);
+      res.status(500).json({ message: '예약 정보를 불러오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  /**
+   * 예약 생성
+   * POST /api/appointments
+   */
+  app.post('/api/appointments', isAuthenticated, async (req: any, res) => {
+    try {
+      const validatedData = insertAppointmentSchema.parse(req.body);
+      
+      // Check for conflicts
+      const conflicts = await storage.checkAppointmentConflicts(
+        validatedData.startAt,
+        validatedData.endAt,
+        validatedData.counselorId,
+        validatedData.customerId
+      );
+
+      if (conflicts.length > 0) {
+        return res.status(409).json({
+          message: '선택한 시간에 이미 다른 예약이 있습니다.',
+          conflicts: conflicts
+        });
+      }
+
+      // Role-based validation: counselors can only create appointments for themselves
+      const user = req.user;
+      if (user.role === 'counselor' && validatedData.counselorId !== user.id) {
+        return res.status(403).json({ message: '다른 상담사의 예약을 생성할 권한이 없습니다.' });
+      }
+
+      const appointment = await storage.createAppointment(validatedData);
+      res.status(201).json(appointment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: '입력 데이터가 올바르지 않습니다.', errors: error.errors });
+      }
+      console.error('Error creating appointment:', error);
+      res.status(500).json({ message: '예약 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  /**
+   * 예약 수정
+   * PUT /api/appointments/:id
+   */
+  app.put('/api/appointments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const validatedData = updateAppointmentSchema.parse(req.body);
+
+      // Check existing appointment
+      const existingAppointment = await storage.getAppointment(id);
+      if (!existingAppointment) {
+        return res.status(404).json({ message: '예약을 찾을 수 없습니다.' });
+      }
+
+      // Role-based access control
+      const user = req.user;
+      if (user.role === 'counselor' && existingAppointment.counselorId !== user.id) {
+        return res.status(403).json({ message: '이 예약을 수정할 권한이 없습니다.' });
+      }
+
+      // Check for conflicts if time/date is being changed
+      if (validatedData.startAt || validatedData.endAt || validatedData.counselorId || validatedData.customerId) {
+        const startAt = validatedData.startAt || existingAppointment.startAt;
+        const endAt = validatedData.endAt || existingAppointment.endAt;
+        const counselorId = validatedData.counselorId || existingAppointment.counselorId;
+        const customerId = validatedData.customerId || existingAppointment.customerId;
+
+        const conflicts = await storage.checkAppointmentConflicts(
+          startAt,
+          endAt,
+          counselorId,
+          customerId,
+          id // exclude current appointment
+        );
+
+        if (conflicts.length > 0) {
+          return res.status(409).json({
+            message: '선택한 시간에 이미 다른 예약이 있습니다.',
+            conflicts: conflicts
+          });
+        }
+      }
+
+      const updatedAppointment = await storage.updateAppointment(id, validatedData);
+      res.json(updatedAppointment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: '입력 데이터가 올바르지 않습니다.', errors: error.errors });
+      }
+      console.error('Error updating appointment:', error);
+      res.status(500).json({ message: '예약 수정 중 오류가 발생했습니다.' });
+    }
+  });
+
+  /**
+   * 예약 삭제
+   * DELETE /api/appointments/:id
+   */
+  app.delete('/api/appointments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Check existing appointment for access control
+      const existingAppointment = await storage.getAppointment(id);
+      if (!existingAppointment) {
+        return res.status(404).json({ message: '예약을 찾을 수 없습니다.' });
+      }
+
+      // Role-based access control
+      const user = req.user;
+      if (user.role === 'counselor' && existingAppointment.counselorId !== user.id) {
+        return res.status(403).json({ message: '이 예약을 삭제할 권한이 없습니다.' });
+      }
+
+      const success = await storage.deleteAppointment(id);
+      if (success) {
+        res.json({ message: '예약이 삭제되었습니다.' });
+      } else {
+        res.status(404).json({ message: '예약을 찾을 수 없습니다.' });
+      }
+    } catch (error) {
+      console.error('Error deleting appointment:', error);
+      res.status(500).json({ message: '예약 삭제 중 오류가 발생했습니다.' });
+    }
+  });
+
+  /**
+   * 예약 알림 조회 (10분 이내 시작하는 예약들)
+   * GET /api/appointments/reminders
+   */
+  app.get('/api/appointments/reminders', isAuthenticated, async (req: any, res) => {
+    try {
+      const { windowMinutes = 15 } = req.query;
+      const user = req.user;
+      
+      const reminders = await storage.getAppointmentReminders(Number(windowMinutes));
+      
+      // Role-based filtering: counselors only see their own reminders
+      const filteredReminders = user.role === 'counselor' 
+        ? reminders.filter(appointment => appointment.counselorId === user.id)
+        : reminders;
+
+      res.json(filteredReminders);
+    } catch (error) {
+      console.error('Error fetching appointment reminders:', error);
+      res.status(500).json({ message: '예약 알림을 불러오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  /**
+   * 예약 충돌 확인
+   * POST /api/appointments/check-conflicts
+   */
+  app.post('/api/appointments/check-conflicts', isAuthenticated, async (req: any, res) => {
+    try {
+      const { startAt, endAt, counselorId, customerId, excludeId } = req.body;
+      
+      if (!startAt || !endAt || !counselorId || !customerId) {
+        return res.status(400).json({ message: '필수 파라미터가 누락되었습니다.' });
+      }
+
+      const conflicts = await storage.checkAppointmentConflicts(
+        new Date(startAt),
+        new Date(endAt),
+        counselorId,
+        customerId,
+        excludeId
+      );
+
+      res.json({ conflicts });
+    } catch (error) {
+      console.error('Error checking appointment conflicts:', error);
+      res.status(500).json({ message: '예약 충돌 확인 중 오류가 발생했습니다.' });
     }
   });
 
