@@ -1028,7 +1028,7 @@ export default function Customers() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {customersData?.customers?.map((customer, index) => {
-                    const customerNumber = customersData.total - ((searchParams.page - 1) * searchParams.limit) - index;
+                    const customerNumber = ((searchParams.page - 1) * searchParams.limit) + index + 1;
                     return (
                       <tr key={customer.id} className="hover:bg-gray-50" data-testid={`row-customer-${customer.id}`}>
                         <td className="px-6 py-4 whitespace-nowrap" style={{ width: `${columnWidths.checkbox}px` }}>
@@ -1232,7 +1232,7 @@ export default function Customers() {
               
               <div className="space-y-4 p-4">
                 {customersData?.customers?.map((customer, index) => {
-                  const customerNumber = customersData.total - ((searchParams.page - 1) * searchParams.limit) - index;
+                  const customerNumber = ((searchParams.page - 1) * searchParams.limit) + index + 1;
                   return (
                     <div key={customer.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm" data-testid={`card-customer-${customer.id}`}>
                       <div className="flex items-start justify-between mb-3">

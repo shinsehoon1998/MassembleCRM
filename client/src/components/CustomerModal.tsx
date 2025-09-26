@@ -79,7 +79,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         zipcode: customer.zipcode || "",
         address: customer.address || "",
         addressDetail: customer.addressDetail || "",
-        debtAmount: customer.debtAmount?.toString() || "",
+        debtAmount: "",
         monthlyIncome: customer.monthlyIncome?.toString() || "",
         jobType: customer.jobType || "",
         companyName: customer.companyName || "",
