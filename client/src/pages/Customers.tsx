@@ -127,6 +127,10 @@ export default function Customers() {
     queryKey: ['/api/system-settings'],
   });
 
+  const { data: currentUser } = useQuery<any>({
+    queryKey: ["/api/auth/user"],
+  });
+
   // 환경설정에서 상태 항목들 추출
   const statusOptions = systemSettings
     .filter((setting: any) => setting.category === '상태항목')
@@ -439,7 +443,7 @@ export default function Customers() {
     setBatchAppointmentData({
       appointmentDate: "",
       appointmentTime: "",
-      counselorId: "",
+      counselorId: currentUser?.role === 'admin' ? "" : currentUser?.id || "",
       consultationType: "",
       notes: ""
     });
@@ -1623,7 +1627,7 @@ export default function Customers() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         customer={editingCustomer}
-        counselors={counselors}
+        counselors={counselors || []}
       />
 
       {/* Appointment Modal */}
@@ -1632,7 +1636,7 @@ export default function Customers() {
         onClose={() => setIsAppointmentModalOpen(false)}
         customerId={appointmentCustomer?.id || ""}
         customerName={appointmentCustomer?.name}
-        counselors={counselors}
+        counselors={counselors || []}
       />
 
       {/* Batch Appointment Modal */}
@@ -1691,25 +1695,27 @@ export default function Customers() {
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="counselor-select">담당 상담사</Label>
-              <Select 
-                value={batchAppointmentData.counselorId}
-                onValueChange={(value) => setBatchAppointmentData(prev => ({ ...prev, counselorId: value }))}
-                data-testid="select-batch-counselor"
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="담당 상담사를 선택하세요" />
-                </SelectTrigger>
-                <SelectContent>
-                  {counselors?.map((counselor) => (
-                    <SelectItem key={counselor.id} value={counselor.id}>
-                      {counselor.username} ({counselor.lastName} {counselor.firstName})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {currentUser?.role === 'admin' && (
+              <div>
+                <Label htmlFor="counselor-select">담당 상담사</Label>
+                <Select 
+                  value={batchAppointmentData.counselorId}
+                  onValueChange={(value) => setBatchAppointmentData(prev => ({ ...prev, counselorId: value }))}
+                  data-testid="select-batch-counselor"
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="담당 상담사를 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {counselors?.map((counselor) => (
+                      <SelectItem key={counselor.id} value={counselor.id}>
+                        {counselor.username} ({counselor.lastName} {counselor.firstName})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div>
               <Label htmlFor="consultation-type">상담 유형</Label>
@@ -1763,7 +1769,7 @@ export default function Customers() {
                   if (!batchAppointmentData.counselorId) {
                     toast({
                       title: "입력 오류",
-                      description: "담당 상담사를 선택해주세요.",
+                      description: currentUser?.role === 'admin' ? "담당 상담사를 선택해주세요." : "사용자 정보를 확인할 수 없습니다.",
                       variant: "destructive",
                     });
                     return;
