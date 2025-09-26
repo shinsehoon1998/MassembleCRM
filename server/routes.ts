@@ -171,13 +171,37 @@ function csrfProtection(req: any, res: any, next: any) {
 }
 
 // ============================================
-// SMS 발송 헬퍼 함수들
+// SMS 발송 및 인증 헬퍼 함수들
 // ============================================
 
 /**
  * SMS 서비스 인스턴스 생성 및 초기화
  */
 let smsService: SolapiSmsService | null = null;
+
+/**
+ * SMS 인증번호 저장소 (메모리 기반, 5분 만료)
+ */
+interface SmsVerification {
+  phone: string;
+  code: string;
+  expiresAt: number;
+  attempts: number;
+}
+
+const smsVerificationStore = new Map<string, SmsVerification>();
+
+/**
+ * 만료된 인증번호 정리 (5분마다 실행)
+ */
+setInterval(() => {
+  const now = Date.now();
+  for (const [phone, verification] of smsVerificationStore.entries()) {
+    if (now > verification.expiresAt) {
+      smsVerificationStore.delete(phone);
+    }
+  }
+}, 5 * 60 * 1000); // 5분마다
 
 /**
  * SMS 서비스 인스턴스를 안전하게 초기화하고 반환
@@ -194,6 +218,64 @@ function getSmsService(): SolapiSmsService | null {
     });
     return null;
   }
+}
+
+/**
+ * 6자리 랜덤 인증번호 생성
+ */
+function generateVerificationCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+/**
+ * 전화번호 포맷 정제
+ */
+function formatPhoneNumber(phone: string): string {
+  return phone.replace(/[^0-9]/g, '').replace(/^82/, '0');
+}
+
+/**
+ * SMS 인증번호 저장
+ */
+function storeVerificationCode(phone: string, code: string): void {
+  const formattedPhone = formatPhoneNumber(phone);
+  smsVerificationStore.set(formattedPhone, {
+    phone: formattedPhone,
+    code,
+    expiresAt: Date.now() + (5 * 60 * 1000), // 5분 후 만료
+    attempts: 0
+  });
+}
+
+/**
+ * SMS 인증번호 검증
+ */
+function verifyCode(phone: string, code: string): { success: boolean; message: string } {
+  const formattedPhone = formatPhoneNumber(phone);
+  const verification = smsVerificationStore.get(formattedPhone);
+  
+  if (!verification) {
+    return { success: false, message: '인증번호가 발송되지 않았거나 만료되었습니다.' };
+  }
+  
+  if (Date.now() > verification.expiresAt) {
+    smsVerificationStore.delete(formattedPhone);
+    return { success: false, message: '인증번호가 만료되었습니다. 다시 발송해주세요.' };
+  }
+  
+  if (verification.attempts >= 5) {
+    smsVerificationStore.delete(formattedPhone);
+    return { success: false, message: '인증 시도 횟수를 초과했습니다. 다시 발송해주세요.' };
+  }
+  
+  verification.attempts += 1;
+  
+  if (verification.code === code) {
+    smsVerificationStore.delete(formattedPhone);
+    return { success: true, message: '인증이 완료되었습니다.' };
+  }
+  
+  return { success: false, message: `인증번호가 일치하지 않습니다. (${verification.attempts}/5)` };
 }
 
 /**
