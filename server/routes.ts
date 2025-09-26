@@ -348,10 +348,11 @@ async function sendBatchAssignmentSms(
       };
     }
 
-    // 담당자 전화번호 확인
+    // 담당자 전화번호 확인 및 유효성 검증
     if (!assignedUser.phone || assignedUser.phone.trim() === '') {
       secureLog(LogLevel.WARNING, 'SMS', '통합 SMS 발송 생략 - 담당자 전화번호 없음', {
         assignedUserId,
+        assignedUserName: maskName(assignedUser.name),
         customerCount: customers.length
       }, currentRequestId);
       return {
@@ -359,6 +360,64 @@ async function sendBatchAssignmentSms(
         customerId: 'batch',
         attempted: false,
         reason: '담당자 전화번호 없음'
+      };
+    }
+
+    // SMS 서비스 인스턴스 가져오기 및 전화번호 사전 검증
+    const smsService = getSmsService();
+    if (!smsService) {
+      secureLog(LogLevel.WARNING, 'SMS', '통합 SMS 발송 생략 - SMS 서비스 사용 불가', {
+        assignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        customerCount: customers.length
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId: 'batch',
+        attempted: false,
+        reason: 'SMS 서비스 사용 불가'
+      };
+    }
+
+    // 전화번호 유효성 사전 검증
+    try {
+      const phoneValidation = (smsService as any).normalizePhoneNumber(assignedUser.phone);
+      if (!phoneValidation.isValid) {
+        secureLog(LogLevel.WARNING, 'SMS', '통합 SMS 발송 생략 - 담당자 전화번호 형식 오류', {
+          assignedUserId,
+          assignedUserName: maskName(assignedUser.name),
+          phone: maskPhoneNumber(assignedUser.phone),
+          phoneError: phoneValidation.error,
+          customerCount: customers.length
+        }, currentRequestId);
+        return {
+          success: false,
+          customerId: 'batch',
+          attempted: false,
+          reason: `담당자 전화번호 형식 오류: ${phoneValidation.error}`
+        };
+      }
+      
+      secureLog(LogLevel.INFO, 'SMS', '담당자 전화번호 유효성 검증 통과', {
+        assignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        originalPhone: maskPhoneNumber(assignedUser.phone),
+        normalizedPhone: maskPhoneNumber(phoneValidation.normalized),
+        customerCount: customers.length
+      }, currentRequestId);
+    } catch (validationError) {
+      secureLog(LogLevel.ERROR, 'SMS', '담당자 전화번호 검증 중 오류', {
+        assignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        phone: maskPhoneNumber(assignedUser.phone),
+        error: validationError instanceof Error ? validationError.message : 'Unknown error',
+        customerCount: customers.length
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId: 'batch',
+        attempted: false,
+        reason: '전화번호 검증 실패'
       };
     }
 
@@ -391,21 +450,6 @@ async function sendBatchAssignmentSms(
       firstCustomerName: maskName(firstCustomer.name),
       messageLength: message.length
     }, currentRequestId);
-
-    // SMS 서비스 인스턴스 가져오기
-    const smsService = getSmsService();
-    if (!smsService) {
-      secureLog(LogLevel.WARNING, 'SMS', '통합 SMS 발송 생략 - SMS 서비스 사용 불가', {
-        assignedUserId,
-        customerCount: customers.length
-      }, currentRequestId);
-      return {
-        success: false,
-        customerId: 'batch',
-        attempted: false,
-        reason: 'SMS 서비스 사용 불가'
-      };
-    }
     
     // 직접 SMS 발송 (통합 메시지 사용)
     const smsResult = await smsService.sendSms(assignedUser.phone, message, {
@@ -501,9 +545,9 @@ async function sendCustomerAssignmentSms(
       };
     }
 
-    // 담당자 휴대폰 번호 확인
+    // 담당자 전화번호 확인 및 유효성 검증
     if (!assignedUser.phone || assignedUser.phone.trim() === '') {
-      secureLog(LogLevel.INFO, 'SMS', '담당자 휴대폰 번호 없음 - SMS 발송 생략', {
+      secureLog(LogLevel.WARNING, 'SMS', '개별 SMS 발송 생략 - 담당자 전화번호 없음', {
         customerId,
         assignedUserId: newAssignedUserId,
         assignedUserName: maskName(assignedUser.name),
@@ -513,7 +557,69 @@ async function sendCustomerAssignmentSms(
         success: false,
         customerId,
         attempted: false,
-        reason: '담당자 휴대폰 번호 없음'
+        reason: '담당자 전화번호 없음'
+      };
+    }
+
+    // SMS 서비스 인스턴스 가져오기 및 전화번호 사전 검증
+    const smsService = getSmsService();
+    if (!smsService) {
+      secureLog(LogLevel.WARNING, 'SMS', '개별 SMS 발송 생략 - SMS 서비스 사용 불가', {
+        customerId,
+        assignedUserId: newAssignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId,
+        attempted: false,
+        reason: 'SMS 서비스 사용 불가'
+      };
+    }
+
+    // 전화번호 유효성 사전 검증
+    try {
+      const phoneValidation = (smsService as any).normalizePhoneNumber(assignedUser.phone);
+      if (!phoneValidation.isValid) {
+        secureLog(LogLevel.WARNING, 'SMS', '개별 SMS 발송 생략 - 담당자 전화번호 형식 오류', {
+          customerId,
+          assignedUserId: newAssignedUserId,
+          assignedUserName: maskName(assignedUser.name),
+          phone: maskPhoneNumber(assignedUser.phone),
+          phoneError: phoneValidation.error,
+          customerName: maskName(customer.name)
+        }, currentRequestId);
+        return {
+          success: false,
+          customerId,
+          attempted: false,
+          reason: `담당자 전화번호 형식 오류: ${phoneValidation.error}`
+        };
+      }
+      
+      secureLog(LogLevel.INFO, 'SMS', '담당자 전화번호 유효성 검증 통과 (개별)', {
+        customerId,
+        assignedUserId: newAssignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        originalPhone: maskPhoneNumber(assignedUser.phone),
+        normalizedPhone: maskPhoneNumber(phoneValidation.normalized),
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+    } catch (validationError) {
+      secureLog(LogLevel.ERROR, 'SMS', '담당자 전화번호 검증 중 오류 (개별)', {
+        customerId,
+        assignedUserId: newAssignedUserId,
+        assignedUserName: maskName(assignedUser.name),
+        phone: maskPhoneNumber(assignedUser.phone),
+        error: validationError instanceof Error ? validationError.message : 'Unknown error',
+        customerName: maskName(customer.name)
+      }, currentRequestId);
+      return {
+        success: false,
+        customerId,
+        attempted: false,
+        reason: '전화번호 검증 실패'
       };
     }
 
