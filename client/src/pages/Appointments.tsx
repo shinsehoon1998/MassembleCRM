@@ -20,9 +20,15 @@ export default function Appointments() {
   const queryClient = useQueryClient();
 
   // Fetch appointments
-  const { data: appointments = [], isLoading } = useQuery<AppointmentWithDetails[]>({
+  const { data: appointmentsResponse = { appointments: [], total: 0, totalPages: 0 }, isLoading } = useQuery<{
+    appointments: AppointmentWithDetails[];
+    total: number;
+    totalPages: number;
+  }>({
     queryKey: ["/api/appointments"],
   });
+  
+  const appointments = appointmentsResponse.appointments || [];
 
   // Fetch counselors for the modal
   const { data: counselors = [] } = useQuery<any[]>({
