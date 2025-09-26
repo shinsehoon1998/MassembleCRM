@@ -5,6 +5,7 @@ import {
   activityLogs,
   attachments,
   systemSettings,
+  appointments,
   arsCampaigns,
   arsSendLogs,
   arsScenarios,
@@ -29,6 +30,9 @@ import {
   type AttachmentWithUser,
   type InsertAttachment,
   type SystemSetting,
+  type Appointment,
+  type InsertAppointment,
+  type UpdateAppointment,
   type ArsCampaign,
   type InsertArsCampaign,
   type ArsSendLog,
@@ -691,6 +695,33 @@ export interface IStorage {
     historyKey?: string,
     campaignId?: number
   ): Promise<ArsSendLog[]>;
+
+  // Appointment operations
+  getAppointments(params: {
+    from?: Date;
+    to?: Date;
+    counselorId?: string;
+    customerId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    appointments: Appointment[];
+    total: number;
+    totalPages: number;
+  }>;
+  getAppointment(id: string): Promise<Appointment | undefined>;
+  createAppointment(appointment: InsertAppointment): Promise<Appointment>;
+  updateAppointment(id: string, appointment: UpdateAppointment): Promise<Appointment | undefined>;
+  deleteAppointment(id: string): Promise<boolean>;
+  getAppointmentReminders(windowMinutes?: number): Promise<Appointment[]>;
+  checkAppointmentConflicts(
+    startAt: Date,
+    endAt: Date,
+    counselorId: string,
+    customerId: string,
+    excludeId?: string
+  ): Promise<Appointment[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3573,6 +3604,144 @@ export class DatabaseStorage implements IStorage {
     } catch (error) {
       console.error(`[UPDATE_CAMPAIGN_STATS] Error updating stats for campaign ${campaignId}:`, error);
     }
+  }
+
+  // Appointment operations
+  async getAppointments(params: {
+    from?: Date;
+    to?: Date;
+    counselorId?: string;
+    customerId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    appointments: Appointment[];
+    total: number;
+    totalPages: number;
+  }> {
+    const { from, to, counselorId, customerId, status, page = 1, limit = 20 } = params;
+    const conditions = [];
+
+    if (from) {
+      conditions.push(sql`${appointments.startAt} >= ${from}`);
+    }
+    if (to) {
+      conditions.push(sql`${appointments.endAt} <= ${to}`);
+    }
+    if (counselorId) {
+      conditions.push(eq(appointments.counselorId, counselorId));
+    }
+    if (customerId) {
+      conditions.push(eq(appointments.customerId, customerId));
+    }
+    if (status) {
+      conditions.push(eq(appointments.status, status));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(appointments)
+      .where(whereClause);
+
+    // Get paginated appointments
+    const appointmentList = await db
+      .select()
+      .from(appointments)
+      .where(whereClause)
+      .orderBy(desc(appointments.startAt))
+      .limit(limit)
+      .offset((page - 1) * limit);
+
+    return {
+      appointments: appointmentList,
+      total: Number(total),
+      totalPages: Math.ceil(Number(total) / limit),
+    };
+  }
+
+  async getAppointment(id: string): Promise<Appointment | undefined> {
+    const [appointment] = await db
+      .select()
+      .from(appointments)
+      .where(eq(appointments.id, id));
+    return appointment;
+  }
+
+  async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
+    const [newAppointment] = await db
+      .insert(appointments)
+      .values({
+        ...appointment,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return newAppointment;
+  }
+
+  async updateAppointment(id: string, appointment: UpdateAppointment): Promise<Appointment | undefined> {
+    const [updatedAppointment] = await db
+      .update(appointments)
+      .set({
+        ...appointment,
+        updatedAt: new Date(),
+      })
+      .where(eq(appointments.id, id))
+      .returning();
+    return updatedAppointment;
+  }
+
+  async deleteAppointment(id: string): Promise<boolean> {
+    const result = await db
+      .delete(appointments)
+      .where(eq(appointments.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getAppointmentReminders(windowMinutes: number = 15): Promise<Appointment[]> {
+    const now = new Date();
+    const futureTime = new Date(now.getTime() + windowMinutes * 60 * 1000);
+
+    return await db
+      .select()
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.status, 'scheduled'),
+          sql`${appointments.startAt} BETWEEN ${now} AND ${futureTime}`,
+          sql`${appointments.lastPopupAt} IS NULL OR ${appointments.lastPopupAt} < ${now.toISOString()}`
+        )
+      );
+  }
+
+  async checkAppointmentConflicts(
+    startAt: Date,
+    endAt: Date,
+    counselorId: string,
+    customerId: string,
+    excludeId?: string
+  ): Promise<Appointment[]> {
+    const conditions = [
+      eq(appointments.status, 'scheduled'),
+      sql`(
+        (${appointments.counselorId} = ${counselorId}) OR 
+        (${appointments.customerId} = ${customerId})
+      )`,
+      sql`NOT (${appointments.endAt} <= ${startAt} OR ${appointments.startAt} >= ${endAt})`
+    ];
+
+    if (excludeId) {
+      conditions.push(sql`${appointments.id} != ${excludeId}`);
+    }
+
+    return await db
+      .select()
+      .from(appointments)
+      .where(and(...conditions));
   }
 }
 
