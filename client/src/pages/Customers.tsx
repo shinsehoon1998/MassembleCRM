@@ -384,6 +384,15 @@ export default function Customers() {
     setIsModalOpen(true);
   };
 
+  const handleScheduleAppointment = (customer: CustomerWithUser) => {
+    // TODO: 예약 모달을 열거나 예약 페이지로 이동
+    console.log('Schedule appointment for customer:', customer.id);
+    toast({
+      title: "예약 기능",
+      description: `${customer.name}님의 예약을 생성하겠습니다.`,
+    });
+  };
+
   const handleDeleteCustomer = async (customerId: string) => {
     if (confirm('정말 삭제하시겠습니까?')) {
       deleteCustomerMutation.mutate(customerId);
@@ -1187,6 +1196,16 @@ export default function Customers() {
                           <Button 
                             variant="ghost" 
                             size="sm" 
+                            className="text-blue-500 hover:text-blue-600 mr-3" 
+                            title="예약"
+                            onClick={() => handleScheduleAppointment(customer)}
+                            data-testid={`button-schedule-${customer.id}`}
+                          >
+                            <i className="fas fa-calendar"></i>
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
                             className="text-yellow-500 hover:text-yellow-600 mr-3" 
                             title="수정"
                             onClick={() => handleEditCustomer(customer)}
@@ -1250,6 +1269,16 @@ export default function Customers() {
                               <i className="fas fa-eye"></i>
                             </Button>
                           </Link>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-green-500 hover:text-green-600" 
+                            title="예약"
+                            onClick={() => handleScheduleAppointment(customer)}
+                            data-testid={`button-schedule-mobile-${customer.id}`}
+                          >
+                            <i className="fas fa-calendar"></i>
+                          </Button>
                           <Button 
                             variant="ghost" 
                             size="sm" 
