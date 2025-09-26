@@ -51,7 +51,12 @@ export default function CustomerDetail() {
 
   const createConsultationMutation = useMutation({
     mutationFn: async (data: { type: string; notes: string }) => {
-      return await apiRequest("POST", `/api/customers/${params.id}/consultations`, data);
+      const payload = {
+        title: `${data.type} 상담`,
+        content: data.notes,
+        consultType: data.type,
+      };
+      return await apiRequest("POST", `/api/customers/${params.id}/consultations`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/customers/${params.id}/consultations`] });
