@@ -5991,6 +5991,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const appointment = await storage.createAppointment(validatedData);
+      
+      // 예약 생성 SMS 알림 발송 (비동기 처리)
+      try {
+        const customer = await storage.getCustomer(validatedData.customerId);
+        const counselor = await storage.getUser(validatedData.counselorId);
+        
+        if (customer && counselor && customer.phone) {
+          const { solapiSmsService } = await import('./solapiService');
+          const appointmentSmsData = {
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            appointmentDate: validatedData.startAt.toLocaleDateString('ko-KR'),
+            appointmentTime: validatedData.startAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            counselorName: `${counselor.lastName || ''} ${counselor.firstName || ''}`.trim() || counselor.username,
+            consultationType: validatedData.location === 'visit' ? '방문상담' : 
+                            validatedData.location === 'video' ? '화상상담' : '전화상담',
+            notes: validatedData.notes
+          };
+          
+          // SMS 발송 (실패해도 예약 생성은 완료됨)
+          solapiSmsService.sendAppointmentCreatedNotification(customer.phone, appointmentSmsData)
+            .catch(error => console.error('예약 생성 SMS 발송 실패:', error));
+        }
+      } catch (error) {
+        console.error('예약 생성 SMS 발송 준비 중 오류:', error);
+      }
+      
       res.status(201).json(appointment);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -6074,6 +6101,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user;
       if (user.role === 'counselor' && existingAppointment.counselorId !== user.id) {
         return res.status(403).json({ message: '이 예약을 삭제할 권한이 없습니다.' });
+      }
+
+      // 예약 취소 SMS 알림 발송 (삭제 전에 정보 수집)
+      try {
+        const customer = await storage.getCustomer(existingAppointment.customerId);
+        const counselor = await storage.getUser(existingAppointment.counselorId);
+        
+        if (customer && counselor && customer.phone) {
+          const { solapiSmsService } = await import('./solapiService');
+          const appointmentSmsData = {
+            customerName: customer.name,
+            customerPhone: customer.phone,
+            appointmentDate: existingAppointment.startAt.toLocaleDateString('ko-KR'),
+            appointmentTime: existingAppointment.startAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            counselorName: `${counselor.lastName || ''} ${counselor.firstName || ''}`.trim() || counselor.username,
+            consultationType: existingAppointment.location === 'visit' ? '방문상담' : 
+                            existingAppointment.location === 'video' ? '화상상담' : '전화상담',
+            cancelReason: '예약 취소'
+          };
+          
+          // SMS 발송 (비동기 처리)
+          solapiSmsService.sendAppointmentCancelledNotification(customer.phone, appointmentSmsData)
+            .catch(error => console.error('예약 취소 SMS 발송 실패:', error));
+        }
+      } catch (error) {
+        console.error('예약 취소 SMS 발송 준비 중 오류:', error);
       }
 
       const success = await storage.deleteAppointment(id);
@@ -6205,6 +6258,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
             appointmentId: newAppointment.id,
             startTime: appointmentStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
           });
+
+          // 개별 예약에 대한 SMS 알림 발송 (비동기 처리)
+          try {
+            const customer = await storage.getCustomer(customerId);
+            const counselor = await storage.getUser(counselorId);
+            
+            if (customer && counselor && customer.phone) {
+              const { solapiSmsService } = await import('./solapiService');
+              const appointmentSmsData = {
+                customerName: customer.name,
+                customerPhone: customer.phone,
+                appointmentDate: appointmentStartTime.toLocaleDateString('ko-KR'),
+                appointmentTime: appointmentStartTime.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                counselorName: `${counselor.lastName || ''} ${counselor.firstName || ''}`.trim() || counselor.username,
+                consultationType: consultationType,
+                notes: notes || `일괄 예약 생성 (${new Date().toLocaleDateString('ko-KR')})`
+              };
+              
+              // SMS 발송 (실패해도 예약 생성은 완료됨)
+              solapiSmsService.sendAppointmentCreatedNotification(customer.phone, appointmentSmsData)
+                .catch(error => console.error(`고객 ${customerId} 예약 생성 SMS 발송 실패:`, error));
+            }
+          } catch (smsError) {
+            console.error(`고객 ${customerId} 예약 생성 SMS 발송 준비 중 오류:`, smsError);
+          }
 
         } catch (error: any) {
           console.error(`Error creating appointment for customer ${customerIds[i]}:`, error);

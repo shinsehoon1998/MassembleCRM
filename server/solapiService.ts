@@ -75,6 +75,19 @@ export interface SmsTemplateData {
   assignedTime: string;
 }
 
+// 예약 관련 SMS 템플릿 데이터 인터페이스
+export interface AppointmentSmsData {
+  customerName: string;
+  customerPhone: string;
+  appointmentDate: string;
+  appointmentTime: string;
+  counselorName: string;
+  consultationType: string;
+  location?: string;
+  notes?: string;
+  cancelReason?: string;
+}
+
 // 발송 결과 인터페이스
 export interface SmsSendResult {
   success: boolean;
@@ -685,6 +698,190 @@ https://massemble-crm-shinsehoona.replit.app`;
       return {
         success: false,
         message: `❌ 발송 이력 조회 중 오류 발생: ${errorMessage}`
+      };
+    }
+  }
+
+  /**
+   * 예약 생성 알림 템플릿 처리
+   */
+  private processAppointmentCreatedTemplate(data: AppointmentSmsData): string {
+    const template = `[마셈블] 예약 확정 안내
+
+안녕하세요 ${data.customerName}님,
+
+예약이 확정되었습니다.
+
+📅 예약일시: ${data.appointmentDate} ${data.appointmentTime}
+👨‍💼 담당 상담사: ${data.counselorName}
+📞 상담 유형: ${data.consultationType}
+${data.notes ? `📝 메모: ${data.notes}` : ''}
+
+예약 시간에 맞춰 준비해주시기 바랍니다.
+
+문의사항이 있으시면 연락주세요.
+감사합니다.
+
+마셈블`;
+
+    return template;
+  }
+
+  /**
+   * 예약 리마인드 알림 템플릿 처리
+   */
+  private processAppointmentReminderTemplate(data: AppointmentSmsData): string {
+    const template = `[마셈블] 예약 안내
+
+${data.customerName}님, 예약 시간이 다가왔습니다.
+
+⏰ 예약시간: ${data.appointmentTime}
+👨‍💼 담당 상담사: ${data.counselorName}
+📞 상담 유형: ${data.consultationType}
+
+10분 후 시작 예정입니다.
+준비해주시기 바랍니다.
+
+마셈블`;
+
+    return template;
+  }
+
+  /**
+   * 예약 취소 알림 템플릿 처리
+   */
+  private processAppointmentCancelledTemplate(data: AppointmentSmsData): string {
+    const template = `[마셈블] 예약 취소 안내
+
+${data.customerName}님, 예약이 취소되었습니다.
+
+📅 취소된 예약: ${data.appointmentDate} ${data.appointmentTime}
+👨‍💼 담당 상담사: ${data.counselorName}
+${data.cancelReason ? `📝 취소 사유: ${data.cancelReason}` : ''}
+
+재예약을 원하시면 언제든 연락주세요.
+감사합니다.
+
+마셈블`;
+
+    return template;
+  }
+
+  /**
+   * 예약 생성 알림 SMS 발송
+   */
+  async sendAppointmentCreatedNotification(
+    recipientPhone: string,
+    appointmentData: AppointmentSmsData
+  ): Promise<SmsSendResult> {
+    const requestId = generateRequestId();
+    
+    try {
+      const message = this.processAppointmentCreatedTemplate(appointmentData);
+      
+      secureLog(LogLevel.INFO, 'SOLAPI_SMS', '예약 생성 알림 SMS 발송', {
+        recipientPhone: maskPhoneNumber(recipientPhone),
+        customerName: maskName(appointmentData.customerName),
+        appointmentDate: appointmentData.appointmentDate,
+        appointmentTime: appointmentData.appointmentTime,
+        messageLength: message.length
+      }, requestId);
+
+      return await this.sendSms(recipientPhone, message, {
+        type: 'LMS',
+        subject: '[마셈블] 예약 확정 안내'
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      secureLog(LogLevel.ERROR, 'SOLAPI_SMS', '예약 생성 알림 SMS 발송 예외', {
+        recipientPhone: maskPhoneNumber(recipientPhone),
+        customerName: maskName(appointmentData.customerName),
+        error: errorMessage
+      }, requestId);
+      
+      return {
+        success: false,
+        message: `❌ 예약 생성 알림 발송 실패: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 예약 리마인드 알림 SMS 발송
+   */
+  async sendAppointmentReminderNotification(
+    recipientPhone: string,
+    appointmentData: AppointmentSmsData
+  ): Promise<SmsSendResult> {
+    const requestId = generateRequestId();
+    
+    try {
+      const message = this.processAppointmentReminderTemplate(appointmentData);
+      
+      secureLog(LogLevel.INFO, 'SOLAPI_SMS', '예약 리마인드 알림 SMS 발송', {
+        recipientPhone: maskPhoneNumber(recipientPhone),
+        customerName: maskName(appointmentData.customerName),
+        appointmentTime: appointmentData.appointmentTime,
+        messageLength: message.length
+      }, requestId);
+
+      return await this.sendSms(recipientPhone, message, {
+        type: 'SMS',
+        subject: '[마셈블] 예약 안내'
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      secureLog(LogLevel.ERROR, 'SOLAPI_SMS', '예약 리마인드 알림 SMS 발송 예외', {
+        recipientPhone: maskPhoneNumber(recipientPhone),
+        customerName: maskName(appointmentData.customerName),
+        error: errorMessage
+      }, requestId);
+      
+      return {
+        success: false,
+        message: `❌ 예약 리마인드 알림 발송 실패: ${errorMessage}`,
+      };
+    }
+  }
+
+  /**
+   * 예약 취소 알림 SMS 발송
+   */
+  async sendAppointmentCancelledNotification(
+    recipientPhone: string,
+    appointmentData: AppointmentSmsData
+  ): Promise<SmsSendResult> {
+    const requestId = generateRequestId();
+    
+    try {
+      const message = this.processAppointmentCancelledTemplate(appointmentData);
+      
+      secureLog(LogLevel.INFO, 'SOLAPI_SMS', '예약 취소 알림 SMS 발송', {
+        recipientPhone: maskPhoneNumber(recipientPhone),
+        customerName: maskName(appointmentData.customerName),
+        appointmentDate: appointmentData.appointmentDate,
+        appointmentTime: appointmentData.appointmentTime,
+        messageLength: message.length
+      }, requestId);
+
+      return await this.sendSms(recipientPhone, message, {
+        type: 'LMS',
+        subject: '[마셈블] 예약 취소 안내'
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      secureLog(LogLevel.ERROR, 'SOLAPI_SMS', '예약 취소 알림 SMS 발송 예외', {
+        recipientPhone: maskPhoneNumber(recipientPhone),
+        customerName: maskName(appointmentData.customerName),
+        error: errorMessage
+      }, requestId);
+      
+      return {
+        success: false,
+        message: `❌ 예약 취소 알림 발송 실패: ${errorMessage}`,
       };
     }
   }

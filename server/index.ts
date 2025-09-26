@@ -26,6 +26,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
+import './appointmentReminderScheduler'; // 예약 리마인드 스케줄러 시작
 
 const app = express();
 
