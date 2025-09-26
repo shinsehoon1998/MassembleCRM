@@ -636,7 +636,7 @@ export default function Customers() {
                     <SelectItem value="all">전체 담당자</SelectItem>
                     {counselors?.map(counselor => (
                       <SelectItem key={counselor.id} value={counselor.id}>
-                        {counselor.username} ({counselor.name})
+                        {counselor.username} ({counselor.lastName} {counselor.firstName})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -756,7 +756,7 @@ export default function Customers() {
                   </SelectTrigger>
                   <SelectContent>
                     {counselors?.map((counselor) => (
-                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.name})</SelectItem>
+                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.lastName} {counselor.firstName})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -767,7 +767,7 @@ export default function Customers() {
                   <SelectContent>
                     <SelectItem value="CLEAR">공유 해제</SelectItem>
                     {counselors?.map((counselor) => (
-                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.name})</SelectItem>
+                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.lastName} {counselor.firstName})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
