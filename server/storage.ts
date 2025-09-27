@@ -48,6 +48,7 @@ import {
   type ArsCampaignStats,
   type ArsDailyStats,
   type ArsHourlyStats,
+  type AppointmentWithDetails,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql, inArray } from "drizzle-orm";
@@ -3616,7 +3617,7 @@ export class DatabaseStorage implements IStorage {
     page?: number;
     limit?: number;
   }): Promise<{
-    appointments: Appointment[];
+    appointments: AppointmentWithDetails[];
     total: number;
     totalPages: number;
   }> {
@@ -3647,10 +3648,32 @@ export class DatabaseStorage implements IStorage {
       .from(appointments)
       .where(whereClause);
 
-    // Get paginated appointments
+    // Get paginated appointments with customer and counselor names
     const appointmentList = await db
-      .select()
+      .select({
+        id: appointments.id,
+        title: appointments.title,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        location: appointments.location,
+        notes: appointments.notes,
+        status: appointments.status,
+        customerId: appointments.customerId,
+        counselorId: appointments.counselorId,
+        lastPopupAt: appointments.lastPopupAt,
+        createdAt: appointments.createdAt,
+        updatedAt: appointments.updatedAt,
+        createdBy: appointments.createdBy,
+        remindSms: appointments.remindSms,
+        reminderOffsetMinutes: appointments.reminderOffsetMinutes,
+        remindPopup: appointments.remindPopup,
+        lastSmsAt: appointments.lastSmsAt,
+        customerName: sql<string | undefined>`${customers.name}`,
+        counselorName: sql<string | undefined>`COALESCE(${users.lastName} || ' ' || ${users.firstName}, ${users.username})`
+      })
       .from(appointments)
+      .leftJoin(customers, eq(appointments.customerId, customers.id))
+      .leftJoin(users, eq(appointments.counselorId, users.id))
       .where(whereClause)
       .orderBy(desc(appointments.startAt))
       .limit(limit)

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,6 +11,7 @@ import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import AppointmentModal from "@/components/AppointmentModal";
 import type { AppointmentWithDetails } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Appointments() {
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
@@ -35,6 +36,28 @@ export default function Appointments() {
     queryKey: ["/api/users/counselors"],
   });
 
+  // Delete appointment mutation
+  const deleteAppointmentMutation = useMutation({
+    mutationFn: async (appointmentId: string) => {
+      const response = await apiRequest("DELETE", `/api/appointments/${appointmentId}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+      toast({
+        title: "예약 삭제 완료",
+        description: "예약이 성공적으로 삭제되었습니다.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "예약 삭제 실패",
+        description: error.message || "예약 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Filter appointments based on status and search term
   const filteredAppointments = appointments.filter((appointment) => {
     const matchesStatus = statusFilter === "all" || appointment.status === statusFilter;
@@ -54,6 +77,12 @@ export default function Appointments() {
   const handleEditAppointment = (appointment: any) => {
     setEditingAppointment(appointment);
     setIsAppointmentModalOpen(true);
+  };
+
+  const handleDeleteAppointment = (appointmentId: string) => {
+    if (confirm('정말로 이 예약을 삭제하시겠습니까?')) {
+      deleteAppointmentMutation.mutate(appointmentId);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -237,10 +266,12 @@ export default function Appointments() {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => handleDeleteAppointment(appointment.id)}
+                      disabled={deleteAppointmentMutation.isPending}
                       className="flex-1 lg:flex-none text-red-600 hover:text-red-700 hover:bg-red-50"
                       data-testid={`button-delete-appointment-${appointment.id}`}
                     >
-                      삭제
+                      {deleteAppointmentMutation.isPending ? "삭제 중..." : "삭제"}
                     </Button>
                   </div>
                 </div>
