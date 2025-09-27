@@ -58,6 +58,38 @@ export default function AppointmentModal({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Helper function to convert field names and error messages to user-friendly Korean
+  const getFieldErrorMessage = (fieldName: string, originalMessage: string): string => {
+    const fieldNameMap: Record<string, string> = {
+      title: "제목",
+      customerId: "고객",
+      counselorId: "담당 상담사",
+      startAt: "시작 시간",
+      endAt: "종료 시간",
+      location: "장소",
+      notes: "메모",
+      createdBy: "생성자"
+    };
+    
+    const fieldDisplayName = fieldNameMap[fieldName] || fieldName;
+    
+    if (originalMessage.includes("Required")) {
+      return `${fieldDisplayName}을(를) 입력해주세요.`;
+    }
+    if (originalMessage.includes("Invalid date")) {
+      return `${fieldDisplayName}의 날짜 형식이 올바르지 않습니다.`;
+    }
+    if (originalMessage.includes("String must contain at least")) {
+      return `${fieldDisplayName}을(를) 입력해주세요.`;
+    }
+    if (originalMessage.includes("Expected string")) {
+      return `${fieldDisplayName}은(는) 텍스트 형태여야 합니다.`;
+    }
+    
+    // Default fallback
+    return `${fieldDisplayName}: ${originalMessage}`;
+  };
+
   // Reset form when modal opens/closes or appointment changes
   useEffect(() => {
     if (isOpen) {
@@ -123,6 +155,30 @@ export default function AppointmentModal({
       onClose();
     },
     onError: (error: any) => {
+      console.error('Appointment creation error:', error);
+      
+      // Handle validation errors from the server
+      if (error?.errors && Array.isArray(error.errors)) {
+        const fieldErrors: Record<string, string> = {};
+        
+        error.errors.forEach((zodError: any) => {
+          if (zodError.path && zodError.path.length > 0) {
+            const fieldName = zodError.path[0];
+            fieldErrors[fieldName] = getFieldErrorMessage(fieldName, zodError.message);
+          }
+        });
+        
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+          toast({
+            title: "입력 오류",
+            description: "입력하신 정보를 확인해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
       toast({
         title: "오류",
         description: error?.message || "예약 생성에 실패했습니다.",
@@ -150,6 +206,30 @@ export default function AppointmentModal({
       onClose();
     },
     onError: (error: any) => {
+      console.error('Appointment update error:', error);
+      
+      // Handle validation errors from the server
+      if (error?.errors && Array.isArray(error.errors)) {
+        const fieldErrors: Record<string, string> = {};
+        
+        error.errors.forEach((zodError: any) => {
+          if (zodError.path && zodError.path.length > 0) {
+            const fieldName = zodError.path[0];
+            fieldErrors[fieldName] = getFieldErrorMessage(fieldName, zodError.message);
+          }
+        });
+        
+        if (Object.keys(fieldErrors).length > 0) {
+          setErrors(fieldErrors);
+          toast({
+            title: "입력 오류",
+            description: "입력하신 정보를 확인해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
       toast({
         title: "오류",
         description: error?.message || "예약 수정에 실패했습니다.",
