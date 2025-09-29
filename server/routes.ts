@@ -2461,6 +2461,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             gender: gender,
             monthlyIncome: row['월소득'] ? row['월소득'].toString().replace(/[^0-9]/g, '') : null,
             status: status,
+            // 팀원 계정에서 대량등록 시 자동으로 본인을 담당자로 배정
+            assignedUserId: req.user.role === 'counselor' ? req.user.id : null,
             memo1: row['메모'] || null,
             info1: row['정보1'] || null,
             info2: row['정보2'] || null,
