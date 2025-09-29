@@ -689,25 +689,28 @@ export default function Customers() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">담당자</label>
-                <Select
-                  value={searchParams.assignedUserId}
-                  onValueChange={(value) => handleFilterChange('assignedUserId', value)}
-                >
-                  <SelectTrigger data-testid="select-counselor">
-                    <SelectValue placeholder="전체 담당자" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">전체 담당자</SelectItem>
-                    {counselors?.map(counselor => (
-                      <SelectItem key={counselor.id} value={counselor.id}>
-                        {counselor.username} ({counselor.lastName} {counselor.firstName})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* 관리자와 매니저만 담당자 필터 표시, 팀원은 숨김 */}
+              {currentUser?.role !== 'counselor' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">담당자</label>
+                  <Select
+                    value={searchParams.assignedUserId}
+                    onValueChange={(value) => handleFilterChange('assignedUserId', value)}
+                  >
+                    <SelectTrigger data-testid="select-counselor">
+                      <SelectValue placeholder="전체 담당자" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전체 담당자</SelectItem>
+                      {counselors?.map(counselor => (
+                        <SelectItem key={counselor.id} value={counselor.id}>
+                          {counselor.username} ({counselor.lastName} {counselor.firstName})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             
             {/* 담당자 미정/공유 미정 체크박스 */}

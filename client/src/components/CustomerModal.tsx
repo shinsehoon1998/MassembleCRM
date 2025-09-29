@@ -11,6 +11,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertCustomerSchema, type CustomerWithUser, type User } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/useAuth";
 import { z } from "zod";
 
 interface CustomerModalProps {
@@ -85,6 +86,7 @@ const getCustomerFieldErrorMessage = (fieldName: string, originalMessage: string
 export default function CustomerModal({ isOpen, onClose, customer, counselors }: CustomerModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user: currentUser } = useAuth();
 
   const {
     register,
@@ -149,6 +151,9 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         memo1: customer.memo1 || "",
       });
     } else {
+      // 신규 등록 시 팀원 계정이면 자동으로 본인을 담당자로 설정
+      const defaultAssignedUserId = (currentUser?.role === 'counselor') ? currentUser.id : "";
+      
       reset({
         name: "",
         phone: "",
@@ -165,7 +170,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         consultType: "",
         consultPath: "",
         status: "인텍",
-        assignedUserId: "",
+        assignedUserId: defaultAssignedUserId,
         secondaryUserId: "",
         department: "",
         team: "",
@@ -173,7 +178,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         memo1: "",
       });
     }
-  }, [customer, reset]);
+  }, [customer, reset, currentUser]);
 
   const createCustomerMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
