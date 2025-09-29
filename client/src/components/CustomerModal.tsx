@@ -28,6 +28,60 @@ const customerFormSchema = insertCustomerSchema.extend({
 
 type CustomerFormData = z.infer<typeof customerFormSchema>;
 
+// Helper function to convert field names and error messages to user-friendly Korean
+const getCustomerFieldErrorMessage = (fieldName: string, originalMessage: string): string => {
+  const fieldNameMap: Record<string, string> = {
+    name: "이름",
+    phone: "연락처",
+    secondaryPhone: "보조 연락처",
+    birthDate: "생년월일",
+    gender: "성별",
+    zipcode: "우편번호",
+    address: "주소",
+    addressDetail: "상세주소",
+    debtAmount: "부채금액",
+    monthlyIncome: "월소득",
+    jobType: "직업",
+    companyName: "회사명",
+    consultType: "상담유형",
+    consultPath: "상담경로",
+    status: "상태",
+    assignedUserId: "담당자",
+    secondaryUserId: "부담당자",
+    department: "부서",
+    team: "팀",
+    source: "등록경로",
+    memo1: "메모"
+  };
+  
+  const fieldDisplayName = fieldNameMap[fieldName] || fieldName;
+  
+  if (originalMessage.includes("Required")) {
+    return `${fieldDisplayName}을(를) 입력해주세요.`;
+  }
+  if (originalMessage.includes("Invalid date")) {
+    return `${fieldDisplayName}의 날짜 형식이 올바르지 않습니다.`;
+  }
+  if (originalMessage.includes("String must contain at least")) {
+    return `${fieldDisplayName}을(를) 입력해주세요.`;
+  }
+  if (originalMessage.includes("Expected string")) {
+    return `${fieldDisplayName}은(는) 텍스트 형태여야 합니다.`;
+  }
+  if (originalMessage.includes("Invalid email")) {
+    return `올바른 이메일 형식을 입력해주세요.`;
+  }
+  if (originalMessage.includes("too short") || originalMessage.includes("minimum")) {
+    return `${fieldDisplayName}이(가) 너무 짧습니다.`;
+  }
+  if (originalMessage.includes("too long") || originalMessage.includes("maximum")) {
+    return `${fieldDisplayName}이(가) 너무 깁니다.`;
+  }
+  
+  // Default fallback
+  return `${fieldDisplayName}: ${originalMessage}`;
+};
+
 export default function CustomerModal({ isOpen, onClose, customer, counselors }: CustomerModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -38,6 +92,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
     setValue,
     watch,
     reset,
+    setError,
     formState: { errors },
   } = useForm<CustomerFormData>({
     resolver: zodResolver(customerFormSchema),
@@ -158,11 +213,41 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
       });
       onClose();
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("Customer save error:", error);
+      
+      // Handle validation errors from the server
+      if (error?.errors && Array.isArray(error.errors)) {
+        const fieldErrors: Record<string, any> = {};
+        
+        error.errors.forEach((zodError: any) => {
+          if (zodError.path && zodError.path.length > 0) {
+            const fieldName = zodError.path[0];
+            fieldErrors[fieldName] = { 
+              type: "manual", 
+              message: getCustomerFieldErrorMessage(fieldName, zodError.message)
+            };
+          }
+        });
+        
+        if (Object.keys(fieldErrors).length > 0) {
+          // Set form errors for individual fields
+          Object.entries(fieldErrors).forEach(([fieldName, errorInfo]) => {
+            setError(fieldName as any, errorInfo);
+          });
+          
+          toast({
+            title: "입력 오류",
+            description: "입력하신 정보를 확인해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
       toast({
         title: "오류",
-        description: customer ? "고객 정보 수정에 실패했습니다." : "고객 등록에 실패했습니다.",
+        description: error?.message || (customer ? "고객 정보 수정에 실패했습니다." : "고객 등록에 실패했습니다."),
         variant: "destructive",
       });
     },
