@@ -783,12 +783,13 @@ export class DatabaseStorage implements IStorage {
     page?: number;
     limit?: number;
     filterByUserId?: string; // For role-based access control
+    sortOrder?: 'asc' | 'desc'; // Sort order for customer number (based on createdAt)
   } = {}): Promise<{
     customers: CustomerWithUser[];
     total: number;
     totalPages: number;
   }> {
-    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20, filterByUserId } = params;
+    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20, filterByUserId, sortOrder = 'desc' } = params;
     const conditions = [];
     
     if (search) {
@@ -861,7 +862,7 @@ export class DatabaseStorage implements IStorage {
       .from(customers)
       .leftJoin(users, eq(customers.assignedUserId, users.id))
       .where(whereClause)
-      .orderBy(asc(customers.createdAt))
+      .orderBy(sortOrder === 'asc' ? asc(customers.createdAt) : desc(customers.createdAt))
       .limit(limit)
       .offset((page - 1) * limit);
 

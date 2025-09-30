@@ -773,6 +773,7 @@ export default function Customers() {
                     unshared: false,
                     page: 1,
                     limit: 20,
+                    sortOrder: "desc",
                   });
                 }}
                 variant="outline" 
