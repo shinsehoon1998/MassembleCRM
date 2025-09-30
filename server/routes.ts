@@ -1254,6 +1254,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const unshared = req.query.unshared === 'true';
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
+      const sortOrder = (req.query.sortOrder === 'asc' || req.query.sortOrder === 'desc') 
+        ? req.query.sortOrder 
+        : 'desc';
 
       const params = {
         search,
@@ -1263,6 +1266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         unshared,
         page,
         limit,
+        sortOrder,
       };
 
       // Apply user-based filtering

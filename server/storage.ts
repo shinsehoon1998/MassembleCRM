@@ -862,7 +862,10 @@ export class DatabaseStorage implements IStorage {
       .from(customers)
       .leftJoin(users, eq(customers.assignedUserId, users.id))
       .where(whereClause)
-      .orderBy(sortOrder === 'asc' ? asc(customers.createdAt) : desc(customers.createdAt))
+      .orderBy(
+        sortOrder === 'asc' ? asc(customers.createdAt) : desc(customers.createdAt),
+        sortOrder === 'asc' ? asc(customers.id) : desc(customers.id)
+      )
       .limit(limit)
       .offset((page - 1) * limit);
 
