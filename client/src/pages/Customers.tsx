@@ -17,6 +17,7 @@ import CustomerModal from "@/components/CustomerModal";
 import AppointmentModal from "@/components/AppointmentModal";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
+import { ArrowUp, ArrowDown } from "lucide-react";
 import type { CustomerWithUser, User } from "@shared/schema";
 
 interface CustomersResponse {
@@ -34,6 +35,7 @@ export default function Customers() {
     unshared: false,    // 공유담당자 미정
     page: 1,
     limit: 20,
+    sortOrder: "desc" as "asc" | "desc",  // 번호 정렬 순서 (desc: 최신순, asc: 오래된순)
   });
   
   // 검색어 입력을 위한 별도 상태 (디바운싱용)
@@ -400,6 +402,15 @@ export default function Customers() {
 
   const handlePageChange = (page: number) => {
     setSearchParams(prev => ({ ...prev, page }));
+  };
+
+  // 정렬 순서 토글
+  const toggleSortOrder = () => {
+    setSearchParams(prev => ({
+      ...prev,
+      sortOrder: prev.sortOrder === "desc" ? "asc" : "desc",
+      page: 1  // 정렬 변경 시 첫 페이지로
+    }));
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -964,7 +975,14 @@ export default function Customers() {
                       />
                     </th>
                     <th className="relative px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: `${columnWidths.number}px` }}>
-                      번호
+                      <div className="flex items-center gap-1 cursor-pointer select-none" onClick={toggleSortOrder}>
+                        <span>번호</span>
+                        {searchParams.sortOrder === "desc" ? (
+                          <ArrowDown className="w-4 h-4" />
+                        ) : (
+                          <ArrowUp className="w-4 h-4" />
+                        )}
+                      </div>
                       <div 
                         className="absolute -right-1 top-0 w-4 h-full cursor-col-resize hover:bg-blue-400 bg-transparent transition-colors z-10"
                         onMouseDown={(e) => {
