@@ -133,7 +133,7 @@ export default function CustomerDetail() {
   };
 
   const getUploadParameters = async () => {
-    const response = await apiRequest("POST", "/api/objects/upload");
+    const response = await apiRequest("POST", "/api/objects/upload") as unknown as { uploadURL: string };
     return {
       method: "PUT" as const,
       url: response.uploadURL,
@@ -219,7 +219,7 @@ export default function CustomerDetail() {
                 {customer.status}
               </Badge>
               <span className="text-sm text-gray-600">
-                등록일: {format(new Date(customer.createdAt), 'yyyy년 MM월 dd일', { locale: ko })}
+                등록일: {customer.createdAt ? format(new Date(customer.createdAt), 'yyyy년 MM월 dd일', { locale: ko }) : '-'}
               </span>
             </div>
           </div>
@@ -398,13 +398,13 @@ export default function CustomerDetail() {
             </Card>
 
             {/* Memo */}
-            {customer.memo && (
+            {customer.memo1 && (
               <Card className="lg:col-span-2">
                 <CardHeader>
                   <CardTitle>메모</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="whitespace-pre-wrap" data-testid="customer-detail-memo">{customer.memo}</p>
+                  <p className="whitespace-pre-wrap" data-testid="customer-detail-memo">{customer.memo1}</p>
                 </CardContent>
               </Card>
             )}
@@ -483,17 +483,12 @@ export default function CustomerDetail() {
                           {consultation.consultType}
                         </Badge>
                         <span className="text-sm text-gray-500" data-testid="consultation-date">
-                          {format(new Date(consultation.createdAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })}
+                          {consultation.createdAt ? format(new Date(consultation.createdAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko }) : '-'}
                         </span>
                       </div>
                       <p className="whitespace-pre-wrap" data-testid="consultation-notes">
                         {consultation.content}
                       </p>
-                      {consultation.user && (
-                        <p className="text-sm text-gray-500 mt-2" data-testid="consultation-counselor">
-                          상담자: {consultation.user.name}
-                        </p>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -553,8 +548,8 @@ export default function CustomerDetail() {
                             {attachment.originalName}
                           </p>
                           <p className="text-sm text-gray-500" data-testid="attachment-info">
-                            {Math.round(attachment.fileSize / 1024)}KB • {' '}
-                            {format(new Date(attachment.createdAt), 'yyyy-MM-dd HH:mm', { locale: ko })}
+                            {attachment.fileSize ? Math.round(attachment.fileSize / 1024) : 0}KB • {' '}
+                            {attachment.createdAt ? format(new Date(attachment.createdAt), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'}
                           </p>
                         </div>
                       </div>
@@ -598,10 +593,10 @@ export default function CustomerDetail() {
                         </p>
                         <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                           <span data-testid="activity-user">
-                            {log.user?.name || '시스템'}
+                            시스템
                           </span>
                           <span data-testid="activity-date">
-                            {format(new Date(log.createdAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })}
+                            {log.createdAt ? format(new Date(log.createdAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko }) : '-'}
                           </span>
                           <Badge variant="outline" className="text-xs" data-testid="activity-action">
                             {log.action}
@@ -660,7 +655,7 @@ export default function CustomerDetail() {
                               <h4 className="font-medium text-gray-900">{appointment.title}</h4>
                               <Badge 
                                 variant={appointment.status === 'scheduled' ? 'default' : 
-                                        appointment.status === 'completed' ? 'success' :
+                                        appointment.status === 'completed' ? 'secondary' :
                                         appointment.status === 'cancelled' ? 'destructive' : 'secondary'}
                                 className="text-xs"
                               >
