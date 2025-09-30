@@ -53,10 +53,12 @@ export default function CustomerDetail() {
     enabled: !!params.id,
   });
 
-  const { data: appointments = [] } = useQuery<any[]>({
-    queryKey: [`/api/appointments`, { customerId: params.id }],
+  const { data: appointmentsData } = useQuery<{ appointments: any[]; total: number; totalPages: number }>({
+    queryKey: [`/api/appointments?customerId=${params.id}`],
     enabled: !!params.id,
   });
+  
+  const appointments = appointmentsData?.appointments || [];
 
   const { data: counselors = [] } = useQuery<any[]>({
     queryKey: ["/api/users/counselors"],
