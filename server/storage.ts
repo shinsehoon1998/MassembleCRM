@@ -15,6 +15,8 @@ import {
   arsCampaignStats,
   arsDailyStats,
   arsHourlyStats,
+  userRelationships,
+  customerAllocationHistory,
   type User,
   type UpsertUser,
   type Customer,
@@ -49,6 +51,11 @@ import {
   type ArsDailyStats,
   type ArsHourlyStats,
   type AppointmentWithDetails,
+  type UserRelationship,
+  type InsertUserRelationship,
+  type UpdateUserRelationship,
+  type CustomerAllocationHistory,
+  type InsertCustomerAllocationHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql, inArray } from "drizzle-orm";
@@ -723,6 +730,40 @@ export interface IStorage {
     customerId: string,
     excludeId?: string
   ): Promise<Appointment[]>;
+
+  // User relationship operations (팀장-팀원 관계)
+  getUserRelationships(): Promise<UserRelationship[]>;
+  getUserRelationshipsByManagerId(managerId: string): Promise<UserRelationship[]>;
+  getUserRelationshipByCounselorId(counselorId: string): Promise<UserRelationship | undefined>;
+  createUserRelationship(relationship: InsertUserRelationship): Promise<UserRelationship>;
+  updateUserRelationship(id: string, relationship: UpdateUserRelationship): Promise<UserRelationship | undefined>;
+  deleteUserRelationship(id: string): Promise<boolean>;
+
+  // Team member list for a manager
+  getTeamMembers(managerId: string): Promise<User[]>;
+
+  // Customer allocation operations (고객 재분배)
+  allocateCustomersToTeamMember(params: {
+    customerIds: string[];
+    fromUserId: string;
+    toUserId: string;
+    allocatedBy: string;
+    note?: string;
+  }): Promise<{ success: number; failed: number }>;
+
+  recallCustomersFromTeamMember(params: {
+    customerIds: string[];
+    fromUserId: string; // Team member
+    toUserId: string;   // Manager
+    allocatedBy: string;
+    note?: string;
+  }): Promise<{ success: number; failed: number }>;
+
+  // Get team customers for a manager
+  getTeamCustomers(managerId: string): Promise<CustomerWithUser[]>;
+
+  // Customer allocation history
+  getCustomerAllocationHistory(customerId?: string): Promise<CustomerAllocationHistory[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3769,6 +3810,333 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(appointments)
       .where(and(...conditions));
+  }
+
+  // User relationship methods implementation
+  async getUserRelationships(): Promise<UserRelationship[]> {
+    return await db
+      .select()
+      .from(userRelationships)
+      .where(eq(userRelationships.isActive, true));
+  }
+
+  async getUserRelationshipsByManagerId(managerId: string): Promise<UserRelationship[]> {
+    return await db
+      .select()
+      .from(userRelationships)
+      .where(
+        and(
+          eq(userRelationships.managerId, managerId),
+          eq(userRelationships.isActive, true)
+        )
+      );
+  }
+
+  async getUserRelationshipByCounselorId(counselorId: string): Promise<UserRelationship | undefined> {
+    const [relationship] = await db
+      .select()
+      .from(userRelationships)
+      .where(
+        and(
+          eq(userRelationships.counselorId, counselorId),
+          eq(userRelationships.isActive, true)
+        )
+      );
+    return relationship;
+  }
+
+  async createUserRelationship(relationship: InsertUserRelationship): Promise<UserRelationship> {
+    // 기존 관계 비활성화
+    if (relationship.counselorId) {
+      await db
+        .update(userRelationships)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(userRelationships.counselorId, relationship.counselorId));
+    }
+
+    const [newRelationship] = await db
+      .insert(userRelationships)
+      .values({
+        ...relationship,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    return newRelationship;
+  }
+
+  async updateUserRelationship(id: string, relationship: UpdateUserRelationship): Promise<UserRelationship | undefined> {
+    const [updatedRelationship] = await db
+      .update(userRelationships)
+      .set({
+        ...relationship,
+        updatedAt: new Date(),
+      })
+      .where(eq(userRelationships.id, id))
+      .returning();
+    return updatedRelationship;
+  }
+
+  async deleteUserRelationship(id: string): Promise<boolean> {
+    const result = await db
+      .update(userRelationships)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(userRelationships.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async getTeamMembers(managerId: string): Promise<User[]> {
+    const relationships = await this.getUserRelationshipsByManagerId(managerId);
+    const counselorIds = relationships.map(r => r.counselorId);
+    
+    if (counselorIds.length === 0) return [];
+    
+    return await db
+      .select()
+      .from(users)
+      .where(inArray(users.id, counselorIds));
+  }
+
+  async allocateCustomersToTeamMember(params: {
+    customerIds: string[];
+    fromUserId: string;
+    toUserId: string;
+    allocatedBy: string;
+    note?: string;
+  }): Promise<{ success: number; failed: number }> {
+    const { customerIds, fromUserId, toUserId, allocatedBy, note } = params;
+    let success = 0;
+    let failed = 0;
+
+    for (const customerId of customerIds) {
+      try {
+        // Update customer assignment
+        const result = await db
+          .update(customers)
+          .set({ 
+            assignedUserId: toUserId,
+            updatedAt: new Date()
+          })
+          .where(
+            and(
+              eq(customers.id, customerId),
+              eq(customers.assignedUserId, fromUserId) // 현재 담당자가 맞는지 확인
+            )
+          );
+
+        if ((result.rowCount ?? 0) > 0) {
+          // Record allocation history
+          await db.insert(customerAllocationHistory).values({
+            customerId,
+            fromUserId,
+            toUserId,
+            action: 'allocate',
+            allocatedBy,
+            note,
+            createdAt: new Date(),
+          });
+
+          // Create activity log
+          await db.insert(activityLogs).values({
+            userId: allocatedBy,
+            customerId,
+            action: 'customer_allocated',
+            description: `고객을 팀원에게 배분함 (${fromUserId} → ${toUserId})`,
+            metadata: { fromUserId, toUserId, note },
+            createdAt: new Date(),
+          });
+
+          success++;
+        } else {
+          failed++;
+        }
+      } catch (error) {
+        console.error(`Failed to allocate customer ${customerId}:`, error);
+        failed++;
+      }
+    }
+
+    return { success, failed };
+  }
+
+  async recallCustomersFromTeamMember(params: {
+    customerIds: string[];
+    fromUserId: string;
+    toUserId: string;
+    allocatedBy: string;
+    note?: string;
+  }): Promise<{ success: number; failed: number }> {
+    const { customerIds, fromUserId, toUserId, allocatedBy, note } = params;
+    let success = 0;
+    let failed = 0;
+
+    for (const customerId of customerIds) {
+      try {
+        // Update customer assignment
+        const result = await db
+          .update(customers)
+          .set({ 
+            assignedUserId: toUserId,
+            updatedAt: new Date()
+          })
+          .where(
+            and(
+              eq(customers.id, customerId),
+              eq(customers.assignedUserId, fromUserId) // 현재 담당자가 맞는지 확인
+            )
+          );
+
+        if ((result.rowCount ?? 0) > 0) {
+          // Record allocation history
+          await db.insert(customerAllocationHistory).values({
+            customerId,
+            fromUserId,
+            toUserId,
+            action: 'recall',
+            allocatedBy,
+            note,
+            createdAt: new Date(),
+          });
+
+          // Create activity log
+          await db.insert(activityLogs).values({
+            userId: allocatedBy,
+            customerId,
+            action: 'customer_recalled',
+            description: `고객을 팀원으로부터 회수함 (${fromUserId} → ${toUserId})`,
+            metadata: { fromUserId, toUserId, note },
+            createdAt: new Date(),
+          });
+
+          success++;
+        } else {
+          failed++;
+        }
+      } catch (error) {
+        console.error(`Failed to recall customer ${customerId}:`, error);
+        failed++;
+      }
+    }
+
+    return { success, failed };
+  }
+
+  async getTeamCustomers(managerId: string): Promise<CustomerWithUser[]> {
+    const teamMembers = await this.getTeamMembers(managerId);
+    const teamMemberIds = teamMembers.map(m => m.id);
+    
+    if (teamMemberIds.length === 0) {
+      // 팀원이 없으면 매니저 본인의 고객만 반환
+      return await db
+        .select({
+          id: customers.id,
+          name: customers.name,
+          phone: customers.phone,
+          secondaryPhone: customers.secondaryPhone,
+          birthDate: customers.birthDate,
+          gender: customers.gender,
+          zipcode: customers.zipcode,
+          address: customers.address,
+          addressDetail: customers.addressDetail,
+          monthlyIncome: customers.monthlyIncome,
+          jobType: customers.jobType,
+          companyName: customers.companyName,
+          consultType: customers.consultType,
+          consultPath: customers.consultPath,
+          status: customers.status,
+          assignedUserId: customers.assignedUserId,
+          secondaryUserId: customers.secondaryUserId,
+          department: customers.department,
+          team: customers.team,
+          source: customers.source,
+          marketingConsent: customers.marketingConsent,
+          marketingConsentDate: customers.marketingConsentDate,
+          marketingConsentMethod: customers.marketingConsentMethod,
+          memo1: customers.memo1,
+          info1: customers.info1,
+          info2: customers.info2,
+          info3: customers.info3,
+          info4: customers.info4,
+          info5: customers.info5,
+          info6: customers.info6,
+          info7: customers.info7,
+          info8: customers.info8,
+          info9: customers.info9,
+          info10: customers.info10,
+          createdAt: customers.createdAt,
+          updatedAt: customers.updatedAt,
+          assignedUserName: users.name,
+          assignedUserRole: users.role,
+        })
+        .from(customers)
+        .leftJoin(users, eq(customers.assignedUserId, users.id))
+        .where(eq(customers.assignedUserId, managerId));
+    }
+
+    // 매니저와 팀원들의 모든 고객 반환
+    return await db
+      .select({
+        id: customers.id,
+        name: customers.name,
+        phone: customers.phone,
+        secondaryPhone: customers.secondaryPhone,
+        birthDate: customers.birthDate,
+        gender: customers.gender,
+        zipcode: customers.zipcode,
+        address: customers.address,
+        addressDetail: customers.addressDetail,
+        monthlyIncome: customers.monthlyIncome,
+        jobType: customers.jobType,
+        companyName: customers.companyName,
+        consultType: customers.consultType,
+        consultPath: customers.consultPath,
+        status: customers.status,
+        assignedUserId: customers.assignedUserId,
+        secondaryUserId: customers.secondaryUserId,
+        department: customers.department,
+        team: customers.team,
+        source: customers.source,
+        marketingConsent: customers.marketingConsent,
+        marketingConsentDate: customers.marketingConsentDate,
+        marketingConsentMethod: customers.marketingConsentMethod,
+        memo1: customers.memo1,
+        info1: customers.info1,
+        info2: customers.info2,
+        info3: customers.info3,
+        info4: customers.info4,
+        info5: customers.info5,
+        info6: customers.info6,
+        info7: customers.info7,
+        info8: customers.info8,
+        info9: customers.info9,
+        info10: customers.info10,
+        createdAt: customers.createdAt,
+        updatedAt: customers.updatedAt,
+        assignedUserName: users.name,
+        assignedUserRole: users.role,
+      })
+      .from(customers)
+      .leftJoin(users, eq(customers.assignedUserId, users.id))
+      .where(
+        sql`${customers.assignedUserId} = ${managerId} OR ${customers.assignedUserId} IN (${sql.join(teamMemberIds, sql`, `)})`
+      );
+  }
+
+  async getCustomerAllocationHistory(customerId?: string): Promise<CustomerAllocationHistory[]> {
+    if (customerId) {
+      return await db
+        .select()
+        .from(customerAllocationHistory)
+        .where(eq(customerAllocationHistory.customerId, customerId))
+        .orderBy(desc(customerAllocationHistory.createdAt));
+    }
+    
+    return await db
+      .select()
+      .from(customerAllocationHistory)
+      .orderBy(desc(customerAllocationHistory.createdAt))
+      .limit(100); // 최근 100개만
   }
 }
 
