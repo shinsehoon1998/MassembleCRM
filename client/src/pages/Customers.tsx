@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +17,7 @@ import CustomerModal from "@/components/CustomerModal";
 import AppointmentModal from "@/components/AppointmentModal";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown, UserX, UserCheck } from "lucide-react";
 import type { CustomerWithUser, User } from "@shared/schema";
 
 interface CustomersResponse {
@@ -49,6 +49,12 @@ export default function Customers() {
   const [showBatchActions, setShowBatchActions] = useState(false);
   const [showArsModal, setShowArsModal] = useState(false);
   const [showBatchAppointmentModal, setShowBatchAppointmentModal] = useState(false);
+  const [showAllocationModal, setShowAllocationModal] = useState(false);
+  const [showRecallModal, setShowRecallModal] = useState(false);
+  const [allocationData, setAllocationData] = useState({
+    targetUserId: "",
+    note: ""
+  });
   const [batchAppointmentData, setBatchAppointmentData] = useState({
     appointmentDate: "",
     appointmentTime: "",
@@ -131,6 +137,12 @@ export default function Customers() {
 
   const { data: currentUser } = useQuery<any>({
     queryKey: ["/api/auth/user"],
+  });
+
+  // 팀원 목록 가져오기 (팀장인 경우)
+  const { data: teamMembers } = useQuery<User[]>({
+    queryKey: ['/api/user-relationships/manager', currentUser?.id],
+    enabled: !!currentUser?.id && (currentUser?.role === 'manager' || currentUser?.role === 'admin'),
   });
 
   // 환경설정에서 상태 항목들 추출
@@ -361,6 +373,56 @@ export default function Customers() {
       toast({
         title: "오류",
         description: "메모 저장에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 고객 배분 mutation (팀장 → 팀원)
+  const allocateCustomersMutation = useMutation({
+    mutationFn: async ({ customerIds, toUserId, note }: { customerIds: string[], toUserId: string, note?: string }) => {
+      const response = await apiRequest("POST", "/api/customers/allocate", { customerIds, toUserId, note });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setSelectedCustomers([]);
+      setShowAllocationModal(false);
+      setAllocationData({ targetUserId: "", note: "" });
+      toast({
+        title: "배분 완료",
+        description: `${data.success}명의 고객이 배분되었습니다.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "배분 실패",
+        description: error.message || "고객 배분에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 고객 회수 mutation (팀원 → 팀장)
+  const recallCustomersMutation = useMutation({
+    mutationFn: async ({ customerIds, fromUserId, note }: { customerIds: string[], fromUserId: string, note?: string }) => {
+      const response = await apiRequest("POST", "/api/customers/recall", { customerIds, fromUserId, note });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setSelectedCustomers([]);
+      setShowRecallModal(false);
+      setAllocationData({ targetUserId: "", note: "" });
+      toast({
+        title: "회수 완료",
+        description: `${data.success}명의 고객이 회수되었습니다.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "회수 실패",
+        description: error.message || "고객 회수에 실패했습니다.",
         variant: "destructive",
       });
     },
@@ -852,6 +914,31 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                {/* 팀장 권한인 경우 재분배/회수 버튼 표시 */}
+                {(currentUser?.role === 'manager' || currentUser?.role === 'admin') && teamMembers && teamMembers.length > 0 && (
+                  <>
+                    <Button
+                      onClick={() => setShowAllocationModal(true)}
+                      variant="outline"
+                      size="sm"
+                      className="bg-purple-600 text-white hover:bg-purple-700"
+                      data-testid="button-allocate-customers"
+                    >
+                      <UserCheck className="h-4 w-4 mr-1" />
+                      팀원 배분
+                    </Button>
+                    <Button
+                      onClick={() => setShowRecallModal(true)}
+                      variant="outline"
+                      size="sm"
+                      className="bg-orange-600 text-white hover:bg-orange-700"
+                      data-testid="button-recall-customers"
+                    >
+                      <UserX className="h-4 w-4 mr-1" />
+                      고객 회수
+                    </Button>
+                  </>
+                )}
                 <Button
                   onClick={handleBatchAppointment}
                   variant="outline"
@@ -1827,6 +1914,194 @@ export default function Customers() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 고객 배분 모달 (팀장 → 팀원) */}
+      <Dialog open={showAllocationModal} onOpenChange={setShowAllocationModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>고객 팀원 배분</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-purple-50 p-3 rounded-lg">
+              <p className="text-sm text-purple-800">
+                <UserCheck className="inline-block h-4 w-4 mr-1" />
+                선택된 고객: {selectedCustomers.length}명
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {customersData?.customers
+                  .filter(customer => selectedCustomers.includes(customer.id))
+                  .slice(0, 5)
+                  .map(customer => (
+                    <Badge key={customer.id} variant="secondary" className="text-xs">
+                      {customer.name}
+                    </Badge>
+                  ))}
+                {selectedCustomers.length > 5 && (
+                  <Badge variant="secondary" className="text-xs">
+                    +{selectedCustomers.length - 5}명 더
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="target-team-member">배분 대상 팀원</Label>
+              <Select
+                value={allocationData.targetUserId}
+                onValueChange={(value) => setAllocationData(prev => ({ ...prev, targetUserId: value }))}
+              >
+                <SelectTrigger data-testid="select-target-team-member">
+                  <SelectValue placeholder="팀원을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamMembers?.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.name} ({member.username})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="allocation-note">메모 (선택사항)</Label>
+              <Textarea
+                placeholder="배분 사유나 메모를 입력하세요..."
+                value={allocationData.note}
+                onChange={(e) => setAllocationData(prev => ({ ...prev, note: e.target.value }))}
+                rows={3}
+                data-testid="textarea-allocation-note"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAllocationModal(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                if (!allocationData.targetUserId) {
+                  toast({
+                    title: "오류",
+                    description: "배분 대상 팀원을 선택해주세요.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                allocateCustomersMutation.mutate({
+                  customerIds: selectedCustomers,
+                  toUserId: allocationData.targetUserId,
+                  note: allocationData.note,
+                });
+              }}
+              disabled={allocateCustomersMutation.isPending}
+              className="bg-purple-600 hover:bg-purple-700"
+              data-testid="button-confirm-allocation"
+            >
+              {allocateCustomersMutation.isPending ? "배분 중..." : "배분하기"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 고객 회수 모달 (팀원 → 팀장) */}
+      <Dialog open={showRecallModal} onOpenChange={setShowRecallModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>고객 회수</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-orange-50 p-3 rounded-lg">
+              <p className="text-sm text-orange-800">
+                <UserX className="inline-block h-4 w-4 mr-1" />
+                선택된 고객: {selectedCustomers.length}명
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {customersData?.customers
+                  .filter(customer => selectedCustomers.includes(customer.id))
+                  .slice(0, 5)
+                  .map(customer => (
+                    <Badge key={customer.id} variant="secondary" className="text-xs">
+                      {customer.name} 
+                      {customer.assignedUser && (
+                        <span className="ml-1 text-gray-500">
+                          ({customer.assignedUser.name})
+                        </span>
+                      )}
+                    </Badge>
+                  ))}
+                {selectedCustomers.length > 5 && (
+                  <Badge variant="secondary" className="text-xs">
+                    +{selectedCustomers.length - 5}명 더
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="recall-from-member">회수 대상 팀원</Label>
+              <Select
+                value={allocationData.targetUserId}
+                onValueChange={(value) => setAllocationData(prev => ({ ...prev, targetUserId: value }))}
+              >
+                <SelectTrigger data-testid="select-recall-from-member">
+                  <SelectValue placeholder="회수할 팀원을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teamMembers?.map((member) => {
+                    const memberCustomerCount = customersData?.customers
+                      .filter(c => selectedCustomers.includes(c.id) && c.assignedUserId === member.id)
+                      .length || 0;
+                    return (
+                      <SelectItem key={member.id} value={member.id}>
+                        {member.name} ({member.username}) - {memberCustomerCount}명
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="recall-note">메모 (선택사항)</Label>
+              <Textarea
+                placeholder="회수 사유나 메모를 입력하세요..."
+                value={allocationData.note}
+                onChange={(e) => setAllocationData(prev => ({ ...prev, note: e.target.value }))}
+                rows={3}
+                data-testid="textarea-recall-note"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRecallModal(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                if (!allocationData.targetUserId) {
+                  toast({
+                    title: "오류",
+                    description: "회수 대상 팀원을 선택해주세요.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                recallCustomersMutation.mutate({
+                  customerIds: selectedCustomers,
+                  fromUserId: allocationData.targetUserId,
+                  note: allocationData.note,
+                });
+              }}
+              disabled={recallCustomersMutation.isPending}
+              className="bg-orange-600 hover:bg-orange-700"
+              data-testid="button-confirm-recall"
+            >
+              {recallCustomersMutation.isPending ? "회수 중..." : "회수하기"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
