@@ -918,20 +918,42 @@ export default function Customers() {
                 {(currentUser?.role === 'manager' || currentUser?.role === 'admin') && teamMembers && teamMembers.length > 0 && (
                   <>
                     <Button
-                      onClick={() => setShowAllocationModal(true)}
+                      onClick={() => {
+                        if (selectedCustomers.length === 0) {
+                          toast({
+                            title: "선택 필요",
+                            description: "배분할 고객을 먼저 선택해주세요.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setShowAllocationModal(true);
+                      }}
                       variant="outline"
                       size="sm"
                       className="bg-purple-600 text-white hover:bg-purple-700"
+                      disabled={selectedCustomers.length === 0}
                       data-testid="button-allocate-customers"
                     >
                       <UserCheck className="h-4 w-4 mr-1" />
                       팀원 배분
                     </Button>
                     <Button
-                      onClick={() => setShowRecallModal(true)}
+                      onClick={() => {
+                        if (selectedCustomers.length === 0) {
+                          toast({
+                            title: "선택 필요",
+                            description: "회수할 고객을 먼저 선택해주세요.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setShowRecallModal(true);
+                      }}
                       variant="outline"
                       size="sm"
                       className="bg-orange-600 text-white hover:bg-orange-700"
+                      disabled={selectedCustomers.length === 0}
                       data-testid="button-recall-customers"
                     >
                       <UserX className="h-4 w-4 mr-1" />
@@ -1982,6 +2004,14 @@ export default function Customers() {
             </Button>
             <Button
               onClick={() => {
+                if (selectedCustomers.length === 0) {
+                  toast({
+                    title: "오류",
+                    description: "배분할 고객을 선택해주세요.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
                 if (!allocationData.targetUserId) {
                   toast({
                     title: "오류",
@@ -2081,6 +2111,14 @@ export default function Customers() {
             </Button>
             <Button
               onClick={() => {
+                if (selectedCustomers.length === 0) {
+                  toast({
+                    title: "오류",
+                    description: "회수할 고객을 선택해주세요.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
                 if (!allocationData.targetUserId) {
                   toast({
                     title: "오류",
