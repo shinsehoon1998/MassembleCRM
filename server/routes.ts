@@ -6414,6 +6414,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { customerIds, toUserId, note } = req.body;
       
+      // 입력 검증
+      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: '배분할 고객을 선택해주세요.' });
+      }
+      
+      if (!toUserId) {
+        return res.status(400).json({ message: '배분 대상 팀원을 선택해주세요.' });
+      }
+      
       // 권한 체크: 팀장(manager) 역할이어야 함
       if (req.user.role !== 'manager' && req.user.role !== 'admin') {
         return res.status(403).json({ message: '팀장 권한이 필요합니다.' });
@@ -6449,6 +6458,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/customers/recall', isAuthenticated, async (req: any, res) => {
     try {
       const { customerIds, fromUserId, note } = req.body;
+      
+      // 입력 검증
+      if (!customerIds || !Array.isArray(customerIds) || customerIds.length === 0) {
+        return res.status(400).json({ message: '회수할 고객을 선택해주세요.' });
+      }
+      
+      if (!fromUserId) {
+        return res.status(400).json({ message: '회수 대상 팀원을 선택해주세요.' });
+      }
       
       // 권한 체크: 팀장(manager) 역할이어야 함
       if (req.user.role !== 'manager' && req.user.role !== 'admin') {

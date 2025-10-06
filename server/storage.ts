@@ -3908,6 +3908,17 @@ export class DatabaseStorage implements IStorage {
     const { customerIds, fromUserId, toUserId, allocatedBy, note } = params;
     let success = 0;
     let failed = 0;
+    
+    // 팀 관계 이중 검증 (보안 강화)
+    const allocator = await this.getUser(allocatedBy);
+    if (allocator && allocator.role === 'manager') {
+      const teamMembers = await this.getTeamMembers(allocatedBy);
+      const isTeamMember = teamMembers.some(m => m.id === toUserId);
+      
+      if (!isTeamMember) {
+        throw new Error('권한이 없습니다. 본인 팀원에게만 배분할 수 있습니다.');
+      }
+    }
 
     for (const customerId of customerIds) {
       try {
@@ -3970,6 +3981,17 @@ export class DatabaseStorage implements IStorage {
     const { customerIds, fromUserId, toUserId, allocatedBy, note } = params;
     let success = 0;
     let failed = 0;
+    
+    // 팀 관계 이중 검증 (보안 강화)
+    const recaller = await this.getUser(allocatedBy);
+    if (recaller && recaller.role === 'manager') {
+      const teamMembers = await this.getTeamMembers(allocatedBy);
+      const isTeamMember = teamMembers.some(m => m.id === fromUserId);
+      
+      if (!isTeamMember) {
+        throw new Error('권한이 없습니다. 본인 팀원의 고객만 회수할 수 있습니다.');
+      }
+    }
 
     for (const customerId of customerIds) {
       try {
