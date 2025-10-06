@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,9 +7,212 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Edit, Trash2, UserPlus } from "lucide-react";
+import { Edit, Trash2, UserPlus, Users as UsersIcon, Link2, Unlink } from "lucide-react";
 import type { User } from "@shared/schema";
 import { UserModal } from "@/components/UserModal";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+
+// 팀 관계 관리 컴포넌트
+function TeamRelationshipManager({ isAdmin }: { isAdmin: boolean }) {
+  const { toast } = useToast();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedManager, setSelectedManager] = useState<string>("");
+  const [selectedCounselor, setSelectedCounselor] = useState<string>("");
+
+  // 사용자 목록 가져오기
+  const { data: users } = useQuery<User[]>({
+    queryKey: ['/api/users'],
+  });
+
+  // 팀 관계 가져오기
+  const { data: relationships, isLoading } = useQuery<Array<{
+    id: string;
+    managerId: string;
+    counselorId: string;
+    managerName?: string;
+    counselorName?: string;
+    createdAt?: string;
+    isActive?: boolean;
+  }>>({
+    queryKey: ['/api/user-relationships'],
+    enabled: isAdmin,
+  });
+
+  // 팀 관계 생성 mutation
+  const createRelationshipMutation = useMutation({
+    mutationFn: (data: { managerId: string; counselorId: string }) =>
+      apiRequest('POST', '/api/user-relationships', data),
+    onSuccess: () => {
+      toast({
+        title: "성공",
+        description: "팀 관계가 생성되었습니다.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/user-relationships'] });
+      setIsDialogOpen(false);
+      setSelectedManager("");
+      setSelectedCounselor("");
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "팀 관계 생성에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // 팀 관계 삭제 mutation
+  const deleteRelationshipMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest('DELETE', `/api/user-relationships/${id}`),
+    onSuccess: () => {
+      toast({
+        title: "성공",
+        description: "팀 관계가 삭제되었습니다.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/user-relationships'] });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "팀 관계 삭제에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const managers = users?.filter(u => u.role === 'manager') || [];
+  const counselors = users?.filter(u => u.role === 'counselor') || [];
+
+  if (!isAdmin) return null;
+
+  return (
+    <>
+      <Card className="border-gray-100">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-semibold text-gray-900">
+              <UsersIcon className="inline-block h-5 w-5 mr-2" />
+              팀장-팀원 관계 관리
+            </CardTitle>
+            <Button
+              onClick={() => setIsDialogOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              data-testid="button-add-relationship"
+            >
+              <Link2 className="h-4 w-4 mr-2" />
+              관계 추가
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : relationships && relationships.length > 0 ? (
+            <div className="space-y-3">
+              {relationships.map((rel) => (
+                <div
+                  key={rel.id}
+                  className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                >
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <Badge className="bg-blue-100 text-blue-800">팀장</Badge>
+                      <span className="font-medium">{rel.managerName}</span>
+                    </div>
+                    <div className="text-gray-400">→</div>
+                    <div className="flex items-center space-x-2">
+                      <Badge className="bg-green-100 text-green-800">팀원</Badge>
+                      <span className="font-medium">{rel.counselorName}</span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteRelationshipMutation.mutate(rel.id)}
+                    data-testid={`button-delete-relationship-${rel.id}`}
+                  >
+                    <Unlink className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              등록된 팀 관계가 없습니다.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 팀 관계 추가 다이얼로그 */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>팀 관계 추가</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">팀장 선택</label>
+              <Select value={selectedManager} onValueChange={setSelectedManager}>
+                <SelectTrigger data-testid="select-manager">
+                  <SelectValue placeholder="팀장을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {managers.map(manager => (
+                    <SelectItem key={manager.id} value={manager.id}>
+                      {manager.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">팀원 선택</label>
+              <Select value={selectedCounselor} onValueChange={setSelectedCounselor}>
+                <SelectTrigger data-testid="select-counselor">
+                  <SelectValue placeholder="팀원을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {counselors.map(counselor => (
+                    <SelectItem key={counselor.id} value={counselor.id}>
+                      {counselor.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedManager && selectedCounselor) {
+                  createRelationshipMutation.mutate({
+                    managerId: selectedManager,
+                    counselorId: selectedCounselor,
+                  });
+                }
+              }}
+              disabled={!selectedManager || !selectedCounselor}
+              data-testid="button-save-relationship"
+            >
+              저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 function UsersList({ 
   onEditUser, 
@@ -275,6 +478,9 @@ export default function Users() {
           </div>
         </CardContent>
       </Card>
+      
+      {/* 팀 관계 관리 - 관리자만 표시 */}
+      <TeamRelationshipManager isAdmin={user?.role === 'admin'} />
       
       <UserModal 
         isOpen={isUserModalOpen}
