@@ -6438,7 +6438,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const result = await storage.allocateCustomersToTeamMember({
         customerIds,
-        fromUserId: req.user.id,
         toUserId,
         allocatedBy: req.user.id,
         note

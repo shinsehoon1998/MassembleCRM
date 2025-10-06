@@ -3900,12 +3900,11 @@ export class DatabaseStorage implements IStorage {
 
   async allocateCustomersToTeamMember(params: {
     customerIds: string[];
-    fromUserId: string;
     toUserId: string;
     allocatedBy: string;
     note?: string;
   }): Promise<{ success: number; failed: number }> {
-    const { customerIds, fromUserId, toUserId, allocatedBy, note } = params;
+    const { customerIds, toUserId, allocatedBy, note } = params;
     let success = 0;
     let failed = 0;
     
@@ -3970,7 +3969,7 @@ export class DatabaseStorage implements IStorage {
           // Record allocation history
           await db.insert(customerAllocationHistory).values({
             customerId,
-            fromUserId: previousUserId || fromUserId,
+            fromUserId: previousUserId || null,
             toUserId,
             action: 'allocate',
             allocatedBy,
