@@ -165,6 +165,29 @@ export const appointments = pgTable("appointments", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// User relationships table (팀장-팀원 관계)
+export const userRelationships = pgTable("user_relationships", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  managerId: varchar("manager_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  counselorId: varchar("counselor_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Customer allocation history table (고객 분배 이력)
+export const customerAllocationHistory = pgTable("customer_allocation_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  customerId: varchar("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  fromUserId: varchar("from_user_id").references(() => users.id),
+  toUserId: varchar("to_user_id").references(() => users.id),
+  action: varchar("action").notNull(), // 'allocate' | 'recall'
+  allocatedBy: varchar("allocated_by").notNull().references(() => users.id),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   customers: many(customers),
@@ -173,6 +196,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   attachments: many(attachments),
   appointments: many(appointments),
   createdAppointments: many(appointments, { relationName: "createdAppointments" }),
+  managedCounselors: many(userRelationships, { relationName: "managedCounselors" }),
+  manager: many(userRelationships, { relationName: "manager" }),
 }));
 
 export const customersRelations = relations(customers, ({ one, many }) => ({
@@ -239,6 +264,42 @@ export const appointmentsRelations = relations(appointments, ({ one }) => ({
   }),
 }));
 
+export const userRelationshipsRelations = relations(userRelationships, ({ one }) => ({
+  manager: one(users, {
+    fields: [userRelationships.managerId],
+    references: [users.id],
+    relationName: "managedCounselors",
+  }),
+  counselor: one(users, {
+    fields: [userRelationships.counselorId],
+    references: [users.id],
+    relationName: "manager",
+  }),
+  creator: one(users, {
+    fields: [userRelationships.createdBy],
+    references: [users.id],
+  }),
+}));
+
+export const customerAllocationHistoryRelations = relations(customerAllocationHistory, ({ one }) => ({
+  customer: one(customers, {
+    fields: [customerAllocationHistory.customerId],
+    references: [customers.id],
+  }),
+  fromUser: one(users, {
+    fields: [customerAllocationHistory.fromUserId],
+    references: [users.id],
+  }),
+  toUser: one(users, {
+    fields: [customerAllocationHistory.toUserId],
+    references: [users.id],
+  }),
+  allocator: one(users, {
+    fields: [customerAllocationHistory.allocatedBy],
+    references: [users.id],
+  }),
+}));
+
 
 
 // Schemas
@@ -299,6 +360,19 @@ export const insertAppointmentSchema = createInsertSchema(appointments).omit({
 
 export const updateAppointmentSchema = insertAppointmentSchema.partial();
 
+export const insertUserRelationshipSchema = createInsertSchema(userRelationships).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateUserRelationshipSchema = insertUserRelationshipSchema.partial();
+
+export const insertCustomerAllocationHistorySchema = createInsertSchema(customerAllocationHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -317,6 +391,11 @@ export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
 export type Appointment = typeof appointments.$inferSelect;
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
 export type UpdateAppointment = z.infer<typeof updateAppointmentSchema>;
+export type UserRelationship = typeof userRelationships.$inferSelect;
+export type InsertUserRelationship = z.infer<typeof insertUserRelationshipSchema>;
+export type UpdateUserRelationship = z.infer<typeof updateUserRelationshipSchema>;
+export type CustomerAllocationHistory = typeof customerAllocationHistory.$inferSelect;
+export type InsertCustomerAllocationHistory = z.infer<typeof insertCustomerAllocationHistorySchema>;
 
 // Extended types with join data
 export type AppointmentWithDetails = Appointment & {
