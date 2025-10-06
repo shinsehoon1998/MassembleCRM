@@ -3922,6 +3922,34 @@ export class DatabaseStorage implements IStorage {
 
     for (const customerId of customerIds) {
       try {
+        // 현재 고객 정보 조회
+        const [customer] = await db
+          .select()
+          .from(customers)
+          .where(eq(customers.id, customerId));
+        
+        if (!customer) {
+          failed++;
+          continue;
+        }
+
+        // 권한 확인: 팀장은 자신 또는 팀원에게 배정된 고객만 배분 가능
+        if (allocator && allocator.role === 'manager') {
+          const teamMembers = await this.getTeamMembers(allocatedBy);
+          const teamMemberIds = teamMembers.map(m => m.id);
+          const canAllocate = 
+            customer.assignedUserId === allocatedBy || // 본인에게 배정된 고객
+            teamMemberIds.includes(customer.assignedUserId || '') || // 팀원에게 배정된 고객
+            !customer.assignedUserId; // 미배정 고객
+          
+          if (!canAllocate) {
+            failed++;
+            continue;
+          }
+        }
+
+        const previousUserId = customer.assignedUserId;
+
         // Update customer assignment
         const result = await db
           .update(customers)
@@ -3929,18 +3957,13 @@ export class DatabaseStorage implements IStorage {
             assignedUserId: toUserId,
             updatedAt: new Date()
           })
-          .where(
-            and(
-              eq(customers.id, customerId),
-              eq(customers.assignedUserId, fromUserId) // 현재 담당자가 맞는지 확인
-            )
-          );
+          .where(eq(customers.id, customerId));
 
         if ((result.rowCount ?? 0) > 0) {
           // Record allocation history
           await db.insert(customerAllocationHistory).values({
             customerId,
-            fromUserId,
+            fromUserId: previousUserId || fromUserId,
             toUserId,
             action: 'allocate',
             allocatedBy,
@@ -3953,8 +3976,8 @@ export class DatabaseStorage implements IStorage {
             userId: allocatedBy,
             customerId,
             action: 'customer_allocated',
-            description: `고객을 팀원에게 배분함 (${fromUserId} → ${toUserId})`,
-            metadata: { fromUserId, toUserId, note },
+            description: `고객을 팀원에게 배분함 (${previousUserId || '미배정'} → ${toUserId})`,
+            metadata: { fromUserId: previousUserId, toUserId, note },
             createdAt: new Date(),
           });
 
@@ -3995,6 +4018,23 @@ export class DatabaseStorage implements IStorage {
 
     for (const customerId of customerIds) {
       try {
+        // 현재 고객 정보 조회
+        const [customer] = await db
+          .select()
+          .from(customers)
+          .where(eq(customers.id, customerId));
+        
+        if (!customer) {
+          failed++;
+          continue;
+        }
+
+        // 권한 확인: 현재 담당자가 지정된 팀원인지 확인
+        if (customer.assignedUserId !== fromUserId) {
+          failed++;
+          continue;
+        }
+
         // Update customer assignment
         const result = await db
           .update(customers)
@@ -4002,12 +4042,7 @@ export class DatabaseStorage implements IStorage {
             assignedUserId: toUserId,
             updatedAt: new Date()
           })
-          .where(
-            and(
-              eq(customers.id, customerId),
-              eq(customers.assignedUserId, fromUserId) // 현재 담당자가 맞는지 확인
-            )
-          );
+          .where(eq(customers.id, customerId));
 
         if ((result.rowCount ?? 0) > 0) {
           // Record allocation history
