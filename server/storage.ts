@@ -3920,6 +3920,13 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    // 팀장인 경우 팀원 목록을 미리 조회 (성능 최적화)
+    let teamMemberIds: string[] = [];
+    if (allocator && allocator.role === 'manager') {
+      const teamMembers = await this.getTeamMembers(allocatedBy);
+      teamMemberIds = teamMembers.map(m => m.id);
+    }
+
     for (const customerId of customerIds) {
       try {
         // 현재 고객 정보 조회
@@ -3935,8 +3942,6 @@ export class DatabaseStorage implements IStorage {
 
         // 권한 확인: 팀장은 자신 또는 팀원에게 배정된 고객만 배분 가능
         if (allocator && allocator.role === 'manager') {
-          const teamMembers = await this.getTeamMembers(allocatedBy);
-          const teamMemberIds = teamMembers.map(m => m.id);
           const canAllocate = 
             customer.assignedUserId === allocatedBy || // 본인에게 배정된 고객
             teamMemberIds.includes(customer.assignedUserId || '') || // 팀원에게 배정된 고객

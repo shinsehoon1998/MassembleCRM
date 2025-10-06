@@ -893,27 +893,34 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select onValueChange={(assignedUserId) => handleBatchUpdate({ assignedUserId })}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="담당자 변경" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {counselors?.map((counselor) => (
-                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.lastName} {counselor.firstName})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select onValueChange={(secondaryUserId) => handleBatchUpdate({ secondaryUserId })}>
-                  <SelectTrigger className="w-44">
-                    <SelectValue placeholder="공유 담당자" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CLEAR">공유 해제</SelectItem>
-                    {counselors?.map((counselor) => (
-                      <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.lastName} {counselor.firstName})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                
+                {/* 관리자/상담원만 담당자 변경 및 공유 담당자 기능 사용 */}
+                {currentUser?.role !== 'manager' && (
+                  <>
+                    <Select onValueChange={(assignedUserId) => handleBatchUpdate({ assignedUserId })}>
+                      <SelectTrigger className="w-44">
+                        <SelectValue placeholder="담당자 변경" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {counselors?.map((counselor) => (
+                          <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.lastName} {counselor.firstName})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select onValueChange={(secondaryUserId) => handleBatchUpdate({ secondaryUserId })}>
+                      <SelectTrigger className="w-44">
+                        <SelectValue placeholder="공유 담당자" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="CLEAR">공유 해제</SelectItem>
+                        {counselors?.map((counselor) => (
+                          <SelectItem key={counselor.id} value={counselor.id}>{counselor.username} ({counselor.lastName} {counselor.firstName})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
+                
                 {/* 팀장 권한인 경우 재분배/회수 버튼 표시 */}
                 {(currentUser?.role === 'manager' || currentUser?.role === 'admin') && teamMembers && teamMembers.length > 0 && (
                   <>
