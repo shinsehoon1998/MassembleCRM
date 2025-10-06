@@ -4026,57 +4026,13 @@ export class DatabaseStorage implements IStorage {
     const teamMembers = await this.getTeamMembers(managerId);
     const teamMemberIds = teamMembers.map(m => m.id);
     
-    if (teamMemberIds.length === 0) {
-      // 팀원이 없으면 매니저 본인의 고객만 반환
-      return await db
-        .select({
-          id: customers.id,
-          name: customers.name,
-          phone: customers.phone,
-          secondaryPhone: customers.secondaryPhone,
-          birthDate: customers.birthDate,
-          gender: customers.gender,
-          zipcode: customers.zipcode,
-          address: customers.address,
-          addressDetail: customers.addressDetail,
-          monthlyIncome: customers.monthlyIncome,
-          jobType: customers.jobType,
-          companyName: customers.companyName,
-          consultType: customers.consultType,
-          consultPath: customers.consultPath,
-          status: customers.status,
-          assignedUserId: customers.assignedUserId,
-          secondaryUserId: customers.secondaryUserId,
-          department: customers.department,
-          team: customers.team,
-          source: customers.source,
-          marketingConsent: customers.marketingConsent,
-          marketingConsentDate: customers.marketingConsentDate,
-          marketingConsentMethod: customers.marketingConsentMethod,
-          memo1: customers.memo1,
-          info1: customers.info1,
-          info2: customers.info2,
-          info3: customers.info3,
-          info4: customers.info4,
-          info5: customers.info5,
-          info6: customers.info6,
-          info7: customers.info7,
-          info8: customers.info8,
-          info9: customers.info9,
-          info10: customers.info10,
-          createdAt: customers.createdAt,
-          updatedAt: customers.updatedAt,
-          assignedUserName: users.name,
-          assignedUserRole: users.role,
-        })
-        .from(customers)
-        .leftJoin(users, eq(customers.assignedUserId, users.id))
-        .where(eq(customers.assignedUserId, managerId));
-    }
+    const conditions = teamMemberIds.length === 0 
+      ? eq(customers.assignedUserId, managerId) 
+      : sql`${customers.assignedUserId} = ${managerId} OR ${customers.assignedUserId} IN (${sql.join(teamMemberIds, sql`, `)})`;
 
-    // 매니저와 팀원들의 모든 고객 반환
-    return await db
+    const results = await db
       .select({
+        // Customer fields
         id: customers.id,
         name: customers.name,
         phone: customers.phone,
@@ -4113,14 +4069,77 @@ export class DatabaseStorage implements IStorage {
         info10: customers.info10,
         createdAt: customers.createdAt,
         updatedAt: customers.updatedAt,
-        assignedUserName: users.name,
-        assignedUserRole: users.role,
+        // Assigned User fields
+        assignedUser: {
+          id: users.id,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          name: users.name,
+          username: users.username,
+          password: users.password,
+          phone: users.phone,
+          department: users.department,
+          role: users.role,
+          isActive: users.isActive,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt,
+        }
       })
       .from(customers)
       .leftJoin(users, eq(customers.assignedUserId, users.id))
-      .where(
-        sql`${customers.assignedUserId} = ${managerId} OR ${customers.assignedUserId} IN (${sql.join(teamMemberIds, sql`, `)})`
-      );
+      .where(conditions);
+
+    // Join으로 secondary user 정보도 가져와야 함
+    const userIds = [...new Set(results.map(r => r.secondaryUserId).filter(id => id !== null))];
+    const secondaryUsers = userIds.length > 0 ? await db
+      .select()
+      .from(users)
+      .where(inArray(users.id, userIds as string[])) : [];
+
+    const secondaryUserMap = new Map(secondaryUsers.map(u => [u.id, u]));
+
+    return results.map(r => ({
+      id: r.id,
+      name: r.name,
+      phone: r.phone,
+      secondaryPhone: r.secondaryPhone,
+      birthDate: r.birthDate,
+      gender: r.gender,
+      zipcode: r.zipcode,
+      address: r.address,
+      addressDetail: r.addressDetail,
+      monthlyIncome: r.monthlyIncome,
+      jobType: r.jobType,
+      companyName: r.companyName,
+      consultType: r.consultType,
+      consultPath: r.consultPath,
+      status: r.status,
+      assignedUserId: r.assignedUserId,
+      secondaryUserId: r.secondaryUserId,
+      department: r.department,
+      team: r.team,
+      source: r.source,
+      marketingConsent: r.marketingConsent,
+      marketingConsentDate: r.marketingConsentDate,
+      marketingConsentMethod: r.marketingConsentMethod,
+      memo1: r.memo1,
+      info1: r.info1,
+      info2: r.info2,
+      info3: r.info3,
+      info4: r.info4,
+      info5: r.info5,
+      info6: r.info6,
+      info7: r.info7,
+      info8: r.info8,
+      info9: r.info9,
+      info10: r.info10,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      assignedUser: r.assignedUser.id ? r.assignedUser as User : null,
+      secondaryUser: r.secondaryUserId ? secondaryUserMap.get(r.secondaryUserId) || null : null
+    }));
   }
 
   async getCustomerAllocationHistory(customerId?: string): Promise<CustomerAllocationHistory[]> {

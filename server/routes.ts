@@ -6316,5 +6316,198 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ===================================================
+  // 팀장-팀원 관계 관리 API
+  // ===================================================
+  
+  // 팀 관계 전체 조회 (관리자만)
+  app.get('/api/user-relationships', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const relationships = await storage.getUserRelationships();
+      
+      // 각 관계에 대한 사용자 정보 추가
+      const enrichedRelationships = await Promise.all(
+        relationships.map(async (rel) => {
+          const [manager, counselor] = await Promise.all([
+            storage.getUser(rel.managerId),
+            storage.getUser(rel.counselorId)
+          ]);
+          return {
+            ...rel,
+            managerName: manager?.name || '알 수 없음',
+            counselorName: counselor?.name || '알 수 없음'
+          };
+        })
+      );
+      
+      res.json(enrichedRelationships);
+    } catch (error) {
+      console.error('Error fetching user relationships:', error);
+      res.status(500).json({ message: '팀 관계 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 특정 팀장의 팀원 목록 조회
+  app.get('/api/user-relationships/manager/:managerId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { managerId } = req.params;
+      
+      // 권한 체크: 관리자이거나 본인이어야 함
+      if (req.user.role !== 'admin' && req.user.id !== managerId) {
+        return res.status(403).json({ message: '권한이 없습니다.' });
+      }
+      
+      const teamMembers = await storage.getTeamMembers(managerId);
+      res.json(teamMembers);
+    } catch (error) {
+      console.error('Error fetching team members:', error);
+      res.status(500).json({ message: '팀원 목록 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 팀 관계 생성 (관리자만)
+  app.post('/api/user-relationships', isAuthenticated, requireAdmin, async (req: any, res) => {
+    try {
+      const { managerId, counselorId } = req.body;
+      
+      if (!managerId || !counselorId) {
+        return res.status(400).json({ message: '팀장과 팀원을 모두 선택해주세요.' });
+      }
+      
+      const relationship = await storage.createUserRelationship({
+        managerId,
+        counselorId,
+        createdBy: req.user.id,
+        isActive: true
+      });
+      
+      res.json(relationship);
+    } catch (error) {
+      console.error('Error creating user relationship:', error);
+      res.status(500).json({ message: '팀 관계 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 팀 관계 삭제 (관리자만)
+  app.delete('/api/user-relationships/:id', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteUserRelationship(id);
+      
+      if (!success) {
+        return res.status(404).json({ message: '팀 관계를 찾을 수 없습니다.' });
+      }
+      
+      res.json({ message: '팀 관계가 삭제되었습니다.' });
+    } catch (error) {
+      console.error('Error deleting user relationship:', error);
+      res.status(500).json({ message: '팀 관계 삭제 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // ===================================================
+  // 고객 재분배 API
+  // ===================================================
+  
+  // 고객을 팀원에게 배분 (팀장만)
+  app.post('/api/customers/allocate', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds, toUserId, note } = req.body;
+      
+      // 권한 체크: 팀장(manager) 역할이어야 함
+      if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+        return res.status(403).json({ message: '팀장 권한이 필요합니다.' });
+      }
+      
+      // 팀원이 본인의 팀원인지 확인
+      const teamMembers = await storage.getTeamMembers(req.user.id);
+      const isTeamMember = teamMembers.some(m => m.id === toUserId);
+      
+      if (!isTeamMember && req.user.role !== 'admin') {
+        return res.status(403).json({ message: '본인 팀원에게만 배분할 수 있습니다.' });
+      }
+      
+      const result = await storage.allocateCustomersToTeamMember({
+        customerIds,
+        fromUserId: req.user.id,
+        toUserId,
+        allocatedBy: req.user.id,
+        note
+      });
+      
+      res.json({
+        message: `${result.success}명의 고객이 배분되었습니다.`,
+        ...result
+      });
+    } catch (error) {
+      console.error('Error allocating customers:', error);
+      res.status(500).json({ message: '고객 배분 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 고객을 팀원으로부터 회수 (팀장만)
+  app.post('/api/customers/recall', isAuthenticated, async (req: any, res) => {
+    try {
+      const { customerIds, fromUserId, note } = req.body;
+      
+      // 권한 체크: 팀장(manager) 역할이어야 함
+      if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+        return res.status(403).json({ message: '팀장 권한이 필요합니다.' });
+      }
+      
+      // 팀원이 본인의 팀원인지 확인
+      const teamMembers = await storage.getTeamMembers(req.user.id);
+      const isTeamMember = teamMembers.some(m => m.id === fromUserId);
+      
+      if (!isTeamMember && req.user.role !== 'admin') {
+        return res.status(403).json({ message: '본인 팀원의 고객만 회수할 수 있습니다.' });
+      }
+      
+      const result = await storage.recallCustomersFromTeamMember({
+        customerIds,
+        fromUserId,
+        toUserId: req.user.id,
+        allocatedBy: req.user.id,
+        note
+      });
+      
+      res.json({
+        message: `${result.success}명의 고객이 회수되었습니다.`,
+        ...result
+      });
+    } catch (error) {
+      console.error('Error recalling customers:', error);
+      res.status(500).json({ message: '고객 회수 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 팀 전체 고객 조회 (팀장만)
+  app.get('/api/customers/team', isAuthenticated, async (req: any, res) => {
+    try {
+      // 권한 체크: 팀장(manager) 역할이어야 함
+      if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+        return res.status(403).json({ message: '팀장 권한이 필요합니다.' });
+      }
+      
+      const customers = await storage.getTeamCustomers(req.user.id);
+      res.json(customers);
+    } catch (error) {
+      console.error('Error fetching team customers:', error);
+      res.status(500).json({ message: '팀 고객 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 고객 배분 이력 조회
+  app.get('/api/customer-allocation-history/:customerId?', isAuthenticated, async (req, res) => {
+    try {
+      const { customerId } = req.params;
+      const history = await storage.getCustomerAllocationHistory(customerId);
+      res.json(history);
+    } catch (error) {
+      console.error('Error fetching allocation history:', error);
+      res.status(500).json({ message: '배분 이력 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
   return httpServer;
 }
