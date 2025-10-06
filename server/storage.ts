@@ -3936,6 +3936,7 @@ export class DatabaseStorage implements IStorage {
           .where(eq(customers.id, customerId));
         
         if (!customer) {
+          console.log(`[배분 실패] 고객을 찾을 수 없음: ${customerId}`);
           failed++;
           continue;
         }
@@ -3948,6 +3949,7 @@ export class DatabaseStorage implements IStorage {
             !customer.assignedUserId; // 미배정 고객
           
           if (!canAllocate) {
+            console.log(`[배분 실패] 권한 없음 - 고객: ${customerId}, 현재담당: ${customer.assignedUserId}, 팀장: ${allocatedBy}, 팀원목록: ${teamMemberIds.join(',')}`);
             failed++;
             continue;
           }
@@ -4021,33 +4023,6 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    for (const customerId of customerIds) {
-      try {
-        // 현재 고객 정보 조회
-        const [customer] = await db
-          .select()
-          .from(customers)
-          .where(eq(customers.id, customerId));
-        
-        if (!customer) {
-          failed++;
-          continue;
-        }
-
-        // 권한 확인: 현재 담당자가 지정된 팀원인지 확인
-        if (customer.assignedUserId !== fromUserId) {
-          failed++;
-          continue;
-        }
-
-        // Update customer assignment
-        const result = await db
-          .update(customers)
-          .set({ 
-            assignedUserId: toUserId,
-            updatedAt: new Date()
-          })
-          .where(eq(customers.id, customerId));
 
         if ((result.rowCount ?? 0) > 0) {
           // Record allocation history
