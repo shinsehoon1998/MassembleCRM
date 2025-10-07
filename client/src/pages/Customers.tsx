@@ -774,7 +774,9 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
- 'counselor' && (
+              </div>
+              {/* 관리자만 담당자 필터 표시, 팀장과 팀원은 숨김 */}
+              {currentUser?.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">담당자</label>
                   <Select
