@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
@@ -6583,6 +6584,236 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: '노션 페이지를 불러오는 중 오류가 발생했습니다.',
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    }
+  });
+
+  // ============================================
+  // Survey APIs (설문조사)
+  // ============================================
+
+  // 설문 템플릿 목록 조회 (관리자만)
+  app.get('/api/surveys', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const templates = await storage.getSurveyTemplates();
+      res.json({ success: true, data: templates });
+    } catch (error) {
+      console.error('Error fetching survey templates:', error);
+      res.status(500).json({ message: '설문 템플릿을 가져오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 템플릿 상세 조회
+  app.get('/api/surveys/:id', isAuthenticated, async (req, res) => {
+    try {
+      const template = await storage.getSurveyTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: '설문 템플릿을 찾을 수 없습니다.' });
+      }
+      res.json({ success: true, data: template });
+    } catch (error) {
+      console.error('Error fetching survey template:', error);
+      res.status(500).json({ message: '설문 템플릿을 가져오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 템플릿 생성 (관리자만)
+  app.post('/api/surveys', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const templateData = {
+        ...req.body,
+        createdBy: req.user!.id
+      };
+      const template = await storage.createSurveyTemplate(templateData);
+      res.json({ success: true, data: template });
+    } catch (error) {
+      console.error('Error creating survey template:', error);
+      res.status(500).json({ message: '설문 템플릿 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 템플릿 수정 (관리자만)
+  app.put('/api/surveys/:id', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const template = await storage.updateSurveyTemplate(req.params.id, req.body);
+      if (!template) {
+        return res.status(404).json({ message: '설문 템플릿을 찾을 수 없습니다.' });
+      }
+      res.json({ success: true, data: template });
+    } catch (error) {
+      console.error('Error updating survey template:', error);
+      res.status(500).json({ message: '설문 템플릿 수정 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 템플릿 삭제 (관리자만)
+  app.delete('/api/surveys/:id', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteSurveyTemplate(req.params.id);
+      res.json({ success: true, message: '설문 템플릿이 삭제되었습니다.' });
+    } catch (error) {
+      console.error('Error deleting survey template:', error);
+      res.status(500).json({ message: '설문 템플릿 삭제 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 응답 목록 조회
+  app.get('/api/survey-responses', isAuthenticated, async (req, res) => {
+    try {
+      const params = {
+        surveyTemplateId: req.query.surveyTemplateId as string,
+        customerId: req.query.customerId as string,
+        counselorId: req.query.counselorId as string,
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20
+      };
+      
+      const responses = await storage.getSurveyResponses(params);
+      res.json({ success: true, data: responses });
+    } catch (error) {
+      console.error('Error fetching survey responses:', error);
+      res.status(500).json({ message: '설문 응답을 가져오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 발송
+  app.post('/api/surveys/:id/send', isAuthenticated, async (req, res) => {
+    try {
+      const { customerId, sendMethod } = req.body;
+      
+      // 고객 확인
+      const customer = await storage.getCustomer(customerId);
+      if (!customer) {
+        return res.status(404).json({ message: '고객을 찾을 수 없습니다.' });
+      }
+
+      // 토큰 생성 (crypto.randomUUID() 사용)
+      const uniqueToken = crypto.randomUUID();
+      
+      // 만료일 설정 (7일 후)
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      // 발송 내역 저장
+      const send = await storage.createSurveySend({
+        surveyTemplateId: req.params.id,
+        customerId,
+        sentBy: req.user!.id,
+        sendMethod,
+        uniqueToken,
+        expiresAt
+      });
+
+      // SMS 발송 (sendMethod가 'sms'인 경우)
+      if (sendMethod === 'sms' && customer.phone) {
+        const surveyUrl = `${process.env.REPLIT_DOMAINS?.split(',')[0] || 'http://localhost:5000'}/survey/${uniqueToken}`;
+        const message = `[마셈블CRM] ${customer.name}님, 고객만족도 설문에 참여해주세요: ${surveyUrl} (유효기간: 7일)`;
+        
+        // SMS 발송 (실제 구현 필요)
+        console.log('SMS to be sent:', { phone: customer.phone, message });
+      }
+
+      res.json({ 
+        success: true, 
+        data: send,
+        surveyUrl: `/survey/${uniqueToken}`
+      });
+    } catch (error) {
+      console.error('Error sending survey:', error);
+      res.status(500).json({ message: '설문 발송 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 응답 페이지 (토큰으로 조회 - 로그인 불필요)
+  app.get('/api/survey/:token', async (req, res) => {
+    try {
+      const send = await storage.getSurveySendByToken(req.params.token);
+      
+      if (!send) {
+        return res.status(404).json({ message: '설문을 찾을 수 없습니다.' });
+      }
+
+      // 만료 확인
+      if (new Date() > new Date(send.expiresAt)) {
+        return res.status(410).json({ message: '설문 링크가 만료되었습니다.' });
+      }
+
+      // 이미 사용됨 확인
+      if (send.isUsed) {
+        return res.status(410).json({ message: '이미 응답한 설문입니다.' });
+      }
+
+      // 설문 템플릿 및 고객 정보 조회
+      const template = await storage.getSurveyTemplate(send.surveyTemplateId);
+      const customer = await storage.getCustomer(send.customerId);
+
+      res.json({ 
+        success: true, 
+        data: {
+          template,
+          customer: customer ? { id: customer.id, name: customer.name } : null,
+          send
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching survey by token:', error);
+      res.status(500).json({ message: '설문 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 응답 제출 (토큰으로 - 로그인 불필요)
+  app.post('/api/survey/:token/submit', async (req, res) => {
+    try {
+      const send = await storage.getSurveySendByToken(req.params.token);
+      
+      if (!send) {
+        return res.status(404).json({ message: '설문을 찾을 수 없습니다.' });
+      }
+
+      // 만료 확인
+      if (new Date() > new Date(send.expiresAt)) {
+        return res.status(410).json({ message: '설문 링크가 만료되었습니다.' });
+      }
+
+      // 이미 사용됨 확인
+      if (send.isUsed) {
+        return res.status(410).json({ message: '이미 응답한 설문입니다.' });
+      }
+
+      const { answers, overallScore } = req.body;
+
+      // 응답 저장
+      const response = await storage.createSurveyResponse({
+        surveyTemplateId: send.surveyTemplateId,
+        customerId: send.customerId,
+        counselorId: null,
+        answers,
+        overallScore,
+        status: 'completed',
+        respondedAt: new Date()
+      });
+
+      // 토큰을 사용됨으로 표시
+      await storage.markSurveySendAsUsed(req.params.token);
+
+      res.json({ 
+        success: true, 
+        message: '설문 응답이 제출되었습니다.',
+        data: response
+      });
+    } catch (error) {
+      console.error('Error submitting survey response:', error);
+      res.status(500).json({ message: '설문 응답 제출 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // 설문 통계 조회 (관리자만)
+  app.get('/api/surveys/:id/stats', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const stats = await storage.getSurveyStats(req.params.id);
+      res.json({ success: true, data: stats });
+    } catch (error) {
+      console.error('Error fetching survey stats:', error);
+      res.status(500).json({ message: '설문 통계를 가져오는 중 오류가 발생했습니다.' });
     }
   });
 
