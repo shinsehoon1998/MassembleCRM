@@ -19,6 +19,7 @@ import Settings from "@/pages/Settings";
 import SmsSettings from "@/pages/SmsSettings";
 import SurveysPage from "@/pages/SurveysPage";
 import SurveyFormPage from "@/pages/SurveyFormPage";
+import SurveyResponsePage from "@/pages/SurveyResponsePage";
 import ManualPage from "@/pages/ManualPage";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
@@ -56,6 +57,9 @@ function Router() {
 
   return (
     <Switch>
+      {/* Public survey response page - accessible without login */}
+      <Route path="/survey/:token" component={SurveyResponsePage} />
+      
       {!isAuthenticated ? (
         <>
           <Route path="/login" component={Login} />
