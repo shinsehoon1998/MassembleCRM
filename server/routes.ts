@@ -23,6 +23,7 @@ import {
 import { stringify } from 'csv-stringify';
 import { pipeline } from 'stream/promises';
 import ExcelJS from 'exceljs';
+import { getNotionPageContent, parseNotionPageId } from "./notionClient";
 
 // ============================================
 // RBAC (Role-Based Access Control) Middleware
@@ -6538,6 +6539,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching allocation history:', error);
       res.status(500).json({ message: '배분 이력 조회 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // ============================================
+  // Notion Integration APIs
+  // ============================================
+
+  // 노션 페이지 내용 가져오기
+  app.get('/api/notion/page', isAuthenticated, async (req, res) => {
+    try {
+      const pageUrl = req.query.url as string;
+      
+      if (!pageUrl) {
+        return res.status(400).json({ message: '노션 페이지 URL이 필요합니다.' });
+      }
+
+      // URL에서 페이지 ID 추출
+      const pageId = parseNotionPageId(pageUrl);
+      
+      // 노션 페이지 내용 가져오기
+      const content = await getNotionPageContent(pageId);
+      
+      res.json({
+        success: true,
+        data: content
+      });
+    } catch (error) {
+      console.error('Error fetching Notion page:', error);
+      res.status(500).json({ 
+        success: false,
+        message: '노션 페이지를 불러오는 중 오류가 발생했습니다.',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
