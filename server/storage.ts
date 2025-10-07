@@ -17,6 +17,9 @@ import {
   arsHourlyStats,
   userRelationships,
   customerAllocationHistory,
+  surveyTemplates,
+  surveyResponses,
+  surveySends,
   type User,
   type UpsertUser,
   type Customer,
@@ -56,6 +59,14 @@ import {
   type UpdateUserRelationship,
   type CustomerAllocationHistory,
   type InsertCustomerAllocationHistory,
+  type SurveyTemplate,
+  type InsertSurveyTemplate,
+  type UpdateSurveyTemplate,
+  type SurveyResponse,
+  type InsertSurveyResponse,
+  type UpdateSurveyResponse,
+  type SurveySend,
+  type InsertSurveySend,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql, inArray } from "drizzle-orm";
@@ -766,6 +777,53 @@ export interface IStorage {
 
   // Customer allocation history
   getCustomerAllocationHistory(customerId?: string): Promise<CustomerAllocationHistory[]>;
+
+  // Survey template operations (설문 템플릿)
+  getSurveyTemplates(): Promise<SurveyTemplate[]>;
+  getSurveyTemplate(id: string): Promise<SurveyTemplate | undefined>;
+  createSurveyTemplate(template: InsertSurveyTemplate): Promise<SurveyTemplate>;
+  updateSurveyTemplate(id: string, template: UpdateSurveyTemplate): Promise<SurveyTemplate | undefined>;
+  deleteSurveyTemplate(id: string): Promise<boolean>;
+
+  // Survey response operations (설문 응답)
+  getSurveyResponses(params: {
+    surveyTemplateId?: string;
+    customerId?: string;
+    counselorId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    responses: SurveyResponse[];
+    total: number;
+    totalPages: number;
+  }>;
+  getSurveyResponse(id: string): Promise<SurveyResponse | undefined>;
+  getSurveyResponseByToken(token: string): Promise<SurveyResponse | undefined>;
+  createSurveyResponse(response: InsertSurveyResponse): Promise<SurveyResponse>;
+  updateSurveyResponse(id: string, response: UpdateSurveyResponse): Promise<SurveyResponse | undefined>;
+
+  // Survey send operations (설문 발송)
+  getSurveySends(params: {
+    surveyTemplateId?: string;
+    customerId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    sends: SurveySend[];
+    total: number;
+    totalPages: number;
+  }>;
+  getSurveySendByToken(token: string): Promise<SurveySend | undefined>;
+  createSurveySend(send: InsertSurveySend): Promise<SurveySend>;
+  markSurveySendAsUsed(token: string): Promise<boolean>;
+
+  // Survey statistics (설문 통계)
+  getSurveyStats(surveyTemplateId?: string): Promise<{
+    totalSent: number;
+    totalResponses: number;
+    responseRate: number;
+    averageScore: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4279,6 +4337,248 @@ export class DatabaseStorage implements IStorage {
       .from(customerAllocationHistory)
       .orderBy(desc(customerAllocationHistory.createdAt))
       .limit(100); // 최근 100개만
+  }
+
+  // ============================================
+  // Survey Operations (설문조사)
+  // ============================================
+
+  async getSurveyTemplates(): Promise<SurveyTemplate[]> {
+    return await db
+      .select()
+      .from(surveyTemplates)
+      .orderBy(desc(surveyTemplates.createdAt));
+  }
+
+  async getSurveyTemplate(id: string): Promise<SurveyTemplate | undefined> {
+    const [template] = await db
+      .select()
+      .from(surveyTemplates)
+      .where(eq(surveyTemplates.id, id));
+    return template;
+  }
+
+  async createSurveyTemplate(template: InsertSurveyTemplate): Promise<SurveyTemplate> {
+    const [newTemplate] = await db
+      .insert(surveyTemplates)
+      .values(template)
+      .returning();
+    return newTemplate;
+  }
+
+  async updateSurveyTemplate(id: string, template: UpdateSurveyTemplate): Promise<SurveyTemplate | undefined> {
+    const [updated] = await db
+      .update(surveyTemplates)
+      .set({ ...template, updatedAt: new Date() })
+      .where(eq(surveyTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteSurveyTemplate(id: string): Promise<boolean> {
+    const result = await db
+      .delete(surveyTemplates)
+      .where(eq(surveyTemplates.id, id));
+    return true;
+  }
+
+  async getSurveyResponses(params: {
+    surveyTemplateId?: string;
+    customerId?: string;
+    counselorId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    responses: SurveyResponse[];
+    total: number;
+    totalPages: number;
+  }> {
+    const page = params.page || 1;
+    const limit = params.limit || 20;
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (params.surveyTemplateId) {
+      conditions.push(eq(surveyResponses.surveyTemplateId, params.surveyTemplateId));
+    }
+    if (params.customerId) {
+      conditions.push(eq(surveyResponses.customerId, params.customerId));
+    }
+    if (params.counselorId) {
+      conditions.push(eq(surveyResponses.counselorId, params.counselorId));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const responses = await db
+      .select()
+      .from(surveyResponses)
+      .where(whereClause)
+      .orderBy(desc(surveyResponses.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(surveyResponses)
+      .where(whereClause);
+
+    return {
+      responses,
+      total: Number(total),
+      totalPages: Math.ceil(Number(total) / limit),
+    };
+  }
+
+  async getSurveyResponse(id: string): Promise<SurveyResponse | undefined> {
+    const [response] = await db
+      .select()
+      .from(surveyResponses)
+      .where(eq(surveyResponses.id, id));
+    return response;
+  }
+
+  async getSurveyResponseByToken(token: string): Promise<SurveyResponse | undefined> {
+    const send = await this.getSurveySendByToken(token);
+    if (!send) return undefined;
+
+    const [response] = await db
+      .select()
+      .from(surveyResponses)
+      .where(
+        and(
+          eq(surveyResponses.surveyTemplateId, send.surveyTemplateId),
+          eq(surveyResponses.customerId, send.customerId)
+        )
+      );
+    return response;
+  }
+
+  async createSurveyResponse(response: InsertSurveyResponse): Promise<SurveyResponse> {
+    const [newResponse] = await db
+      .insert(surveyResponses)
+      .values(response)
+      .returning();
+    return newResponse;
+  }
+
+  async updateSurveyResponse(id: string, response: UpdateSurveyResponse): Promise<SurveyResponse | undefined> {
+    const [updated] = await db
+      .update(surveyResponses)
+      .set({ ...response, updatedAt: new Date() })
+      .where(eq(surveyResponses.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getSurveySends(params: {
+    surveyTemplateId?: string;
+    customerId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    sends: SurveySend[];
+    total: number;
+    totalPages: number;
+  }> {
+    const page = params.page || 1;
+    const limit = params.limit || 20;
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (params.surveyTemplateId) {
+      conditions.push(eq(surveySends.surveyTemplateId, params.surveyTemplateId));
+    }
+    if (params.customerId) {
+      conditions.push(eq(surveySends.customerId, params.customerId));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const sends = await db
+      .select()
+      .from(surveySends)
+      .where(whereClause)
+      .orderBy(desc(surveySends.sentAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(surveySends)
+      .where(whereClause);
+
+    return {
+      sends,
+      total: Number(total),
+      totalPages: Math.ceil(Number(total) / limit),
+    };
+  }
+
+  async getSurveySendByToken(token: string): Promise<SurveySend | undefined> {
+    const [send] = await db
+      .select()
+      .from(surveySends)
+      .where(eq(surveySends.uniqueToken, token));
+    return send;
+  }
+
+  async createSurveySend(send: InsertSurveySend): Promise<SurveySend> {
+    const [newSend] = await db
+      .insert(surveySends)
+      .values(send)
+      .returning();
+    return newSend;
+  }
+
+  async markSurveySendAsUsed(token: string): Promise<boolean> {
+    const result = await db
+      .update(surveySends)
+      .set({ isUsed: true, usedAt: new Date() })
+      .where(eq(surveySends.uniqueToken, token));
+    return true;
+  }
+
+  async getSurveyStats(surveyTemplateId?: string): Promise<{
+    totalSent: number;
+    totalResponses: number;
+    responseRate: number;
+    averageScore: number;
+  }> {
+    const sentCondition = surveyTemplateId 
+      ? eq(surveySends.surveyTemplateId, surveyTemplateId)
+      : undefined;
+    
+    const responseCondition = surveyTemplateId
+      ? eq(surveyResponses.surveyTemplateId, surveyTemplateId)
+      : undefined;
+
+    const [{ totalSent }] = await db
+      .select({ totalSent: count() })
+      .from(surveySends)
+      .where(sentCondition);
+
+    const [{ totalResponses }] = await db
+      .select({ totalResponses: count() })
+      .from(surveyResponses)
+      .where(responseCondition);
+
+    const avgResult = await db
+      .select({ avgScore: sql<number>`AVG(${surveyResponses.overallScore})` })
+      .from(surveyResponses)
+      .where(responseCondition);
+
+    const averageScore = Number(avgResult[0]?.avgScore || 0);
+    const responseRate = Number(totalSent) > 0 
+      ? (Number(totalResponses) / Number(totalSent)) * 100 
+      : 0;
+
+    return {
+      totalSent: Number(totalSent),
+      totalResponses: Number(totalResponses),
+      responseRate: Math.round(responseRate * 100) / 100,
+      averageScore: Math.round(averageScore * 100) / 100,
+    };
   }
 }
 
