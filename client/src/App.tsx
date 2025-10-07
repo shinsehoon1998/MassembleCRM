@@ -20,6 +20,7 @@ import SmsSettings from "@/pages/SmsSettings";
 import SurveysPage from "@/pages/SurveysPage";
 import SurveyFormPage from "@/pages/SurveyFormPage";
 import SurveyResponsePage from "@/pages/SurveyResponsePage";
+import SurveyResponsesPage from "@/pages/SurveyResponsesPage";
 import ManualPage from "@/pages/ManualPage";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
@@ -83,6 +84,7 @@ function Router() {
             <Route path="/sms-settings" component={SmsSettings} />
             <Route path="/surveys/new" component={SurveyFormPage} />
             <Route path="/surveys/:id/edit" component={SurveyFormPage} />
+            <Route path="/surveys/:id/responses" component={SurveyResponsesPage} />
             <Route path="/surveys" component={SurveysPage} />
             <Route path="/manual" component={ManualPage} />
             <Route>
