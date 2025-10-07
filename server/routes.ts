@@ -6595,7 +6595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/surveys', isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const templates = await storage.getSurveyTemplates();
-      res.json({ success: true, data: templates });
+      res.json(templates);
     } catch (error) {
       console.error('Error fetching survey templates:', error);
       res.status(500).json({ message: '설문 템플릿을 가져오는 중 오류가 발생했습니다.' });
