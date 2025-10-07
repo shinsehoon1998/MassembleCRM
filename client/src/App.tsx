@@ -17,6 +17,7 @@ import CustomerGroups from "@/pages/CustomerGroups";
 import Users from "@/pages/Users";
 import Settings from "@/pages/Settings";
 import SmsSettings from "@/pages/SmsSettings";
+import ManualPage from "@/pages/ManualPage";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
 
@@ -74,6 +75,7 @@ function Router() {
             <Route path="/users" component={Users} />
             <Route path="/settings" component={Settings} />
             <Route path="/sms-settings" component={SmsSettings} />
+            <Route path="/manual" component={ManualPage} />
             <Route>
               <NotFound />
             </Route>

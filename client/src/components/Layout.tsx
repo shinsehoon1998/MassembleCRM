@@ -36,6 +36,7 @@ export default function Layout({ children }: LayoutProps) {
       '/users': '사용자관리',
       '/sms-settings': 'SMS 설정',
       '/settings': '환경설정',
+      '/manual': 'CRM사용설명서',
     };
     return titles[location] || '마셈블 CRM';
   };
@@ -52,6 +53,7 @@ export default function Layout({ children }: LayoutProps) {
       '/users': '시스템 사용자를 관리하세요',
       '/sms-settings': 'SMS 알림 및 템플릿을 관리하세요',
       '/settings': '시스템 환경을 설정하세요',
+      '/manual': 'CRM 사용 방법과 기능을 확인하세요',
     };
     return descriptions[location] || '';
   };
@@ -236,6 +238,17 @@ export default function Layout({ children }: LayoutProps) {
               <span className="ml-3">환경설정</span>
             </Link>
           )}
+
+          <Link 
+            href="/manual"
+            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+              isNavItemActive('/manual') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            }`} 
+            data-testid="nav-manual"
+          >
+            <i className="fas fa-book w-5"></i>
+            <span className="ml-3">CRM사용설명서</span>
+          </Link>
           
           <div className="border-t border-white/10 mt-6 pt-6">
             <Button
