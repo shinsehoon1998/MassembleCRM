@@ -389,9 +389,16 @@ export default function Customers() {
       setSelectedCustomers([]);
       setShowAllocationModal(false);
       setAllocationData({ targetUserId: "", note: "" });
+      
+      let description = data.message || `${data.success}명의 고객이 배분되었습니다.`;
+      if (data.failureReasons && data.failureReasons.length > 0) {
+        description += '\n\n실패 상세:\n' + data.failureReasons.join('\n');
+      }
+      
       toast({
-        title: "배분 완료",
-        description: `${data.success}명의 고객이 배분되었습니다.`,
+        title: data.failed > 0 ? "배분 일부 완료" : "배분 완료",
+        description,
+        variant: data.failed > 0 && data.success === 0 ? "destructive" : "default",
       });
     },
     onError: (error: any) => {

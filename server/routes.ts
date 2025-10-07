@@ -6443,8 +6443,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         note
       });
       
+      let message = `${result.success}명의 고객이 배분되었습니다.`;
+      if (result.failed > 0) {
+        message += ` (${result.failed}명 실패)`;
+      }
+      
       res.json({
-        message: `${result.success}명의 고객이 배분되었습니다.`,
+        message,
         ...result
       });
     } catch (error) {

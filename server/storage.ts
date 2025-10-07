@@ -3903,18 +3903,25 @@ export class DatabaseStorage implements IStorage {
     toUserId: string;
     allocatedBy: string;
     note?: string;
-  }): Promise<{ success: number; failed: number }> {
+  }): Promise<{ success: number; failed: number; failureReasons?: string[] }> {
     const { customerIds, toUserId, allocatedBy, note } = params;
     let success = 0;
     let failed = 0;
+    const failureReasons: string[] = [];
+    
+    console.log(`[배분 시작] 고객수: ${customerIds.length}, 대상: ${toUserId}, 배분자: ${allocatedBy}`);
     
     // 팀 관계 이중 검증 (보안 강화)
     const allocator = await this.getUser(allocatedBy);
+    console.log(`[배분자 정보] ID: ${allocatedBy}, 역할: ${allocator?.role}`);
+    
     if (allocator && allocator.role === 'manager') {
       const teamMembers = await this.getTeamMembers(allocatedBy);
+      console.log(`[팀원 목록] ${teamMembers.map(m => `${m.id}(${m.name})`).join(', ')}`);
       const isTeamMember = teamMembers.some(m => m.id === toUserId);
       
       if (!isTeamMember) {
+        console.log(`[배분 실패] ${toUserId}는 팀원이 아님`);
         throw new Error('권한이 없습니다. 본인 팀원에게만 배분할 수 있습니다.');
       }
     }
@@ -3924,6 +3931,7 @@ export class DatabaseStorage implements IStorage {
     if (allocator && allocator.role === 'manager') {
       const teamMembers = await this.getTeamMembers(allocatedBy);
       teamMemberIds = teamMembers.map(m => m.id);
+      console.log(`[관리 범위] 팀장: ${allocatedBy}, 팀원: ${teamMemberIds.join(', ')}`);
     }
 
     for (const customerId of customerIds) {
@@ -3935,7 +3943,9 @@ export class DatabaseStorage implements IStorage {
           .where(eq(customers.id, customerId));
         
         if (!customer) {
-          console.log(`[배분 실패] 고객을 찾을 수 없음: ${customerId}`);
+          const reason = `고객 ${customerId}: 존재하지 않는 고객입니다.`;
+          console.log(`[배분 실패] ${reason}`);
+          failureReasons.push(reason);
           failed++;
           continue;
         }
@@ -3948,7 +3958,10 @@ export class DatabaseStorage implements IStorage {
             !customer.assignedUserId; // 미배정 고객
           
           if (!canAllocate) {
-            console.log(`[배분 실패] 권한 없음 - 고객: ${customerId}, 현재담당: ${customer.assignedUserId}, 팀장: ${allocatedBy}, 팀원목록: ${teamMemberIds.join(',')}`);
+            const currentAssignedName = customer.assignedUserId ? `다른 담당자(${customer.assignedUserId})` : '알 수 없는 담당자';
+            const reason = `고객 ${customer.name || customerId}: 배분 권한이 없습니다. 현재 ${currentAssignedName}에게 배정되어 있습니다.`;
+            console.log(`[배분 실패] 권한 없음 - 고객: ${customerId}(${customer.name}), 현재담당: ${customer.assignedUserId}, 팀장: ${allocatedBy}, 팀원목록: ${teamMemberIds.join(',')}`);
+            failureReasons.push(reason);
             failed++;
             continue;
           }
@@ -3992,12 +4005,20 @@ export class DatabaseStorage implements IStorage {
           failed++;
         }
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        const reason = `고객 ${customerId}: 시스템 오류 (${errorMsg})`;
         console.error(`Failed to allocate customer ${customerId}:`, error);
+        failureReasons.push(reason);
         failed++;
       }
     }
 
-    return { success, failed };
+    console.log(`[배분 완료] 성공: ${success}, 실패: ${failed}`);
+    if (failureReasons.length > 0) {
+      console.log(`[실패 상세]`, failureReasons);
+    }
+
+    return { success, failed, failureReasons: failureReasons.length > 0 ? failureReasons : undefined };
   }
 
   async recallCustomersFromTeamMember(params: {
