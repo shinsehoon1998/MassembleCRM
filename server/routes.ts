@@ -10,7 +10,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
 import multer from "multer";
 import { atalkArsService } from "./arsService";
-import { SolapiSmsService } from "./solapiService";
+import { solapiSmsService } from "./solapiService";
 import {
   maskPhoneNumber,
   maskName,
@@ -6710,23 +6710,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // SMS 발송
         try {
-          const smsService = new SolapiSmsService();
-          const smsResult = await smsService.sendSms(customer.phone, message, {
+          secureLog(LogLevel.INFO, 'SURVEY_SMS', '설문 SMS 발송 시도', {
+            phone: maskPhoneNumber(customer.phone),
+            customerName: maskName(customer.name),
+            surveyTemplateId: surveyTemplateId,
+            messageLength: message.length
+          });
+
+          const smsResult = await solapiSmsService.sendSms(customer.phone, message, {
             type: 'LMS',
             subject: '[마셈블CRM] 설문 요청'
           });
           
           if (smsResult.success) {
-            console.log('SMS 발송 성공:', { 
-              phone: customer.phone, 
+            secureLog(LogLevel.INFO, 'SURVEY_SMS', 'SMS 발송 성공', { 
+              phone: maskPhoneNumber(customer.phone),
               messageId: smsResult.messageId,
               groupId: smsResult.groupId 
             });
           } else {
-            console.error('SMS 발송 실패:', smsResult.message);
+            secureLog(LogLevel.ERROR, 'SURVEY_SMS', 'SMS 발송 실패', {
+              phone: maskPhoneNumber(customer.phone),
+              error: smsResult.message
+            });
           }
         } catch (error) {
-          console.error('SMS 발송 중 오류:', error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          secureLog(LogLevel.ERROR, 'SURVEY_SMS', 'SMS 발송 중 예외 발생', {
+            phone: maskPhoneNumber(customer.phone),
+            error: errorMessage,
+            stack: error instanceof Error ? error.stack : undefined
+          });
         }
       }
 
