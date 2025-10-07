@@ -10,13 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { ArrowLeft, Edit, Plus, FileText, Clock, User, Phone, MapPin, Briefcase, Calendar } from "lucide-react";
-import type { CustomerWithUser, Consultation, Attachment, ActivityLog } from "@shared/schema";
+import type { CustomerWithUser, Consultation, Attachment, ActivityLog, SurveyTemplate } from "@shared/schema";
 import CustomerModal from "@/components/CustomerModal";
 import AppointmentModal from "@/components/AppointmentModal";
 
@@ -29,6 +30,8 @@ export default function CustomerDetail() {
   const [newConsultType, setNewConsultType] = useState("");
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<any>(null);
+  const [isSurveyDialogOpen, setIsSurveyDialogOpen] = useState(false);
+  const [selectedSurvey, setSelectedSurvey] = useState<string>("");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -63,6 +66,61 @@ export default function CustomerDetail() {
   const { data: counselors = [] } = useQuery<any[]>({
     queryKey: ["/api/users/counselors"],
   });
+
+  const { data: surveyTemplates = [] } = useQuery<SurveyTemplate[]>({
+    queryKey: ["/api/surveys"],
+  });
+
+  const sendSurveyMutation = useMutation({
+    mutationFn: async (data: { surveyTemplateId: string; customerId: string; sendMethod: string }) => {
+      return await apiRequest("POST", `/api/surveys/${data.surveyTemplateId}/send`, {
+        customerId: data.customerId,
+        sendMethod: data.sendMethod,
+      });
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: "설문이 발송되었습니다",
+        description: customer?.phone ? "고객의 휴대폰으로 설문 링크가 전송되었습니다." : "설문 링크가 생성되었습니다.",
+      });
+      setIsSurveyDialogOpen(false);
+      setSelectedSurvey("");
+      
+      // Copy link to clipboard
+      if (data.surveyUrl) {
+        const fullUrl = `${window.location.origin}${data.surveyUrl}`;
+        navigator.clipboard.writeText(fullUrl);
+        toast({
+          title: "링크가 복사되었습니다",
+          description: "설문 링크가 클립보드에 복사되었습니다.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "설문 발송에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSendSurvey = () => {
+    if (!selectedSurvey) {
+      toast({
+        title: "오류",
+        description: "설문 템플릿을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    sendSurveyMutation.mutate({
+      surveyTemplateId: selectedSurvey,
+      customerId: params.id,
+      sendMethod: customer?.phone ? "sms" : "link",
+    });
+  };
 
   const createConsultationMutation = useMutation({
     mutationFn: async (data: { type: string; notes: string }) => {
@@ -226,10 +284,87 @@ export default function CustomerDetail() {
             </div>
           </div>
         </div>
-        <Button onClick={() => setIsEditModalOpen(true)} data-testid="button-edit-customer">
-          <Edit className="h-4 w-4 mr-2" />
-          수정
-        </Button>
+        <div className="flex items-center gap-2">
+          <Dialog open={isSurveyDialogOpen} onOpenChange={setIsSurveyDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline"
+                className="border-massemble-red text-massemble-red hover:bg-massemble-red hover:text-white"
+                data-testid="button-send-survey"
+              >
+                <i className="fas fa-poll h-4 w-4 mr-2"></i>
+                설문 발송
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>고객만족도 설문 발송</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>설문 템플릿 선택</Label>
+                  <Select value={selectedSurvey} onValueChange={setSelectedSurvey}>
+                    <SelectTrigger data-testid="select-survey-template">
+                      <SelectValue placeholder="설문 템플릿을 선택하세요" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {surveyTemplates
+                        .filter((t: SurveyTemplate) => t.isActive)
+                        .map((template: SurveyTemplate) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            {template.title}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
+                  <p className="text-sm text-blue-700">
+                    <i className="fas fa-info-circle mr-2"></i>
+                    {customer?.phone 
+                      ? `설문 링크가 ${customer.phone}로 SMS 발송됩니다.`
+                      : "설문 링크가 생성되어 클립보드에 복사됩니다."
+                    }
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsSurveyDialogOpen(false)}
+                    data-testid="button-cancel-survey"
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    onClick={handleSendSurvey}
+                    disabled={sendSurveyMutation.isPending}
+                    className="bg-massemble-red hover:bg-massemble-red/90"
+                    data-testid="button-confirm-send-survey"
+                  >
+                    {sendSurveyMutation.isPending ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        발송 중...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-paper-plane mr-2"></i>
+                        발송
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Button onClick={() => setIsEditModalOpen(true)} data-testid="button-edit-customer">
+            <Edit className="h-4 w-4 mr-2" />
+            수정
+          </Button>
+        </div>
       </div>
 
       {/* Tabs */}
