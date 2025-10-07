@@ -188,6 +188,49 @@ export const customerAllocationHistory = pgTable("customer_allocation_history", 
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Survey templates table (설문 템플릿)
+export const surveyTemplates = pgTable("survey_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title").notNull(),
+  description: text("description"),
+  questions: jsonb("questions").notNull(), // Array of question objects
+  isActive: boolean("is_active").notNull().default(true),
+  notionPageId: varchar("notion_page_id"),
+  notionDatabaseId: varchar("notion_database_id"),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Survey responses table (설문 응답)
+export const surveyResponses = pgTable("survey_responses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyTemplateId: varchar("survey_template_id").notNull().references(() => surveyTemplates.id, { onDelete: "cascade" }),
+  customerId: varchar("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  counselorId: varchar("counselor_id").references(() => users.id),
+  answers: jsonb("answers").notNull(), // Object with question answers
+  overallScore: decimal("overall_score", { precision: 3, scale: 2 }),
+  status: varchar("status").notNull().default("completed"), // completed, partial, not_started
+  respondedAt: timestamp("responded_at"),
+  notionBlockId: varchar("notion_block_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Survey sends table (설문 발송 내역)
+export const surveySends = pgTable("survey_sends", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  surveyTemplateId: varchar("survey_template_id").notNull().references(() => surveyTemplates.id, { onDelete: "cascade" }),
+  customerId: varchar("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  sentBy: varchar("sent_by").notNull().references(() => users.id),
+  sendMethod: varchar("send_method").notNull(), // sms, email, link
+  uniqueToken: varchar("unique_token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  isUsed: boolean("is_used").notNull().default(false),
+  usedAt: timestamp("used_at"),
+  sentAt: timestamp("sent_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   customers: many(customers),
@@ -373,6 +416,27 @@ export const insertCustomerAllocationHistorySchema = createInsertSchema(customer
   createdAt: true,
 });
 
+export const insertSurveyTemplateSchema = createInsertSchema(surveyTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateSurveyTemplateSchema = insertSurveyTemplateSchema.partial();
+
+export const insertSurveyResponseSchema = createInsertSchema(surveyResponses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateSurveyResponseSchema = insertSurveyResponseSchema.partial();
+
+export const insertSurveySendSchema = createInsertSchema(surveySends).omit({
+  id: true,
+  sentAt: true,
+});
+
 // Types
 export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -396,6 +460,14 @@ export type InsertUserRelationship = z.infer<typeof insertUserRelationshipSchema
 export type UpdateUserRelationship = z.infer<typeof updateUserRelationshipSchema>;
 export type CustomerAllocationHistory = typeof customerAllocationHistory.$inferSelect;
 export type InsertCustomerAllocationHistory = z.infer<typeof insertCustomerAllocationHistorySchema>;
+export type SurveyTemplate = typeof surveyTemplates.$inferSelect;
+export type InsertSurveyTemplate = z.infer<typeof insertSurveyTemplateSchema>;
+export type UpdateSurveyTemplate = z.infer<typeof updateSurveyTemplateSchema>;
+export type SurveyResponse = typeof surveyResponses.$inferSelect;
+export type InsertSurveyResponse = z.infer<typeof insertSurveyResponseSchema>;
+export type UpdateSurveyResponse = z.infer<typeof updateSurveyResponseSchema>;
+export type SurveySend = typeof surveySends.$inferSelect;
+export type InsertSurveySend = z.infer<typeof insertSurveySendSchema>;
 
 // Extended types with join data
 export type AppointmentWithDetails = Appointment & {
