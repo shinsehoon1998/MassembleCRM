@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -390,10 +390,16 @@ export default function Customers() {
       setShowAllocationModal(false);
       setAllocationData({ targetUserId: "", note: "" });
       
-      let description = data.message || `${data.success}명의 고객이 배분되었습니다.`;
-      if (data.failureReasons && data.failureReasons.length > 0) {
-        description += '\n\n실패 상세:\n' + data.failureReasons.join('\n');
-      }
+      const baseMessage = data.message || `${data.success}명의 고객이 배분되었습니다.`;
+      const description = data.failureReasons && data.failureReasons.length > 0 ? (
+        <div className="space-y-1">
+          <div>{baseMessage}</div>
+          <div className="text-xs opacity-80 mt-2">실패 상세:</div>
+          {data.failureReasons.map((reason: string, idx: number) => (
+            <div key={idx} className="text-xs opacity-70">• {reason}</div>
+          ))}
+        </div>
+      ) : baseMessage;
       
       toast({
         title: data.failed > 0 ? "배분 일부 완료" : "배분 완료",
@@ -1796,6 +1802,9 @@ export default function Customers() {
               <i className="fas fa-calendar text-green-600"></i>
               <span>일괄 예약 생성</span>
             </DialogTitle>
+            <DialogDescription>
+              선택한 고객들에 대한 예약을 일괄 생성합니다.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="bg-green-50 p-3 rounded-lg">
@@ -1958,6 +1967,9 @@ export default function Customers() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>고객 팀원 배분</DialogTitle>
+            <DialogDescription>
+              선택한 고객을 팀원에게 배분합니다.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="bg-purple-50 p-3 rounded-lg">
@@ -2055,6 +2067,9 @@ export default function Customers() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>고객 회수</DialogTitle>
+            <DialogDescription>
+              팀원에게 배분된 고객을 회수합니다.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="bg-orange-50 p-3 rounded-lg">
