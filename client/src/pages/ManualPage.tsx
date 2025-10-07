@@ -15,22 +15,22 @@ interface NotionPageData {
   blocks: NotionBlock[];
 }
 
-function renderNotionBlock(block: NotionBlock): JSX.Element | null {
+function renderNotionBlock(block: NotionBlock, allBlocks: NotionBlock[]): JSX.Element | null {
   const blockType = block.type;
   
   try {
     switch (blockType) {
       case 'heading_1':
         const h1Text = block.heading_1?.rich_text?.[0]?.plain_text || '';
-        return <h1 key={block.id} className="text-3xl font-bold mt-8 mb-4">{h1Text}</h1>;
+        return <h1 key={block.id} id={`heading-${block.id}`} className="text-3xl font-bold mt-8 mb-4">{h1Text}</h1>;
       
       case 'heading_2':
         const h2Text = block.heading_2?.rich_text?.[0]?.plain_text || '';
-        return <h2 key={block.id} className="text-2xl font-semibold mt-6 mb-3">{h2Text}</h2>;
+        return <h2 key={block.id} id={`heading-${block.id}`} className="text-2xl font-semibold mt-6 mb-3">{h2Text}</h2>;
       
       case 'heading_3':
         const h3Text = block.heading_3?.rich_text?.[0]?.plain_text || '';
-        return <h3 key={block.id} className="text-xl font-semibold mt-4 mb-2">{h3Text}</h3>;
+        return <h3 key={block.id} id={`heading-${block.id}`} className="text-xl font-semibold mt-4 mb-2">{h3Text}</h3>;
       
       case 'paragraph':
         const pText = block.paragraph?.rich_text?.[0]?.plain_text || '';
@@ -80,6 +80,70 @@ function renderNotionBlock(block: NotionBlock): JSX.Element | null {
             <span className="mr-2">{icon}</span>
             <span className="text-gray-700">{calloutText}</span>
           </div>
+        );
+      
+      case 'image':
+        const imageUrl = block.image?.file?.url || block.image?.external?.url;
+        const caption = block.image?.caption?.[0]?.plain_text || '';
+        if (!imageUrl) return null;
+        return (
+          <figure key={block.id} className="my-6">
+            <img 
+              src={imageUrl} 
+              alt={caption || '이미지'} 
+              className="w-full rounded-lg shadow-md"
+              loading="lazy"
+            />
+            {caption && (
+              <figcaption className="text-center text-sm text-gray-500 mt-2">
+                {caption}
+              </figcaption>
+            )}
+          </figure>
+        );
+      
+      case 'table_of_contents':
+        const headings = allBlocks.filter(b => 
+          b.type === 'heading_1' || b.type === 'heading_2' || b.type === 'heading_3'
+        );
+        
+        if (headings.length === 0) return null;
+        
+        return (
+          <nav key={block.id} className="my-6 p-6 bg-gray-50 rounded-lg border border-gray-200">
+            <h2 className="text-lg font-semibold mb-4 text-gray-900">📑 목차</h2>
+            <ul className="space-y-2">
+              {headings.map(heading => {
+                const text = heading[heading.type]?.rich_text?.[0]?.plain_text || '';
+                const level = heading.type === 'heading_1' ? 0 : heading.type === 'heading_2' ? 1 : 2;
+                const paddingClass = level === 0 ? '' : level === 1 ? 'ml-4' : 'ml-8';
+                
+                return (
+                  <li key={heading.id} className={paddingClass}>
+                    <a 
+                      href={`#heading-${heading.id}`} 
+                      className="text-massemble-red hover:underline"
+                    >
+                      {text}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        );
+      
+      case 'toggle':
+        const toggleText = block.toggle?.rich_text?.[0]?.plain_text || '';
+        return (
+          <details key={block.id} className="my-4 bg-gray-50 rounded-lg p-4">
+            <summary className="cursor-pointer font-medium text-gray-900 hover:text-massemble-red">
+              {toggleText}
+            </summary>
+            <div className="mt-2 text-gray-700">
+              {block.toggle?.children?.map((child: NotionBlock) => renderNotionBlock(child, allBlocks))}
+            </div>
+          </details>
         );
       
       default:
@@ -159,7 +223,7 @@ export default function ManualPage() {
               사용설명서 내용이 없습니다. 노션 페이지에 내용을 추가해주세요.
             </p>
           ) : (
-            blocks.map(block => renderNotionBlock(block))
+            blocks.map(block => renderNotionBlock(block, blocks))
           )}
         </div>
 
