@@ -6708,8 +6708,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const surveyUrl = `${process.env.REPLIT_DOMAINS?.split(',')[0] || 'http://localhost:5000'}/survey/${uniqueToken}`;
         const message = `[마셈블CRM] ${customer.name}님, 고객만족도 설문에 참여해주세요: ${surveyUrl} (유효기간: 7일)`;
         
-        // SMS 발송 (실제 구현 필요)
-        console.log('SMS to be sent:', { phone: customer.phone, message });
+        // SMS 발송
+        try {
+          const smsService = new SolapiSmsService();
+          const smsResult = await smsService.sendSms(customer.phone, message, {
+            type: 'LMS',
+            subject: '[마셈블CRM] 설문 요청'
+          });
+          
+          if (smsResult.success) {
+            console.log('SMS 발송 성공:', { 
+              phone: customer.phone, 
+              messageId: smsResult.messageId,
+              groupId: smsResult.groupId 
+            });
+          } else {
+            console.error('SMS 발송 실패:', smsResult.message);
+          }
+        } catch (error) {
+          console.error('SMS 발송 중 오류:', error);
+        }
       }
 
       res.json({ 
