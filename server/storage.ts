@@ -823,14 +823,15 @@ export class DatabaseStorage implements IStorage {
     unshared?: boolean;
     page?: number;
     limit?: number;
-    filterByUserId?: string; // For role-based access control
+    filterByUserId?: string; // For counselor role-based access control
+    filterByManagerId?: string; // For manager role-based access control
     sortOrder?: 'asc' | 'desc'; // Sort order for customer number (based on createdAt)
   } = {}): Promise<{
     customers: CustomerWithUser[];
     total: number;
     totalPages: number;
   }> {
-    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20, filterByUserId, sortOrder = 'desc' } = params;
+    const { search, status, assignedUserId, unassigned, unshared, page = 1, limit = 20, filterByUserId, filterByManagerId, sortOrder = 'desc' } = params;
     const conditions = [];
     
     if (search) {
@@ -862,6 +863,19 @@ export class DatabaseStorage implements IStorage {
       conditions.push(
         sql`(${customers.assignedUserId} = ${filterByUserId} OR ${customers.secondaryUserId} = ${filterByUserId})`
       );
+    }
+
+    // Role-based access control: manager can only see customers assigned to themselves or their team members
+    if (filterByManagerId) {
+      const teamMembers = await this.getTeamMembers(filterByManagerId);
+      const teamMemberIds = teamMembers.map(m => m.id);
+      const allowedUserIds = [filterByManagerId, ...teamMemberIds];
+      
+      if (allowedUserIds.length > 0) {
+        conditions.push(
+          sql`(${customers.assignedUserId} IN (${sql.join(allowedUserIds.map(id => sql`${id}`), sql`, `)}) OR ${customers.secondaryUserId} IN (${sql.join(allowedUserIds.map(id => sql`${id}`), sql`, `)}))`
+        );
+      }
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -1084,12 +1098,22 @@ export class DatabaseStorage implements IStorage {
     completed: number;
     statusBreakdown: { status: string; count: number }[];
   }> {
-    // Build base conditions for counselor role-based filtering
+    // Build base conditions for role-based filtering
     const conditions = [];
     if (userId && userRole === 'counselor') {
       conditions.push(
         sql`(${customers.assignedUserId} = ${userId} OR ${customers.secondaryUserId} = ${userId})`
       );
+    } else if (userId && userRole === 'manager') {
+      const teamMembers = await this.getTeamMembers(userId);
+      const teamMemberIds = teamMembers.map(m => m.id);
+      const allowedUserIds = [userId, ...teamMemberIds];
+      
+      if (allowedUserIds.length > 0) {
+        conditions.push(
+          sql`(${customers.assignedUserId} IN (${sql.join(allowedUserIds.map(id => sql`${id}`), sql`, `)}) OR ${customers.secondaryUserId} IN (${sql.join(allowedUserIds.map(id => sql`${id}`), sql`, `)}))`
+        );
+      }
     }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -1146,12 +1170,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRecentCustomers(limit: number, userId?: string, userRole?: string): Promise<CustomerWithUser[]> {
-    // Build conditions for counselor role-based filtering
+    // Build conditions for role-based filtering
     const conditions = [];
     if (userId && userRole === 'counselor') {
       conditions.push(
         sql`(${customers.assignedUserId} = ${userId} OR ${customers.secondaryUserId} = ${userId})`
       );
+    } else if (userId && userRole === 'manager') {
+      const teamMembers = await this.getTeamMembers(userId);
+      const teamMemberIds = teamMembers.map(m => m.id);
+      const allowedUserIds = [userId, ...teamMemberIds];
+      
+      if (allowedUserIds.length > 0) {
+        conditions.push(
+          sql`(${customers.assignedUserId} IN (${sql.join(allowedUserIds.map(id => sql`${id}`), sql`, `)}) OR ${customers.secondaryUserId} IN (${sql.join(allowedUserIds.map(id => sql`${id}`), sql`, `)}))`
+        );
+      }
     }
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 

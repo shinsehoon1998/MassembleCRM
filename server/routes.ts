@@ -59,24 +59,32 @@ const requireAdminOrManager = (req: any, res: any, next: any) => {
 
 /**
  * Apply user-based filtering for customer data access
+ * - admin: can access all customers
+ * - manager: can only access customers assigned to themselves or their team members
  * - counselor: can only access customers where assignedUserId or secondaryUserId matches their id
- * - admin/manager: can access all customers
  */
 const applyUserBasedCustomerFilter = (params: any, user: any) => {
   if (!user) {
     throw new Error('User not found for filtering');
   }
 
-  // Admin and manager can access all customers - no filtering
-  if (user.role === 'admin' || user.role === 'manager') {
+  // Admin can access all customers - no filtering
+  if (user.role === 'admin') {
     return params;
+  }
+
+  // Manager can only access customers assigned to themselves or their team members
+  if (user.role === 'manager') {
+    return {
+      ...params,
+      filterByManagerId: user.id
+    };
   }
 
   // Counselor can only access customers they are assigned to
   if (user.role === 'counselor') {
     return {
       ...params,
-      // This will be handled in the storage layer
       filterByUserId: user.id
     };
   }
