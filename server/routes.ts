@@ -1306,7 +1306,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('Export search params:', searchParams);
 
-      const customersData = await storage.getCustomers(searchParams);
+      // Apply user-based filtering for manager/counselor roles
+      const filteredParams = applyUserBasedCustomerFilter(searchParams, req.user);
+      const customersData = await storage.getCustomers(filteredParams);
       
       console.log('Found customers:', customersData.customers?.length || 0);
       

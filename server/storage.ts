@@ -274,6 +274,7 @@ export interface IStorage {
     unshared?: boolean;
     page?: number;
     limit?: number;
+    filterByManagerId?: string;
   }): Promise<{
     customers: CustomerWithUser[];
     total: number;
@@ -287,6 +288,7 @@ export interface IStorage {
     unshared?: boolean;
     page?: number;
     limit?: number;
+    filterByManagerId?: string;
   }): Promise<{
     customers: CustomerWithUser[];
     total: number;
@@ -946,6 +948,7 @@ export class DatabaseStorage implements IStorage {
     unshared?: boolean;
     page?: number;
     limit?: number;
+    filterByManagerId?: string;
   } = {}): Promise<{
     customers: CustomerWithUser[];
     total: number;
