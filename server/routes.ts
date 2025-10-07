@@ -6609,7 +6609,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!template) {
         return res.status(404).json({ message: '설문 템플릿을 찾을 수 없습니다.' });
       }
-      res.json({ success: true, data: template });
+      res.json(template);
     } catch (error) {
       console.error('Error fetching survey template:', error);
       res.status(500).json({ message: '설문 템플릿을 가져오는 중 오류가 발생했습니다.' });
@@ -6624,7 +6624,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: req.user!.id
       };
       const template = await storage.createSurveyTemplate(templateData);
-      res.json({ success: true, data: template });
+      res.json(template);
     } catch (error) {
       console.error('Error creating survey template:', error);
       res.status(500).json({ message: '설문 템플릿 생성 중 오류가 발생했습니다.' });
@@ -6638,7 +6638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!template) {
         return res.status(404).json({ message: '설문 템플릿을 찾을 수 없습니다.' });
       }
-      res.json({ success: true, data: template });
+      res.json(template);
     } catch (error) {
       console.error('Error updating survey template:', error);
       res.status(500).json({ message: '설문 템플릿 수정 중 오류가 발생했습니다.' });

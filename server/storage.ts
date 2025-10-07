@@ -4410,31 +4410,34 @@ export class DatabaseStorage implements IStorage {
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const responses = await db
-      .select({
-        id: surveyResponses.id,
-        surveyTemplateId: surveyResponses.surveyTemplateId,
-        customerId: surveyResponses.customerId,
-        counselorId: surveyResponses.counselorId,
-        answers: surveyResponses.answers,
-        overallScore: surveyResponses.overallScore,
-        status: surveyResponses.status,
-        respondedAt: surveyResponses.respondedAt,
-        createdAt: surveyResponses.createdAt,
-        updatedAt: surveyResponses.updatedAt,
-        customer: {
-          id: customers.id,
-          name: customers.name,
-          phone: customers.phone,
-          email: customers.email,
-        }
-      })
+    // Get survey responses first
+    const rawResponses = await db
+      .select()
       .from(surveyResponses)
-      .leftJoin(customers, eq(surveyResponses.customerId, customers.id))
       .where(whereClause)
       .orderBy(desc(surveyResponses.createdAt))
       .limit(limit)
       .offset(offset);
+
+    // Get unique customer IDs
+    const customerIds = [...new Set(rawResponses.map(r => r.customerId).filter(Boolean))];
+    
+    // Fetch customers in a separate query
+    const customersData = customerIds.length > 0
+      ? await db
+          .select()
+          .from(customers)
+          .where(inArray(customers.id, customerIds))
+      : [];
+
+    // Create a customer map for quick lookup
+    const customerMap = new Map(customersData.map(c => [c.id, c]));
+
+    // Combine responses with customer data
+    const responses = rawResponses.map(r => ({
+      ...r,
+      customer: r.customerId ? customerMap.get(r.customerId) || null : null
+    }));
 
     const [{ total }] = await db
       .select({ total: count() })
