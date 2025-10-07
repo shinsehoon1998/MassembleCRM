@@ -71,6 +71,17 @@ export default function CustomerDetail() {
     queryKey: ["/api/surveys"],
   });
 
+  const { data: surveySendsData } = useQuery<{
+    sends: any[];
+    total: number;
+    totalPages: number;
+  }>({
+    queryKey: ['/api/survey-sends-with-responses', { customerId: params.id }],
+    enabled: !!params.id,
+  });
+
+  const surveySends = surveySendsData?.sends || [];
+
   const sendSurveyMutation = useMutation({
     mutationFn: async (data: { surveyTemplateId: string; customerId: string; sendMethod: string }) => {
       return await apiRequest("POST", `/api/surveys/${data.surveyTemplateId}/send`, {
@@ -369,10 +380,11 @@ export default function CustomerDetail() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="overview" data-testid="tab-overview">개요</TabsTrigger>
           <TabsTrigger value="consultations" data-testid="tab-consultations">상담 기록</TabsTrigger>
           <TabsTrigger value="appointments" data-testid="tab-appointments">예약</TabsTrigger>
+          <TabsTrigger value="surveys" data-testid="tab-surveys">설문 응답</TabsTrigger>
           <TabsTrigger value="attachments" data-testid="tab-attachments">첨부파일</TabsTrigger>
           <TabsTrigger value="timeline" data-testid="tab-timeline">활동 기록</TabsTrigger>
         </TabsList>
@@ -628,6 +640,202 @@ export default function CustomerDetail() {
                       </p>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Surveys Tab */}
+        <TabsContent value="surveys" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <i className="fas fa-poll-h text-lg"></i>
+                설문 응답 내역
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {surveySends.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                  <i className="fas fa-clipboard-list text-4xl text-gray-400 mb-4"></i>
+                  <p className="text-gray-500 text-lg font-medium mb-2">설문 발송 내역이 없습니다</p>
+                  <p className="text-gray-400 text-sm">상단의 &quot;설문 발송&quot; 버튼으로 설문을 발송해보세요.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {surveySends.map((send: any) => {
+                    const surveyTemplate = surveyTemplates.find(t => t.id === send.surveyTemplateId);
+                    const questions = Array.isArray(surveyTemplate?.questions) ? surveyTemplate.questions : [];
+
+                    return (
+                      <div 
+                        key={send.id}
+                        className="border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                        data-testid={`survey-send-${send.id}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h4 className="font-medium text-gray-900">{surveyTemplate?.title || '설문'}</h4>
+                              {send.isResponded ? (
+                                <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                                  <i className="fas fa-check-circle mr-1"></i>
+                                  완료
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-gray-100 text-gray-600 hover:bg-gray-100">
+                                  <i className="fas fa-clock mr-1"></i>
+                                  미응답
+                                </Badge>
+                              )}
+                              <Badge variant="outline">
+                                {send.sendMethod === 'sms' && <><i className="fas fa-sms mr-1"></i>SMS</>}
+                                {send.sendMethod === 'link' && <><i className="fas fa-link mr-1"></i>링크</>}
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-gray-600 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4" />
+                                <span>
+                                  발송일시: {format(new Date(send.sentAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })}
+                                </span>
+                              </div>
+                              {send.response?.respondedAt && (
+                                <div className="flex items-center gap-2">
+                                  <i className="fas fa-check text-green-600"></i>
+                                  <span>
+                                    응답일시: {format(new Date(send.response.respondedAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })}
+                                  </span>
+                                </div>
+                              )}
+                              {send.response?.overallScore && (
+                                <div className="flex items-center gap-2">
+                                  <i className="fas fa-star text-yellow-500"></i>
+                                  <span className="font-medium">
+                                    평균 점수: {Number(send.response.overallScore).toFixed(1)} / 5.0
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-2 ml-4">
+                            {send.isResponded ? (
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="text-blue-600 hover:text-blue-700"
+                                    data-testid={`button-view-survey-${send.id}`}
+                                  >
+                                    <i className="fas fa-eye mr-1"></i>
+                                    응답 확인
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                                  <DialogHeader>
+                                    <DialogTitle>{surveyTemplate?.title || '설문 응답'}</DialogTitle>
+                                  </DialogHeader>
+                                  <div className="space-y-6 py-4">
+                                    {/* Response Info */}
+                                    <div className="grid grid-cols-2 gap-4 pb-4 border-b">
+                                      <div>
+                                        <p className="text-sm text-gray-500">응답일시</p>
+                                        <p className="font-medium">
+                                          {send.response?.respondedAt 
+                                            ? format(new Date(send.response.respondedAt), 'yyyy년 MM월 dd일 HH:mm', { locale: ko })
+                                            : '-'
+                                          }
+                                        </p>
+                                      </div>
+                                      {send.response?.overallScore && (
+                                        <div>
+                                          <p className="text-sm text-gray-500">평균 점수</p>
+                                          <p className="font-medium text-yellow-600">
+                                            <i className="fas fa-star mr-1"></i>
+                                            {Number(send.response.overallScore).toFixed(1)} / 5.0
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Answers */}
+                                    <div className="space-y-4">
+                                      <h3 className="font-semibold text-gray-900">응답 내용</h3>
+                                      {questions.length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                          <i className="fas fa-question-circle text-3xl mb-2"></i>
+                                          <p>질문 정보를 불러올 수 없습니다.</p>
+                                        </div>
+                                      ) : !send.response?.answers || Object.keys(send.response.answers).length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                          <i className="fas fa-inbox text-3xl mb-2"></i>
+                                          <p>응답 내용이 없습니다.</p>
+                                        </div>
+                                      ) : (
+                                        questions.map((question: any, index: number) => {
+                                          const answer = (send.response.answers as any)?.[question.id];
+                                          
+                                          return (
+                                            <Card key={question.id} className="p-4 bg-gray-50">
+                                              <div className="space-y-2">
+                                                <p className="font-medium text-gray-900">
+                                                  질문 {index + 1}
+                                                </p>
+                                                <p className="text-gray-700">{question.question}</p>
+                                                <div className="mt-3 pt-3 border-t">
+                                                  <p className="text-sm text-gray-500 mb-1">응답:</p>
+                                                  {question.type === 'rating' && (
+                                                    <div className="flex items-center">
+                                                      {[1, 2, 3, 4, 5].map((star) => (
+                                                        <i
+                                                          key={star}
+                                                          className={`fas fa-star ${
+                                                            star <= answer ? 'text-yellow-500' : 'text-gray-300'
+                                                          }`}
+                                                        ></i>
+                                                      ))}
+                                                      <span className="ml-2 font-medium">{answer || '-'}</span>
+                                                    </div>
+                                                  )}
+                                                  {question.type === 'text' && (
+                                                    <p className="text-gray-900 bg-white p-3 rounded border">
+                                                      {answer || '-'}
+                                                    </p>
+                                                  )}
+                                                  {(question.type === 'choice' || question.type === 'multiChoice') && (
+                                                    <p className="text-gray-900 font-medium">
+                                                      {Array.isArray(answer) ? answer.join(', ') : answer || '-'}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </Card>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            ) : (
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                disabled
+                                className="text-gray-400"
+                                data-testid={`button-view-survey-${send.id}`}
+                              >
+                                <i className="fas fa-ban mr-1"></i>
+                                미응답
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

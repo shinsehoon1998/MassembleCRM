@@ -824,6 +824,18 @@ export interface IStorage {
     responseRate: number;
     averageScore: number;
   }>;
+
+  // Survey sends with response status (발송 내역과 응답 상태)
+  getSurveySendsWithResponses(params: {
+    surveyTemplateId?: string;
+    customerId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    sends: any[];
+    total: number;
+    totalPages: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4599,6 +4611,100 @@ export class DatabaseStorage implements IStorage {
       totalResponses: Number(totalResponses),
       responseRate: Math.round(responseRate * 100) / 100,
       averageScore: Math.round(averageScore * 100) / 100,
+    };
+  }
+
+  async getSurveySendsWithResponses(params: {
+    surveyTemplateId?: string;
+    customerId?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    sends: any[];
+    total: number;
+    totalPages: number;
+  }> {
+    const page = params.page || 1;
+    const limit = params.limit || 20;
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (params.surveyTemplateId) {
+      conditions.push(eq(surveySends.surveyTemplateId, params.surveyTemplateId));
+    }
+    if (params.customerId) {
+      conditions.push(eq(surveySends.customerId, params.customerId));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get survey sends first
+    const rawSends = await db
+      .select()
+      .from(surveySends)
+      .where(whereClause)
+      .orderBy(desc(surveySends.sentAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Get unique customer IDs
+    const customerIds = [...new Set(rawSends.map(s => s.customerId).filter(Boolean))];
+    
+    // Fetch customers
+    const customersData = customerIds.length > 0
+      ? await db
+          .select()
+          .from(customers)
+          .where(inArray(customers.id, customerIds))
+      : [];
+
+    const customerMap = new Map(customersData.map(c => [c.id, c]));
+
+    // Get responses for these sends
+    const sendKeys = rawSends.map(s => ({ 
+      surveyTemplateId: s.surveyTemplateId, 
+      customerId: s.customerId 
+    }));
+    
+    // Fetch all responses that match these survey/customer combinations
+    const responsesData = await db
+      .select()
+      .from(surveyResponses)
+      .where(
+        and(
+          params.surveyTemplateId ? eq(surveyResponses.surveyTemplateId, params.surveyTemplateId) : undefined,
+          customerIds.length > 0 ? inArray(surveyResponses.customerId, customerIds) : undefined
+        )
+      );
+
+    // Create response map by surveyTemplateId + customerId
+    const responseMap = new Map(
+      responsesData.map(r => [`${r.surveyTemplateId}-${r.customerId}`, r])
+    );
+
+    // Combine sends with customer data and response data
+    const sends = rawSends.map(s => {
+      const customer = s.customerId ? customerMap.get(s.customerId) || null : null;
+      const responseKey = `${s.surveyTemplateId}-${s.customerId}`;
+      const response = responseMap.get(responseKey) || null;
+
+      return {
+        ...s,
+        customer,
+        response,
+        isResponded: !!response,
+      };
+    });
+
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(surveySends)
+      .where(whereClause);
+
+    return {
+      sends,
+      total: Number(total),
+      totalPages: Math.ceil(Number(total) / limit),
     };
   }
 }

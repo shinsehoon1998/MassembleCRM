@@ -6849,5 +6849,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 설문 발송 내역과 응답 상태 조회 (관리자만)
+  app.get('/api/survey-sends-with-responses', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const { surveyTemplateId, customerId, page, limit } = req.query;
+      const data = await storage.getSurveySendsWithResponses({
+        surveyTemplateId: surveyTemplateId as string,
+        customerId: customerId as string,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching survey sends with responses:', error);
+      res.status(500).json({ message: '설문 발송 내역을 가져오는 중 오류가 발생했습니다.' });
+    }
+  });
+
   return httpServer;
 }
