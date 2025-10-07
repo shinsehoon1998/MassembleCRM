@@ -34,9 +34,15 @@ export default function SurveyResponsesPage() {
     queryKey: ['/api/surveys', params?.id],
   });
 
-  const { data: responses, isLoading: responsesLoading } = useQuery<SurveyResponse[]>({
+  const { data: responsesData, isLoading: responsesLoading } = useQuery<{
+    responses: SurveyResponse[];
+    total: number;
+    totalPages: number;
+  }>({
     queryKey: ['/api/survey-responses', { surveyTemplateId: params?.id }],
   });
+
+  const responses = responsesData?.responses || [];
 
   const { data: stats, isLoading: statsLoading } = useQuery<SurveyStats>({
     queryKey: ['/api/surveys', params?.id, 'stats'],

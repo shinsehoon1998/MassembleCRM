@@ -6668,7 +6668,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const responses = await storage.getSurveyResponses(params);
-      res.json({ success: true, data: responses });
+      res.json(responses);
     } catch (error) {
       console.error('Error fetching survey responses:', error);
       res.status(500).json({ message: '설문 응답을 가져오는 중 오류가 발생했습니다.' });
@@ -6810,7 +6810,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/surveys/:id/stats', isAuthenticated, requireAdmin, async (req, res) => {
     try {
       const stats = await storage.getSurveyStats(req.params.id);
-      res.json({ success: true, data: stats });
+      res.json(stats);
     } catch (error) {
       console.error('Error fetching survey stats:', error);
       res.status(500).json({ message: '설문 통계를 가져오는 중 오류가 발생했습니다.' });
