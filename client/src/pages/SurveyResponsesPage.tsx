@@ -154,7 +154,8 @@ export default function SurveyResponsesPage() {
               {responses.map((response) => (
                 <TableRow key={response.id} data-testid={`row-response-${response.id}`}>
                   <TableCell className="font-medium">
-                    고객 ID: {response.customerId}
+                    {response.customer?.name || '알 수 없음'}
+                    <div className="text-sm text-gray-500">{response.customer?.phone || '-'}</div>
                   </TableCell>
                   <TableCell>
                     {response.respondedAt 
@@ -207,7 +208,8 @@ export default function SurveyResponsesPage() {
                           <div className="grid grid-cols-2 gap-4 pb-4 border-b">
                             <div>
                               <p className="text-sm text-gray-500">응답자</p>
-                              <p className="font-medium">고객 ID: {response.customerId}</p>
+                              <p className="font-medium">{response.customer?.name || '알 수 없음'}</p>
+                              <p className="text-sm text-gray-500">{response.customer?.phone || '-'}</p>
                             </div>
                             <div>
                               <p className="text-sm text-gray-500">응답일시</p>
@@ -232,46 +234,58 @@ export default function SurveyResponsesPage() {
                           {/* Answers */}
                           <div className="space-y-4">
                             <h3 className="font-semibold text-gray-900">응답 내용</h3>
-                            {questions.map((question: any, index: number) => {
-                              const answer = (response.answers as any)?.[question.id];
-                              
-                              return (
-                                <Card key={question.id} className="p-4 bg-gray-50">
-                                  <div className="space-y-2">
-                                    <p className="font-medium text-gray-900">
-                                      질문 {index + 1}
-                                    </p>
-                                    <p className="text-gray-700">{question.question}</p>
-                                    <div className="mt-3 pt-3 border-t">
-                                      <p className="text-sm text-gray-500 mb-1">응답:</p>
-                                      {question.type === 'rating' && (
-                                        <div className="flex items-center">
-                                          {[1, 2, 3, 4, 5].map((star) => (
-                                            <i
-                                              key={star}
-                                              className={`fas fa-star ${
-                                                star <= answer ? 'text-yellow-500' : 'text-gray-300'
-                                              }`}
-                                            ></i>
-                                          ))}
-                                          <span className="ml-2 font-medium">{answer}</span>
-                                        </div>
-                                      )}
-                                      {question.type === 'text' && (
-                                        <p className="text-gray-900 bg-white p-3 rounded border">
-                                          {answer || '-'}
-                                        </p>
-                                      )}
-                                      {(question.type === 'choice' || question.type === 'multiChoice') && (
-                                        <p className="text-gray-900 font-medium">
-                                          {Array.isArray(answer) ? answer.join(', ') : answer || '-'}
-                                        </p>
-                                      )}
+                            {questions.length === 0 ? (
+                              <div className="text-center py-8 text-gray-500">
+                                <i className="fas fa-question-circle text-3xl mb-2"></i>
+                                <p>질문 정보를 불러올 수 없습니다.</p>
+                              </div>
+                            ) : !response.answers || Object.keys(response.answers).length === 0 ? (
+                              <div className="text-center py-8 text-gray-500">
+                                <i className="fas fa-inbox text-3xl mb-2"></i>
+                                <p>응답 내용이 없습니다.</p>
+                              </div>
+                            ) : (
+                              questions.map((question: any, index: number) => {
+                                const answer = (response.answers as any)?.[question.id];
+                                
+                                return (
+                                  <Card key={question.id} className="p-4 bg-gray-50">
+                                    <div className="space-y-2">
+                                      <p className="font-medium text-gray-900">
+                                        질문 {index + 1}
+                                      </p>
+                                      <p className="text-gray-700">{question.question}</p>
+                                      <div className="mt-3 pt-3 border-t">
+                                        <p className="text-sm text-gray-500 mb-1">응답:</p>
+                                        {question.type === 'rating' && (
+                                          <div className="flex items-center">
+                                            {[1, 2, 3, 4, 5].map((star) => (
+                                              <i
+                                                key={star}
+                                                className={`fas fa-star ${
+                                                  star <= answer ? 'text-yellow-500' : 'text-gray-300'
+                                                }`}
+                                              ></i>
+                                            ))}
+                                            <span className="ml-2 font-medium">{answer || '-'}</span>
+                                          </div>
+                                        )}
+                                        {question.type === 'text' && (
+                                          <p className="text-gray-900 bg-white p-3 rounded border">
+                                            {answer || '-'}
+                                          </p>
+                                        )}
+                                        {(question.type === 'choice' || question.type === 'multiChoice') && (
+                                          <p className="text-gray-900 font-medium">
+                                            {Array.isArray(answer) ? answer.join(', ') : answer || '-'}
+                                          </p>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                </Card>
-                              );
-                            })}
+                                  </Card>
+                                );
+                              })
+                            )}
                           </div>
                         </div>
                       </DialogContent>

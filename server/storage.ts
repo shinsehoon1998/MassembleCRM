@@ -4389,7 +4389,7 @@ export class DatabaseStorage implements IStorage {
     page?: number;
     limit?: number;
   }): Promise<{
-    responses: SurveyResponse[];
+    responses: any[];
     total: number;
     totalPages: number;
   }> {
@@ -4411,8 +4411,26 @@ export class DatabaseStorage implements IStorage {
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const responses = await db
-      .select()
+      .select({
+        id: surveyResponses.id,
+        surveyTemplateId: surveyResponses.surveyTemplateId,
+        customerId: surveyResponses.customerId,
+        counselorId: surveyResponses.counselorId,
+        answers: surveyResponses.answers,
+        overallScore: surveyResponses.overallScore,
+        status: surveyResponses.status,
+        respondedAt: surveyResponses.respondedAt,
+        createdAt: surveyResponses.createdAt,
+        updatedAt: surveyResponses.updatedAt,
+        customer: {
+          id: customers.id,
+          name: customers.name,
+          phone: customers.phone,
+          email: customers.email,
+        }
+      })
       .from(surveyResponses)
+      .leftJoin(customers, eq(surveyResponses.customerId, customers.id))
       .where(whereClause)
       .orderBy(desc(surveyResponses.createdAt))
       .limit(limit)
