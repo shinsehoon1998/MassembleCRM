@@ -6551,22 +6551,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const pageUrl = req.query.url as string;
       
+      console.log('[NOTION] Fetching page with URL:', pageUrl);
+      
       if (!pageUrl) {
         return res.status(400).json({ message: '노션 페이지 URL이 필요합니다.' });
       }
 
       // URL에서 페이지 ID 추출
       const pageId = parseNotionPageId(pageUrl);
+      console.log('[NOTION] Parsed page ID:', pageId);
       
       // 노션 페이지 내용 가져오기
       const content = await getNotionPageContent(pageId);
+      console.log('[NOTION] Successfully fetched page content');
       
       res.json({
         success: true,
         data: content
       });
     } catch (error) {
-      console.error('Error fetching Notion page:', error);
+      console.error('[NOTION] Error fetching Notion page:', error);
+      
+      // 에러 상세 정보 로깅
+      if (error instanceof Error) {
+        console.error('[NOTION] Error message:', error.message);
+        console.error('[NOTION] Error stack:', error.stack);
+      }
+      
       res.status(500).json({ 
         success: false,
         message: '노션 페이지를 불러오는 중 오류가 발생했습니다.',

@@ -96,9 +96,20 @@ export default function ManualPage() {
     queryKey: ['/api/notion/page', NOTION_PAGE_URL],
     queryFn: async () => {
       const response = await fetch(`/api/notion/page?url=${encodeURIComponent(NOTION_PAGE_URL)}`);
-      if (!response.ok) {
-        throw new Error('노션 페이지를 불러오는데 실패했습니다.');
+      
+      // 응답 타입이 JSON인지 확인
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Received non-JSON response:', text.substring(0, 200));
+        throw new Error('서버 응답이 올바른 형식이 아닙니다.');
       }
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || '노션 페이지를 불러오는데 실패했습니다.');
+      }
+      
       return response.json();
     },
   });
