@@ -35,6 +35,7 @@ export default function Layout({ children }: LayoutProps) {
       '/customer-groups': '고객 그룹 관리',
       '/users': '사용자관리',
       '/sms-settings': 'SMS 설정',
+      '/surveys': '설문조사',
       '/settings': '환경설정',
       '/manual': 'CRM사용설명서',
     };
@@ -52,6 +53,7 @@ export default function Layout({ children }: LayoutProps) {
       '/customer-groups': '고객을 그룹으로 분류하여 효율적으로 관리하세요',
       '/users': '시스템 사용자를 관리하세요',
       '/sms-settings': 'SMS 알림 및 템플릿을 관리하세요',
+      '/surveys': '고객만족도 설문을 생성하고 응답을 관리하세요',
       '/settings': '시스템 환경을 설정하세요',
       '/manual': 'CRM 사용 방법과 기능을 확인하세요',
     };
@@ -223,6 +225,19 @@ export default function Layout({ children }: LayoutProps) {
             >
               <i className="fas fa-sms w-5"></i>
               <span className="ml-3">SMS 설정</span>
+            </Link>
+          )}
+
+          {user?.role === 'admin' && (
+            <Link 
+              href="/surveys"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/surveys') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-surveys"
+            >
+              <i className="fas fa-poll w-5"></i>
+              <span className="ml-3">설문조사</span>
             </Link>
           )}
 

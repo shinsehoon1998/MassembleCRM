@@ -193,6 +193,7 @@ export const surveyTemplates = pgTable("survey_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: varchar("title").notNull(),
   description: text("description"),
+  surveyType: varchar("survey_type").notNull().default('satisfaction'), // satisfaction, nps, custom
   questions: jsonb("questions").notNull(), // Array of question objects
   isActive: boolean("is_active").notNull().default(true),
   notionPageId: varchar("notion_page_id"),
