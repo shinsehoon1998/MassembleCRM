@@ -6866,5 +6866,199 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // AS APIs (A.S 요청 관리)
+  // ============================================
+
+  // A.S 캠페인 목록 조회
+  app.get('/api/as-campaigns', isAuthenticated, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { status, page, limit } = req.query;
+
+      // 관리자는 모든 캠페인 조회, 그 외는 본인 캠페인만
+      const params = {
+        userId: user.role === 'admin' ? undefined : user.id,
+        status: status as string | undefined,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      };
+
+      const data = await storage.getASCampaigns(params);
+      res.json(data);
+    } catch (error) {
+      console.error('Error fetching AS campaigns:', error);
+      res.status(500).json({ message: 'A.S 캠페인 목록을 가져오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 캠페인 상세 조회
+  app.get('/api/as-campaigns/:id', isAuthenticated, async (req, res) => {
+    try {
+      const user = req.user!;
+      const campaign = await storage.getASCampaign(req.params.id);
+      
+      if (!campaign) {
+        return res.status(404).json({ message: 'A.S 캠페인을 찾을 수 없습니다.' });
+      }
+
+      // 권한 확인: 관리자 또는 생성자만 조회 가능
+      if (user.role !== 'admin' && campaign.createdBy !== user.id) {
+        return res.status(403).json({ message: '권한이 없습니다.' });
+      }
+
+      // 캠페인의 모든 요청 정보 가져오기
+      const requests = await storage.getASRequests(campaign.id);
+
+      res.json({
+        ...campaign,
+        requests,
+      });
+    } catch (error) {
+      console.error('Error fetching AS campaign:', error);
+      res.status(500).json({ message: 'A.S 캠페인을 가져오는 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 캠페인 생성
+  app.post('/api/as-campaigns', isAuthenticated, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { name, totalAllocated, asRequestCount } = req.body;
+
+      // 20% 제한 검증
+      if (asRequestCount > totalAllocated * 0.2) {
+        return res.status(400).json({ 
+          message: 'A.S 요청 수량은 총 배분 수량의 20%를 초과할 수 없습니다.' 
+        });
+      }
+
+      const campaign = await storage.createASCampaign({
+        name,
+        totalAllocated,
+        asRequestCount,
+        createdBy: user.id,
+        status: 'draft',
+      });
+
+      res.status(201).json(campaign);
+    } catch (error) {
+      console.error('Error creating AS campaign:', error);
+      res.status(500).json({ message: 'A.S 캠페인 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 캠페인 제출
+  app.post('/api/as-campaigns/:id/submit', isAuthenticated, async (req, res) => {
+    try {
+      const user = req.user!;
+      const campaign = await storage.getASCampaign(req.params.id);
+
+      if (!campaign) {
+        return res.status(404).json({ message: 'A.S 캠페인을 찾을 수 없습니다.' });
+      }
+
+      // 권한 확인: 생성자만 제출 가능
+      if (campaign.createdBy !== user.id) {
+        return res.status(403).json({ message: '권한이 없습니다.' });
+      }
+
+      // 이미 제출됨 확인
+      if (campaign.status !== 'draft') {
+        return res.status(400).json({ message: '이미 제출된 캠페인입니다.' });
+      }
+
+      const updated = await storage.submitASCampaign(req.params.id);
+      res.json(updated);
+    } catch (error) {
+      console.error('Error submitting AS campaign:', error);
+      res.status(500).json({ message: 'A.S 캠페인 제출 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 요청 생성
+  app.post('/api/as-requests', isAuthenticated, async (req, res) => {
+    try {
+      const { campaignId, customerId, reason } = req.body;
+
+      const request = await storage.createASRequest({
+        campaignId,
+        customerId,
+        reason,
+        status: 'pending',
+      });
+
+      res.status(201).json(request);
+    } catch (error) {
+      console.error('Error creating AS request:', error);
+      res.status(500).json({ message: 'A.S 요청 생성 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 요청 검수 (관리자만)
+  app.patch('/api/as-requests/:id/review', isAuthenticated, requireAdmin, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { status, adminMemo } = req.body;
+
+      if (!['approved', 'rejected'].includes(status)) {
+        return res.status(400).json({ message: '유효하지 않은 상태입니다.' });
+      }
+
+      const updated = await storage.reviewASRequest(req.params.id, {
+        status,
+        adminMemo,
+        reviewedBy: user.id,
+      });
+
+      if (!updated) {
+        return res.status(404).json({ message: 'A.S 요청을 찾을 수 없습니다.' });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      console.error('Error reviewing AS request:', error);
+      res.status(500).json({ message: 'A.S 요청 검수 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 첨부파일 업로드
+  app.post('/api/as-attachments', isAuthenticated, async (req, res) => {
+    try {
+      const { asRequestId, fileName, originalName, filePath, fileSize, fileType, mimeType } = req.body;
+
+      const attachment = await storage.createASAttachment({
+        asRequestId,
+        fileName,
+        originalName,
+        filePath,
+        fileSize,
+        fileType,
+        mimeType,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      console.error('Error creating AS attachment:', error);
+      res.status(500).json({ message: 'A.S 첨부파일 업로드 중 오류가 발생했습니다.' });
+    }
+  });
+
+  // A.S 첨부파일 삭제
+  app.delete('/api/as-attachments/:id', isAuthenticated, async (req, res) => {
+    try {
+      const success = await storage.deleteASAttachment(req.params.id);
+      
+      if (!success) {
+        return res.status(404).json({ message: '첨부파일을 찾을 수 없습니다.' });
+      }
+
+      res.json({ message: '첨부파일이 삭제되었습니다.' });
+    } catch (error) {
+      console.error('Error deleting AS attachment:', error);
+      res.status(500).json({ message: 'A.S 첨부파일 삭제 중 오류가 발생했습니다.' });
+    }
+  });
+
   return httpServer;
 }
