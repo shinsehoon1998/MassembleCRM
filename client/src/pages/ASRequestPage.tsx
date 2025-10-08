@@ -24,10 +24,9 @@ export default function ASRequestPage() {
   const [campaignName, setCampaignName] = useState("");
   const [totalAllocated, setTotalAllocated] = useState("");
   const [asRequestCount, setAsRequestCount] = useState("");
-  const [campaignMemo, setCampaignMemo] = useState("");
   const [selectedCustomers, setSelectedCustomers] = useState<any[]>([]);
   const [customerReasons, setCustomerReasons] = useState<Record<string, string>>({});
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{ url: string; fileName: string; originalName: string; size: number; type: string }>>([]);
+  const [customerFiles, setCustomerFiles] = useState<Record<string, Array<{ url: string; fileName: string; originalName: string; size: number; type: string }>>>({});
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
   const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
   const [selectedCampaignForDetail, setSelectedCampaignForDetail] = useState<any | null>(null);
@@ -155,7 +154,7 @@ export default function ASRequestPage() {
       // 2. 선택된 고객들에 대해 A.S 요청 생성
       if (selectedCustomers.length > 0) {
         for (const customer of selectedCustomers) {
-          const reason = customerReasons[customer.id] || campaignMemo || "";
+          const reason = customerReasons[customer.id] || "";
           
           const asRequest: any = await createASRequestMutation.mutateAsync({
             campaignId: campaign.id,
@@ -163,9 +162,10 @@ export default function ASRequestPage() {
             reason,
           });
 
-          // 3. 파일이 있으면 업로드
-          if (uploadedFiles.length > 0) {
-            for (const file of uploadedFiles) {
+          // 3. 해당 고객의 파일이 있으면 업로드
+          const files = customerFiles[customer.id] || [];
+          if (files.length > 0) {
+            for (const file of files) {
               await uploadAttachmentMutation.mutateAsync({
                 asRequestId: asRequest.id,
                 fileName: file.fileName,
@@ -198,10 +198,9 @@ export default function ASRequestPage() {
       setCampaignName("");
       setTotalAllocated("");
       setAsRequestCount("");
-      setCampaignMemo("");
       setSelectedCustomers([]);
       setCustomerReasons({});
-      setUploadedFiles([]);
+      setCustomerFiles({});
       setIsCreateModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
 
@@ -369,29 +368,36 @@ export default function ASRequestPage() {
                 </div>
               </div>
 
-              {/* 고객 선택 */}
+              {/* 고객 선택 및 개별 설정 */}
               <div className="space-y-4">
-                <h3 className="font-semibold text-lg border-b pb-2">고객 선택 (선택사항)</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>선택된 고객: {selectedCustomers.length}명</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsCustomerSelectOpen(true)}
-                      data-testid="button-select-customers"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      고객 추가
-                    </Button>
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="font-semibold text-lg">고객 선택 및 설정 (선택사항)</h3>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsCustomerSelectOpen(true)}
+                    data-testid="button-select-customers"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    고객 추가
+                  </Button>
+                </div>
+                
+                {selectedCustomers.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">고객을 추가하여 A.S 요청을 시작하세요</p>
                   </div>
-                  {selectedCustomers.length > 0 && (
-                    <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
-                      <div className="space-y-2">
-                        {selectedCustomers.map((customer) => (
-                          <div key={customer.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                            <span className="text-sm">{customer.name} ({customer.phone})</span>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {selectedCustomers.map((customer) => (
+                      <Card key={customer.id} className="border-2">
+                        <CardContent className="pt-4 space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-medium">{customer.name}</p>
+                              <p className="text-sm text-gray-600">{customer.phone}</p>
+                            </div>
                             <Button
                               type="button"
                               variant="ghost"
@@ -401,91 +407,94 @@ export default function ASRequestPage() {
                                 const newReasons = { ...customerReasons };
                                 delete newReasons[customer.id];
                                 setCustomerReasons(newReasons);
+                                const newFiles = { ...customerFiles };
+                                delete newFiles[customer.id];
+                                setCustomerFiles(newFiles);
                               }}
                             >
                               <X className="h-4 w-4" />
                             </Button>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 메모 */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg border-b pb-2">메모 (선택사항)</h3>
-                <div>
-                  <Label>캠페인 메모</Label>
-                  <Textarea
-                    value={campaignMemo}
-                    onChange={(e) => setCampaignMemo(e.target.value)}
-                    placeholder="A.S 요청 사유를 입력하세요. 선택한 모든 고객에게 동일하게 적용됩니다."
-                    rows={4}
-                    data-testid="textarea-campaign-memo"
-                  />
-                </div>
-              </div>
-
-              {/* 파일 업로드 */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg border-b pb-2">파일 업로드 (선택사항)</h3>
-                <div>
-                  <Label>증빙 파일 (녹취 파일, 이미지 등)</Label>
-                  <ObjectUploader
-                    maxNumberOfFiles={10}
-                    maxFileSize={52428800}
-                    onGetUploadParameters={async () => {
-                      const response = await fetch("/api/object-storage/signed-url", {
-                        method: "POST",
-                        credentials: "include",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ fileName: `as-file-${Date.now()}` }),
-                      });
-                      const data = await response.json();
-                      return { method: "PUT" as const, url: data.url };
-                    }}
-                    onComplete={(result) => {
-                      const files = (result.successful || []).map((file) => ({
-                        url: file.uploadURL || "",
-                        fileName: file.name || "",
-                        originalName: file.name || "",
-                        size: file.size || 0,
-                        type: file.type || "",
-                      }));
-                      setUploadedFiles([...uploadedFiles, ...files]);
-                      toast({
-                        title: "파일 업로드 완료",
-                        description: `${files.length}개의 파일이 업로드되었습니다.`,
-                      });
-                    }}
-                    buttonClassName="w-full"
-                  >
-                    <Upload className="h-4 w-4 mr-2" />
-                    파일 선택 (최대 10개)
-                  </ObjectUploader>
-                  {uploadedFiles.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-600">업로드된 파일: {uploadedFiles.length}개</p>
-                      <div className="space-y-1 mt-2">
-                        {uploadedFiles.map((file, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
-                            <span className="truncate flex-1">{file.originalName}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setUploadedFiles(uploadedFiles.filter((_, i) => i !== idx))}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
+                          
+                          {/* 개별 메모 */}
+                          <div>
+                            <Label className="text-sm">A.S 사유</Label>
+                            <Textarea
+                              value={customerReasons[customer.id] || ""}
+                              onChange={(e) =>
+                                setCustomerReasons({ ...customerReasons, [customer.id]: e.target.value })
+                              }
+                              placeholder="A.S가 필요한 사유를 입력하세요..."
+                              rows={2}
+                              data-testid={`textarea-reason-${customer.id}`}
+                            />
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+
+                          {/* 개별 파일 업로드 */}
+                          <div>
+                            <Label className="text-sm">증빙 파일</Label>
+                            <ObjectUploader
+                              maxNumberOfFiles={5}
+                              maxFileSize={52428800}
+                              onGetUploadParameters={async () => {
+                                const response = await fetch("/api/object-storage/signed-url", {
+                                  method: "POST",
+                                  credentials: "include",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ fileName: `as-${customer.id}-${Date.now()}` }),
+                                });
+                                const data = await response.json();
+                                return { method: "PUT" as const, url: data.url };
+                              }}
+                              onComplete={(result) => {
+                                const files = (result.successful || []).map((file) => ({
+                                  url: file.uploadURL || "",
+                                  fileName: file.name || "",
+                                  originalName: file.name || "",
+                                  size: file.size || 0,
+                                  type: file.type || "",
+                                }));
+                                const currentFiles = customerFiles[customer.id] || [];
+                                setCustomerFiles({ 
+                                  ...customerFiles, 
+                                  [customer.id]: [...currentFiles, ...files] 
+                                });
+                                toast({
+                                  title: "파일 업로드 완료",
+                                  description: `${customer.name}의 파일 ${files.length}개가 업로드되었습니다.`,
+                                });
+                              }}
+                              buttonClassName="w-full"
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              파일 선택 (최대 5개)
+                            </ObjectUploader>
+                            {(customerFiles[customer.id] || []).length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                {(customerFiles[customer.id] || []).map((file, idx) => (
+                                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                                    <span className="truncate flex-1">{file.originalName}</span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        const newFiles = (customerFiles[customer.id] || []).filter((_, i) => i !== idx);
+                                        setCustomerFiles({ ...customerFiles, [customer.id]: newFiles });
+                                      }}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* 버튼 */}
@@ -497,10 +506,9 @@ export default function ASRequestPage() {
                     setCampaignName("");
                     setTotalAllocated("");
                     setAsRequestCount("");
-                    setCampaignMemo("");
                     setSelectedCustomers([]);
                     setCustomerReasons({});
-                    setUploadedFiles([]);
+                    setCustomerFiles({});
                   }}
                 >
                   취소
