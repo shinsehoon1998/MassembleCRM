@@ -264,13 +264,9 @@ export default function ASRequestPage() {
   };
 
   const getUploadParameters = async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch("/api/upload", {
+    const response = await fetch("/api/objects/upload", {
       method: "POST",
       credentials: "include",
-      body: formData,
     });
 
     if (!response.ok) {
@@ -279,8 +275,8 @@ export default function ASRequestPage() {
 
     const data = await response.json();
     return {
-      url: data.url,
-      fileName: data.fileName,
+      method: "PUT" as const,
+      url: data.uploadURL,
     };
   };
 
@@ -437,16 +433,18 @@ export default function ASRequestPage() {
                               maxNumberOfFiles={5}
                               maxFileSize={52428800}
                               onGetUploadParameters={async () => {
-                                const response = await fetch("/api/object-storage/signed-url", {
+                                const response = await fetch("/api/objects/upload", {
                                   method: "POST",
                                   credentials: "include",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ fileName: `as-${customer.id}-${Date.now()}` }),
                                 });
+                                if (!response.ok) {
+                                  throw new Error("업로드 URL 가져오기 실패");
+                                }
                                 const data = await response.json();
-                                return { method: "PUT" as const, url: data.url };
+                                return { method: "PUT" as const, url: data.uploadURL };
                               }}
                               onComplete={(result) => {
+                                console.log("Upload complete:", result);
                                 const files = (result.successful || []).map((file) => ({
                                   url: file.uploadURL || "",
                                   fileName: file.name || "",
