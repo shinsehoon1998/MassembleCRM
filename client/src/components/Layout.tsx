@@ -125,8 +125,8 @@ export default function Layout({ children }: LayoutProps) {
         <nav className="mt-6">
           <Link 
             href="/"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+              isNavItemActive('/') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
             }`} 
             data-testid="nav-dashboard"
           >
@@ -136,8 +136,8 @@ export default function Layout({ children }: LayoutProps) {
           
           <Link 
             href="/customers"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/customers') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+              isNavItemActive('/customers') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
             }`} 
             data-testid="nav-customers"
           >
@@ -147,8 +147,8 @@ export default function Layout({ children }: LayoutProps) {
 
           <Link 
             href="/appointments"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/appointments') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+              isNavItemActive('/appointments') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
             }`} 
             data-testid="nav-appointments"
           >
@@ -158,8 +158,8 @@ export default function Layout({ children }: LayoutProps) {
 
           <Link 
             href="/data-import"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/data-import') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+              isNavItemActive('/data-import') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
             }`} 
             data-testid="nav-data-import"
           >
@@ -170,8 +170,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/ars-campaigns"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-ars-campaigns"
             >
@@ -183,8 +183,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/scenario-management"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-scenario-management"
             >
@@ -196,8 +196,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/customer-groups"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-customer-groups"
             >
@@ -209,8 +209,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/users"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/users') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/users') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-users"
             >
@@ -222,8 +222,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/sms-settings"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/sms-settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/sms-settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-sms-settings"
             >
@@ -235,8 +235,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/surveys"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/surveys') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/surveys') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-surveys"
             >
@@ -248,8 +248,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/settings"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-settings"
             >
@@ -262,8 +262,8 @@ export default function Layout({ children }: LayoutProps) {
           {(user?.role === 'manager' || user?.role === 'counselor') && (
             <Link 
               href="/as-requests"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/as-requests') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/as-requests') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-as-requests"
             >
@@ -276,8 +276,8 @@ export default function Layout({ children }: LayoutProps) {
           {user?.role === 'admin' && (
             <Link 
               href="/as-review"
-              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-                isNavItemActive('/as-review') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/as-review') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
               }`} 
               data-testid="nav-as-review"
             >
@@ -288,8 +288,8 @@ export default function Layout({ children }: LayoutProps) {
 
           <Link 
             href="/manual"
-            className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
-              isNavItemActive('/manual') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+              isNavItemActive('/manual') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white/70 hover:text-white'
             }`} 
             data-testid="nav-manual"
           >
@@ -301,7 +301,7 @@ export default function Layout({ children }: LayoutProps) {
             <Button
               variant="ghost"
               onClick={handleLogout}
-              className="w-full flex items-center justify-start px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white"
+              className="w-full flex items-center justify-start px-6 py-3 text-white/70 hover:bg-white/10 hover:text-white"
               data-testid="button-logout"
             >
               <i className="fas fa-sign-out-alt w-5"></i>
