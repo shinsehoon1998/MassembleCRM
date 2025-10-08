@@ -143,6 +143,28 @@ export default function ASRequestPage() {
       return;
     }
 
+    if (selectedCustomers.length === 0) {
+      toast({
+        title: "오류",
+        description: "최소 1명 이상의 고객을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 각 고객의 사유 검증
+    for (const customer of selectedCustomers) {
+      const reason = customerReasons[customer.id] || "";
+      if (!reason.trim()) {
+        toast({
+          title: "오류",
+          description: `${customer.name}의 A.S 사유를 입력해주세요.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     try {
       // 1. 캠페인 생성
       const campaign = await createCampaignMutation.mutateAsync({
@@ -152,47 +174,39 @@ export default function ASRequestPage() {
       });
 
       // 2. 선택된 고객들에 대해 A.S 요청 생성
-      if (selectedCustomers.length > 0) {
-        for (const customer of selectedCustomers) {
-          const reason = customerReasons[customer.id] || "";
-          
-          const asRequest: any = await createASRequestMutation.mutateAsync({
-            campaignId: campaign.id,
-            customerId: customer.id,
-            reason,
-          });
+      for (const customer of selectedCustomers) {
+        const reason = customerReasons[customer.id] || "";
+        
+        const asRequest: any = await createASRequestMutation.mutateAsync({
+          campaignId: campaign.id,
+          customerId: customer.id,
+          reason,
+        });
 
-          // 3. 해당 고객의 파일이 있으면 업로드
-          const files = customerFiles[customer.id] || [];
-          if (files.length > 0) {
-            for (const file of files) {
-              await uploadAttachmentMutation.mutateAsync({
-                asRequestId: asRequest.id,
-                fileName: file.fileName,
-                originalName: file.originalName,
-                filePath: file.url,
-                fileSize: file.size,
-                fileType: file.type.startsWith("audio") ? "audio" : "image",
-                mimeType: file.type,
-              });
-            }
+        // 3. 해당 고객의 파일이 있으면 업로드
+        const files = customerFiles[customer.id] || [];
+        if (files.length > 0) {
+          for (const file of files) {
+            await uploadAttachmentMutation.mutateAsync({
+              asRequestId: asRequest.id,
+              fileName: file.fileName,
+              originalName: file.originalName,
+              filePath: file.url,
+              fileSize: file.size,
+              fileType: file.type.startsWith("audio") ? "audio" : "image",
+              mimeType: file.type,
+            });
           }
         }
-
-        // 4. 캠페인 제출
-        await submitCampaignMutation.mutateAsync(campaign.id);
-
-        toast({
-          title: "캠페인 생성 완료",
-          description: "A.S 캠페인이 성공적으로 생성되고 제출되었습니다.",
-        });
-      } else {
-        toast({
-          title: "캠페인 생성 완료",
-          description: "캠페인이 생성되었습니다. 고객을 추가하고 검수 요청하세요.",
-        });
-        setCurrentCampaignId(campaign.id);
       }
+
+      // 4. 캠페인 제출 (검수 요청)
+      await submitCampaignMutation.mutateAsync(campaign.id);
+
+      toast({
+        title: "검수 요청 완료",
+        description: "A.S 캠페인이 성공적으로 생성되고 검수 요청되었습니다.",
+      });
 
       // 초기화
       setCampaignName("");
@@ -516,7 +530,7 @@ export default function ASRequestPage() {
                   className="bg-massemble-red hover:bg-massemble-red/90"
                   data-testid="button-confirm-create"
                 >
-                  {createCampaignMutation.isPending || submitCampaignMutation.isPending ? "생성 중..." : "생성 완료"}
+                  {createCampaignMutation.isPending || submitCampaignMutation.isPending ? "검수 요청 중..." : "검수 요청"}
                 </Button>
               </div>
             </div>
