@@ -22,6 +22,8 @@ import SurveyFormPage from "@/pages/SurveyFormPage";
 import SurveyResponsePage from "@/pages/SurveyResponsePage";
 import SurveyResponsesPage from "@/pages/SurveyResponsesPage";
 import ManualPage from "@/pages/ManualPage";
+import ASRequestPage from "@/pages/ASRequestPage";
+import ASReviewPage from "@/pages/ASReviewPage";
 import Layout from "@/components/Layout";
 import NotFound from "@/pages/not-found";
 
@@ -87,6 +89,8 @@ function Router() {
             <Route path="/surveys/:id/responses" component={SurveyResponsesPage} />
             <Route path="/surveys" component={SurveysPage} />
             <Route path="/manual" component={ManualPage} />
+            <Route path="/as-requests" component={ASRequestPage} />
+            <Route path="/as-review" component={ASReviewPage} />
             <Route>
               <NotFound />
             </Route>

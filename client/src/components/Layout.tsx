@@ -37,6 +37,8 @@ export default function Layout({ children }: LayoutProps) {
       '/sms-settings': 'SMS 설정',
       '/surveys': '설문조사',
       '/settings': '환경설정',
+      '/as-requests': 'A.S 요청',
+      '/as-review': 'A.S 검수',
       '/manual': 'CRM사용설명서',
     };
     return titles[location] || '마셈블 CRM';
@@ -55,6 +57,8 @@ export default function Layout({ children }: LayoutProps) {
       '/sms-settings': 'SMS 알림 및 템플릿을 관리하세요',
       '/surveys': '고객만족도 설문을 생성하고 응답을 관리하세요',
       '/settings': '시스템 환경을 설정하세요',
+      '/as-requests': '고객 A.S 요청 캠페인을 생성하고 관리하세요',
+      '/as-review': '팀원들의 A.S 요청을 검수하고 승인/반려하세요',
       '/manual': 'CRM 사용 방법과 기능을 확인하세요',
     };
     return descriptions[location] || '';
@@ -251,6 +255,34 @@ export default function Layout({ children }: LayoutProps) {
             >
               <i className="fas fa-cog w-5"></i>
               <span className="ml-3">환경설정</span>
+            </Link>
+          )}
+
+          {/* A.S 요청 메뉴 (팀장/팀원) */}
+          {(user?.role === 'manager' || user?.role === 'counselor') && (
+            <Link 
+              href="/as-requests"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/as-requests') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-as-requests"
+            >
+              <i className="fas fa-tools w-5"></i>
+              <span className="ml-3">A.S 요청</span>
+            </Link>
+          )}
+
+          {/* A.S 검수 메뉴 (관리자) */}
+          {user?.role === 'admin' && (
+            <Link 
+              href="/as-review"
+              className={`flex items-center px-6 py-3 text-gray-300 hover:bg-white/10 hover:text-white border-l-4 transition-colors ${
+                isNavItemActive('/as-review') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent'
+              }`} 
+              data-testid="nav-as-review"
+            >
+              <i className="fas fa-clipboard-check w-5"></i>
+              <span className="ml-3">A.S 검수</span>
             </Link>
           )}
 

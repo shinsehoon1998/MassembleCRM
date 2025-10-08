@@ -1,0 +1,514 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+import { ObjectUploader } from "@/components/ObjectUploader";
+import { format } from "date-fns";
+import { ko } from "date-fns/locale";
+import { Plus, X, Upload, FileText, CheckCircle, Clock, XCircle } from "lucide-react";
+
+export default function ASRequestPage() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [campaignName, setCampaignName] = useState("");
+  const [totalAllocated, setTotalAllocated] = useState("");
+  const [asRequestCount, setAsRequestCount] = useState("");
+  const [selectedCustomers, setSelectedCustomers] = useState<any[]>([]);
+  const [customerReasons, setCustomerReasons] = useState<Record<string, string>>({});
+  const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
+  const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
+
+  // Fetch AS campaigns
+  const { data: campaignsData, isLoading } = useQuery<{
+    campaigns: any[];
+    total: number;
+    totalPages: number;
+  }>({
+    queryKey: ["/api/as-campaigns"],
+  });
+
+  const campaigns = campaignsData?.campaigns || [];
+
+  // Fetch customers for selection
+  const { data: customersData } = useQuery<{ customers: any[] }>({
+    queryKey: ["/api/customers"],
+  });
+
+  const customers = customersData?.customers || [];
+
+  // Create campaign mutation
+  const createCampaignMutation = useMutation({
+    mutationFn: async (data: { name: string; totalAllocated: number; asRequestCount: number }) => {
+      return await apiRequest("POST", "/api/as-campaigns", data);
+    },
+    onSuccess: (campaign) => {
+      toast({
+        title: "캠페인이 생성되었습니다",
+        description: "이제 A.S 요청을 추가하세요.",
+      });
+      setCurrentCampaignId(campaign.id);
+      setIsCreateModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "오류",
+        description: error.message || "캠페인 생성에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Submit campaign mutation
+  const submitCampaignMutation = useMutation({
+    mutationFn: async (campaignId: string) => {
+      return await apiRequest("POST", `/api/as-campaigns/${campaignId}/submit`, {});
+    },
+    onSuccess: () => {
+      toast({
+        title: "검수 요청 완료",
+        description: "관리자 검수를 기다려주세요.",
+      });
+      setCurrentCampaignId(null);
+      setSelectedCustomers([]);
+      setCustomerReasons({});
+      queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "오류",
+        description: error.message || "검수 요청에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create AS request mutation
+  const createASRequestMutation = useMutation({
+    mutationFn: async (data: { campaignId: string; customerId: string; reason: string }) => {
+      return await apiRequest("POST", "/api/as-requests", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
+    },
+  });
+
+  // Upload attachment mutation
+  const uploadAttachmentMutation = useMutation({
+    mutationFn: async (data: {
+      asRequestId: string;
+      fileName: string;
+      originalName: string;
+      filePath: string;
+      fileSize: number;
+      fileType: string;
+      mimeType: string;
+    }) => {
+      return await apiRequest("POST", "/api/as-attachments", data);
+    },
+  });
+
+  const handleCreateCampaign = () => {
+    const allocated = Number(totalAllocated);
+    const requested = Number(asRequestCount);
+
+    if (!campaignName || !allocated || !requested) {
+      toast({
+        title: "오류",
+        description: "모든 필드를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createCampaignMutation.mutate({
+      name: campaignName,
+      totalAllocated: allocated,
+      asRequestCount: requested,
+    });
+  };
+
+  const handleAddCustomers = () => {
+    if (!currentCampaignId) {
+      toast({
+        title: "오류",
+        description: "먼저 캠페인을 생성해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsCustomerSelectOpen(true);
+  };
+
+  const handleCustomerSelect = (customer: any) => {
+    const isSelected = selectedCustomers.some(c => c.id === customer.id);
+    if (isSelected) {
+      setSelectedCustomers(selectedCustomers.filter(c => c.id !== customer.id));
+      const newReasons = { ...customerReasons };
+      delete newReasons[customer.id];
+      setCustomerReasons(newReasons);
+    } else {
+      setSelectedCustomers([...selectedCustomers, customer]);
+    }
+  };
+
+  const handleSubmitCampaign = async () => {
+    if (!currentCampaignId) return;
+
+    // Create AS requests for all selected customers
+    for (const customer of selectedCustomers) {
+      const reason = customerReasons[customer.id] || "";
+      if (!reason) {
+        toast({
+          title: "오류",
+          description: `${customer.name}의 A.S 사유를 입력해주세요.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await createASRequestMutation.mutateAsync({
+        campaignId: currentCampaignId,
+        customerId: customer.id,
+        reason,
+      });
+    }
+
+    // Submit campaign
+    submitCampaignMutation.mutate(currentCampaignId);
+  };
+
+  const getUploadParameters = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("파일 업로드에 실패했습니다.");
+    }
+
+    const data = await response.json();
+    return {
+      url: data.url,
+      fileName: data.fileName,
+    };
+  };
+
+  const handleFileUploadComplete = async (files: Array<{ url: string; fileName: string; originalName: string; size: number; type: string }>, asRequestId: string) => {
+    for (const file of files) {
+      await uploadAttachmentMutation.mutateAsync({
+        asRequestId,
+        fileName: file.fileName,
+        originalName: file.originalName,
+        filePath: file.url,
+        fileSize: file.size,
+        fileType: file.type.startsWith("audio") ? "audio" : "image",
+        mimeType: file.type,
+      });
+    }
+
+    toast({
+      title: "파일 업로드 완료",
+      description: `${files.length}개의 파일이 업로드되었습니다.`,
+    });
+  };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-96">로딩 중...</div>;
+  }
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">A.S 요청 관리</h1>
+          <p className="text-gray-600 mt-2">고객 A.S 요청을 생성하고 관리합니다</p>
+        </div>
+        
+        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-massemble-red hover:bg-massemble-red/90" data-testid="button-create-campaign">
+              <Plus className="h-4 w-4 mr-2" />
+              새 캠페인 생성
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>A.S 캠페인 생성</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>캠페인명</Label>
+                <Input
+                  value={campaignName}
+                  onChange={(e) => setCampaignName(e.target.value)}
+                  placeholder="2025년 1월 A.S 요청"
+                  data-testid="input-campaign-name"
+                />
+              </div>
+              <div>
+                <Label>총 배분 수량</Label>
+                <Input
+                  type="number"
+                  value={totalAllocated}
+                  onChange={(e) => setTotalAllocated(e.target.value)}
+                  placeholder="100"
+                  data-testid="input-total-allocated"
+                />
+              </div>
+              <div>
+                <Label>A.S 요청 수량 (최대 {totalAllocated ? Math.floor(Number(totalAllocated) * 0.2) : 0})</Label>
+                <Input
+                  type="number"
+                  value={asRequestCount}
+                  onChange={(e) => setAsRequestCount(e.target.value)}
+                  placeholder="20"
+                  data-testid="input-as-count"
+                />
+                {totalAllocated && asRequestCount && Number(asRequestCount) > Number(totalAllocated) * 0.2 && (
+                  <p className="text-sm text-red-600 mt-1">
+                    A.S 수량은 총 배분 수량의 20%를 초과할 수 없습니다
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+                  취소
+                </Button>
+                <Button
+                  onClick={handleCreateCampaign}
+                  disabled={createCampaignMutation.isPending}
+                  className="bg-massemble-red hover:bg-massemble-red/90"
+                  data-testid="button-confirm-create"
+                >
+                  생성
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Campaign stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">전체 캠페인</p>
+                <p className="text-2xl font-bold">{campaigns.length}</p>
+              </div>
+              <FileText className="h-8 w-8 text-gray-400" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">검수 대기</p>
+                <p className="text-2xl font-bold">
+                  {campaigns.filter(c => c.status === 'submitted').length}
+                </p>
+              </div>
+              <Clock className="h-8 w-8 text-yellow-500" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">검수 완료</p>
+                <p className="text-2xl font-bold">
+                  {campaigns.filter(c => c.status === 'reviewed').length}
+                </p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Current campaign editing */}
+      {currentCampaignId && (
+        <Card className="border-2 border-massemble-red">
+          <CardHeader>
+            <CardTitle>현재 작업 중인 캠페인</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="font-medium">선택된 고객: {selectedCustomers.length}명</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleAddCustomers} data-testid="button-add-customers">
+                  <Plus className="h-4 w-4 mr-2" />
+                  고객 추가
+                </Button>
+                <Button
+                  onClick={handleSubmitCampaign}
+                  disabled={selectedCustomers.length === 0 || submitCampaignMutation.isPending}
+                  className="bg-massemble-red hover:bg-massemble-red/90"
+                  data-testid="button-submit-campaign"
+                >
+                  검수 요청
+                </Button>
+              </div>
+            </div>
+
+            {selectedCustomers.length > 0 && (
+              <div className="space-y-3">
+                {selectedCustomers.map((customer) => (
+                  <Card key={customer.id}>
+                    <CardContent className="pt-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-medium">{customer.name}</p>
+                          <p className="text-sm text-gray-600">{customer.phone}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCustomerSelect(customer)}
+                          data-testid={`button-remove-customer-${customer.id}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>A.S 사유</Label>
+                        <Textarea
+                          value={customerReasons[customer.id] || ""}
+                          onChange={(e) =>
+                            setCustomerReasons({ ...customerReasons, [customer.id]: e.target.value })
+                          }
+                          placeholder="A.S가 필요한 사유를 입력하세요..."
+                          data-testid={`textarea-reason-${customer.id}`}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Customer selection modal */}
+      <Dialog open={isCustomerSelectOpen} onOpenChange={setIsCustomerSelectOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>고객 선택</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {customers.map((customer: any) => {
+              const isSelected = selectedCustomers.some(c => c.id === customer.id);
+              return (
+                <div
+                  key={customer.id}
+                  className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                    isSelected ? 'border-massemble-red bg-red-50' : ''
+                  }`}
+                  onClick={() => handleCustomerSelect(customer)}
+                  data-testid={`customer-option-${customer.id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{customer.name}</p>
+                      <p className="text-sm text-gray-600">{customer.phone}</p>
+                    </div>
+                    {isSelected && <CheckCircle className="h-5 w-5 text-massemble-red" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Campaigns list */}
+      <Card>
+        <CardHeader>
+          <CardTitle>내 A.S 캠페인</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {campaigns.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <FileText className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+              <p>생성된 캠페인이 없습니다</p>
+              <p className="text-sm mt-2">새 캠페인을 생성해보세요</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {campaigns.map((campaign: any) => (
+                <Card key={campaign.id} className="hover:shadow-md transition-shadow" data-testid={`campaign-${campaign.id}`}>
+                  <CardContent className="pt-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold">{campaign.name}</h3>
+                          <Badge
+                            variant={
+                              campaign.status === 'draft' ? 'secondary' :
+                              campaign.status === 'submitted' ? 'default' :
+                              'outline'
+                            }
+                          >
+                            {campaign.status === 'draft' ? '작성중' :
+                             campaign.status === 'submitted' ? '검수대기' :
+                             '검수완료'}
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
+                          <div>총 배분: {campaign.totalAllocated}</div>
+                          <div>A.S 요청: {campaign.asRequestCount}</div>
+                          <div>생성일: {format(new Date(campaign.createdAt), 'yyyy-MM-dd', { locale: ko })}</div>
+                          <div>
+                            비율: {((campaign.asRequestCount / campaign.totalAllocated) * 100).toFixed(1)}%
+                          </div>
+                        </div>
+                        {campaign.requestStats && (
+                          <div className="mt-2 flex gap-3 text-sm">
+                            <span className="text-green-600">승인: {campaign.requestStats.approved}</span>
+                            <span className="text-red-600">반려: {campaign.requestStats.rejected}</span>
+                            <span className="text-yellow-600">대기: {campaign.requestStats.pending}</span>
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate(`/as-campaigns/${campaign.id}`)}
+                        data-testid={`button-view-campaign-${campaign.id}`}
+                      >
+                        상세보기
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
