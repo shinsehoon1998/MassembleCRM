@@ -109,7 +109,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Sidebar */}
       <div className={`w-64 bg-massemble-black text-white flex-shrink-0 transform transition-transform duration-300 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0 fixed lg:relative z-50 h-full lg:h-auto`}>
+      } lg:translate-x-0 fixed lg:relative z-50 h-full flex flex-col`}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
             <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center p-1">
@@ -122,7 +122,7 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
         
-        <nav className="mt-6">
+        <nav className="flex-1 mt-6 flex flex-col">
           <Link 
             href="/"
             className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
@@ -297,7 +297,7 @@ export default function Layout({ children }: LayoutProps) {
             <span className="ml-3">CRM사용설명서</span>
           </Link>
           
-          <div className="border-t border-white/10 mt-6 pt-6">
+          <div className="mt-auto border-t border-white/10 pt-6">
             <Button
               variant="ghost"
               onClick={handleLogout}
