@@ -886,47 +886,6 @@ export default function ASRequestPage() {
                   </div>
                 </div>
               )}
-
-              <div className="border-t pt-4">
-                <h3 className="font-semibold mb-3">캠페인 작업</h3>
-                <div className="flex gap-2">
-                  {selectedCampaignForDetail.status === 'draft' && (
-                    <>
-                      <Button
-                        onClick={() => {
-                          setCurrentCampaignId(selectedCampaignForDetail.id);
-                          setSelectedCampaignForDetail(null);
-                          setIsCustomerSelectOpen(true);
-                        }}
-                        data-testid="button-add-customers-detail"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        고객 추가
-                      </Button>
-                      {selectedCustomers.length > 0 && (
-                        <Button
-                          onClick={() => {
-                            setCurrentCampaignId(selectedCampaignForDetail.id);
-                            handleSubmitCampaign();
-                            setSelectedCampaignForDetail(null);
-                          }}
-                          variant="default"
-                          data-testid="button-submit-campaign-detail"
-                        >
-                          검수 요청
-                        </Button>
-                      )}
-                    </>
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={() => setSelectedCampaignForDetail(null)}
-                    data-testid="button-close-detail"
-                  >
-                    닫기
-                  </Button>
-                </div>
-              </div>
             </div>
           )}
         </DialogContent>
