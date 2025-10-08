@@ -28,6 +28,7 @@ export default function ASRequestPage() {
   const [customerReasons, setCustomerReasons] = useState<Record<string, string>>({});
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
   const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
+  const [selectedCampaignForDetail, setSelectedCampaignForDetail] = useState<any | null>(null);
 
   // Fetch AS campaigns
   const { data: campaignsData, isLoading } = useQuery<{
@@ -52,7 +53,7 @@ export default function ASRequestPage() {
     mutationFn: async (data: { name: string; totalAllocated: number; asRequestCount: number }) => {
       return await apiRequest("POST", "/api/as-campaigns", data);
     },
-    onSuccess: (campaign) => {
+    onSuccess: (campaign: any) => {
       toast({
         title: "캠페인이 생성되었습니다",
         description: "이제 A.S 요청을 추가하세요.",
@@ -496,7 +497,7 @@ export default function ASRequestPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => navigate(`/as-campaigns/${campaign.id}`)}
+                        onClick={() => setSelectedCampaignForDetail(campaign)}
                         data-testid={`button-view-campaign-${campaign.id}`}
                       >
                         상세보기
@@ -509,6 +510,122 @@ export default function ASRequestPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Campaign Detail Dialog */}
+      <Dialog open={!!selectedCampaignForDetail} onOpenChange={(open) => !open && setSelectedCampaignForDetail(null)}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>캠페인 상세정보</DialogTitle>
+          </DialogHeader>
+          {selectedCampaignForDetail && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">캠페인명</Label>
+                  <p className="text-lg font-semibold">{selectedCampaignForDetail.name}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">상태</Label>
+                  <div className="mt-1">
+                    <Badge
+                      variant={
+                        selectedCampaignForDetail.status === 'draft' ? 'secondary' :
+                        selectedCampaignForDetail.status === 'submitted' ? 'default' :
+                        'outline'
+                      }
+                    >
+                      {selectedCampaignForDetail.status === 'draft' ? '작성중' :
+                       selectedCampaignForDetail.status === 'submitted' ? '검수대기' :
+                       '검수완료'}
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">총 배분</Label>
+                  <p className="text-lg">{selectedCampaignForDetail.totalAllocated}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">A.S 요청</Label>
+                  <p className="text-lg">{selectedCampaignForDetail.asRequestCount}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">생성일</Label>
+                  <p className="text-lg">
+                    {format(new Date(selectedCampaignForDetail.createdAt), 'yyyy-MM-dd HH:mm', { locale: ko })}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">비율</Label>
+                  <p className="text-lg">
+                    {((selectedCampaignForDetail.asRequestCount / selectedCampaignForDetail.totalAllocated) * 100).toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+
+              {selectedCampaignForDetail.requestStats && (
+                <div>
+                  <Label className="text-sm font-medium text-gray-500">요청 통계</Label>
+                  <div className="mt-2 flex gap-4">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <span className="text-green-600 font-medium">승인: {selectedCampaignForDetail.requestStats.approved}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-5 w-5 text-red-600" />
+                      <span className="text-red-600 font-medium">반려: {selectedCampaignForDetail.requestStats.rejected}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-yellow-600" />
+                      <span className="text-yellow-600 font-medium">대기: {selectedCampaignForDetail.requestStats.pending}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t pt-4">
+                <h3 className="font-semibold mb-3">캠페인 작업</h3>
+                <div className="flex gap-2">
+                  {selectedCampaignForDetail.status === 'draft' && (
+                    <>
+                      <Button
+                        onClick={() => {
+                          setCurrentCampaignId(selectedCampaignForDetail.id);
+                          setSelectedCampaignForDetail(null);
+                          setIsCustomerSelectOpen(true);
+                        }}
+                        data-testid="button-add-customers-detail"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        고객 추가
+                      </Button>
+                      {selectedCustomers.length > 0 && (
+                        <Button
+                          onClick={() => {
+                            setCurrentCampaignId(selectedCampaignForDetail.id);
+                            handleSubmitCampaign();
+                            setSelectedCampaignForDetail(null);
+                          }}
+                          variant="default"
+                          data-testid="button-submit-campaign-detail"
+                        >
+                          검수 요청
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => setSelectedCampaignForDetail(null)}
+                    data-testid="button-close-detail"
+                  >
+                    닫기
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
