@@ -42,9 +42,9 @@ export default function ASRequestPage() {
 
   const campaigns = campaignsData?.campaigns || [];
 
-  // Fetch customers for selection
+  // Fetch customers for selection (모든 고객 가져오기)
   const { data: customersData } = useQuery<{ customers: any[] }>({
-    queryKey: ["/api/customers"],
+    queryKey: ["/api/customers?limit=10000"],
   });
 
   const customers = customersData?.customers || [];
