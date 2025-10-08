@@ -28,7 +28,6 @@ export default function ASRequestPage() {
   const [customerReasons, setCustomerReasons] = useState<Record<string, string>>({});
   const [customerFiles, setCustomerFiles] = useState<Record<string, Array<{ url: string; fileName: string; originalName: string; size: number; type: string }>>>({});
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
-  const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
   const [selectedCampaignForDetail, setSelectedCampaignForDetail] = useState<any | null>(null);
 
   // Fetch AS campaigns
@@ -55,12 +54,6 @@ export default function ASRequestPage() {
       return await apiRequest("POST", "/api/as-campaigns", data);
     },
     onSuccess: (campaign: any) => {
-      toast({
-        title: "캠페인이 생성되었습니다",
-        description: "이제 A.S 요청을 추가하세요.",
-      });
-      setCurrentCampaignId(campaign.id);
-      setIsCreateModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
     },
     onError: (error: any) => {
@@ -78,13 +71,6 @@ export default function ASRequestPage() {
       return await apiRequest("POST", `/api/as-campaigns/${campaignId}/submit`, {});
     },
     onSuccess: () => {
-      toast({
-        title: "검수 요청 완료",
-        description: "관리자 검수를 기다려주세요.",
-      });
-      setCurrentCampaignId(null);
-      setSelectedCustomers([]);
-      setCustomerReasons({});
       queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
     },
     onError: (error: any) => {
@@ -227,18 +213,6 @@ export default function ASRequestPage() {
     }
   };
 
-  const handleAddCustomers = () => {
-    if (!currentCampaignId) {
-      toast({
-        title: "오류",
-        description: "먼저 캠페인을 생성해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setIsCustomerSelectOpen(true);
-  };
-
   const handleCustomerSelect = (customer: any) => {
     const isSelected = selectedCustomers.some(c => c.id === customer.id);
     if (isSelected) {
@@ -249,32 +223,6 @@ export default function ASRequestPage() {
     } else {
       setSelectedCustomers([...selectedCustomers, customer]);
     }
-  };
-
-  const handleSubmitCampaign = async () => {
-    if (!currentCampaignId) return;
-
-    // Create AS requests for all selected customers
-    for (const customer of selectedCustomers) {
-      const reason = customerReasons[customer.id] || "";
-      if (!reason) {
-        toast({
-          title: "오류",
-          description: `${customer.name}의 A.S 사유를 입력해주세요.`,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      await createASRequestMutation.mutateAsync({
-        campaignId: currentCampaignId,
-        customerId: customer.id,
-        reason,
-      });
-    }
-
-    // Submit campaign
-    submitCampaignMutation.mutate(currentCampaignId);
   };
 
   const getUploadParameters = async (file: File) => {
@@ -294,24 +242,6 @@ export default function ASRequestPage() {
     };
   };
 
-  const handleFileUploadComplete = async (files: Array<{ url: string; fileName: string; originalName: string; size: number; type: string }>, asRequestId: string) => {
-    for (const file of files) {
-      await uploadAttachmentMutation.mutateAsync({
-        asRequestId,
-        fileName: file.fileName,
-        originalName: file.originalName,
-        filePath: file.url,
-        fileSize: file.size,
-        fileType: file.type.startsWith("audio") ? "audio" : "image",
-        mimeType: file.type,
-      });
-    }
-
-    toast({
-      title: "파일 업로드 완료",
-      description: `${files.length}개의 파일이 업로드되었습니다.`,
-    });
-  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-96">로딩 중...</div>;
@@ -578,72 +508,6 @@ export default function ASRequestPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Current campaign editing */}
-      {currentCampaignId && (
-        <Card className="border-2 border-massemble-red">
-          <CardHeader>
-            <CardTitle>현재 작업 중인 캠페인</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="font-medium">선택된 고객: {selectedCustomers.length}명</p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={handleAddCustomers} data-testid="button-add-customers">
-                  <Plus className="h-4 w-4 mr-2" />
-                  고객 추가
-                </Button>
-                <Button
-                  onClick={handleSubmitCampaign}
-                  disabled={selectedCustomers.length === 0 || submitCampaignMutation.isPending}
-                  className="bg-massemble-red hover:bg-massemble-red/90"
-                  data-testid="button-submit-campaign"
-                >
-                  검수 요청
-                </Button>
-              </div>
-            </div>
-
-            {selectedCustomers.length > 0 && (
-              <div className="space-y-3">
-                {selectedCustomers.map((customer) => (
-                  <Card key={customer.id}>
-                    <CardContent className="pt-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <p className="font-medium">{customer.name}</p>
-                          <p className="text-sm text-gray-600">{customer.phone}</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCustomerSelect(customer)}
-                          data-testid={`button-remove-customer-${customer.id}`}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>A.S 사유</Label>
-                        <Textarea
-                          value={customerReasons[customer.id] || ""}
-                          onChange={(e) =>
-                            setCustomerReasons({ ...customerReasons, [customer.id]: e.target.value })
-                          }
-                          placeholder="A.S가 필요한 사유를 입력하세요..."
-                          data-testid={`textarea-reason-${customer.id}`}
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Customer selection modal */}
       <Dialog open={isCustomerSelectOpen} onOpenChange={setIsCustomerSelectOpen}>
