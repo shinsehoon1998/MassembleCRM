@@ -444,7 +444,6 @@ export default function ASRequestPage() {
                                 return { method: "PUT" as const, url: data.uploadURL };
                               }}
                               onComplete={(result) => {
-                                console.log("Upload complete:", result);
                                 const files = (result.successful || []).map((file) => ({
                                   url: file.uploadURL || "",
                                   fileName: file.name || "",

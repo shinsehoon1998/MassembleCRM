@@ -7037,7 +7037,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // A.S 첨부파일 업로드
   app.post('/api/as-attachments', isAuthenticated, async (req, res) => {
     try {
-      const { asRequestId, fileName, originalName, filePath, fileSize, fileType, mimeType } = req.body;
+      const objectStorageService = new ObjectStorageService();
+      let { asRequestId, fileName, originalName, filePath, fileSize, fileType, mimeType } = req.body;
+      
+      // If it's a full URL, normalize it
+      if (filePath && filePath.includes('storage.googleapis.com')) {
+        filePath = objectStorageService.normalizeObjectEntityPath(filePath);
+      }
 
       const attachment = await storage.createASAttachment({
         asRequestId,
