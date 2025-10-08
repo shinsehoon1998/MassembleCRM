@@ -42,9 +42,9 @@ export default function ASRequestPage() {
 
   const campaigns = campaignsData?.campaigns || [];
 
-  // Fetch customers for selection (모든 고객 가져오기)
+  // Fetch customers for selection (100개씩)
   const { data: customersData } = useQuery<{ customers: any[] }>({
-    queryKey: ["/api/customers?limit=10000"],
+    queryKey: ["/api/customers?limit=100"],
   });
 
   const customers = customersData?.customers || [];
@@ -653,8 +653,13 @@ export default function ASRequestPage() {
                   data-testid={`customer-option-${customer.id}`}
                 >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{customer.name}</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{customer.name}</p>
+                        <Badge variant="outline" className="text-xs">
+                          {customer.status || '인텍'}
+                        </Badge>
+                      </div>
                       <p className="text-sm text-gray-600">{customer.phone}</p>
                     </div>
                     {isSelected && <CheckCircle className="h-5 w-5 text-massemble-red" />}
