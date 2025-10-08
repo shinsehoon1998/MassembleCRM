@@ -24,8 +24,10 @@ export default function ASRequestPage() {
   const [campaignName, setCampaignName] = useState("");
   const [totalAllocated, setTotalAllocated] = useState("");
   const [asRequestCount, setAsRequestCount] = useState("");
+  const [campaignMemo, setCampaignMemo] = useState("");
   const [selectedCustomers, setSelectedCustomers] = useState<any[]>([]);
   const [customerReasons, setCustomerReasons] = useState<Record<string, string>>({});
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ url: string; fileName: string; originalName: string; size: number; type: string }>>([]);
   const [isCustomerSelectOpen, setIsCustomerSelectOpen] = useState(false);
   const [currentCampaignId, setCurrentCampaignId] = useState<string | null>(null);
   const [selectedCampaignForDetail, setSelectedCampaignForDetail] = useState<any | null>(null);
@@ -120,24 +122,96 @@ export default function ASRequestPage() {
     },
   });
 
-  const handleCreateCampaign = () => {
+  const handleCreateCampaign = async () => {
     const allocated = Number(totalAllocated);
     const requested = Number(asRequestCount);
 
     if (!campaignName || !allocated || !requested) {
       toast({
         title: "오류",
-        description: "모든 필드를 입력해주세요.",
+        description: "캠페인명, 총 배분 수량, A.S 요청 수량은 필수입니다.",
         variant: "destructive",
       });
       return;
     }
 
-    createCampaignMutation.mutate({
-      name: campaignName,
-      totalAllocated: allocated,
-      asRequestCount: requested,
-    });
+    if (requested > allocated * 0.2) {
+      toast({
+        title: "오류",
+        description: "A.S 요청 수량은 총 배분 수량의 20%를 초과할 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // 1. 캠페인 생성
+      const campaign = await createCampaignMutation.mutateAsync({
+        name: campaignName,
+        totalAllocated: allocated,
+        asRequestCount: requested,
+      });
+
+      // 2. 선택된 고객들에 대해 A.S 요청 생성
+      if (selectedCustomers.length > 0) {
+        for (const customer of selectedCustomers) {
+          const reason = customerReasons[customer.id] || campaignMemo || "";
+          
+          const asRequest: any = await createASRequestMutation.mutateAsync({
+            campaignId: campaign.id,
+            customerId: customer.id,
+            reason,
+          });
+
+          // 3. 파일이 있으면 업로드
+          if (uploadedFiles.length > 0) {
+            for (const file of uploadedFiles) {
+              await uploadAttachmentMutation.mutateAsync({
+                asRequestId: asRequest.id,
+                fileName: file.fileName,
+                originalName: file.originalName,
+                filePath: file.url,
+                fileSize: file.size,
+                fileType: file.type.startsWith("audio") ? "audio" : "image",
+                mimeType: file.type,
+              });
+            }
+          }
+        }
+
+        // 4. 캠페인 제출
+        await submitCampaignMutation.mutateAsync(campaign.id);
+
+        toast({
+          title: "캠페인 생성 완료",
+          description: "A.S 캠페인이 성공적으로 생성되고 제출되었습니다.",
+        });
+      } else {
+        toast({
+          title: "캠페인 생성 완료",
+          description: "캠페인이 생성되었습니다. 고객을 추가하고 검수 요청하세요.",
+        });
+        setCurrentCampaignId(campaign.id);
+      }
+
+      // 초기화
+      setCampaignName("");
+      setTotalAllocated("");
+      setAsRequestCount("");
+      setCampaignMemo("");
+      setSelectedCustomers([]);
+      setCustomerReasons({});
+      setUploadedFiles([]);
+      setIsCreateModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
+
+    } catch (error: any) {
+      toast({
+        title: "오류",
+        description: error.message || "캠페인 생성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAddCustomers = () => {
@@ -249,56 +323,195 @@ export default function ASRequestPage() {
               새 캠페인 생성
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>A.S 캠페인 생성</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label>캠페인명</Label>
-                <Input
-                  value={campaignName}
-                  onChange={(e) => setCampaignName(e.target.value)}
-                  placeholder="2025년 1월 A.S 요청"
-                  data-testid="input-campaign-name"
-                />
+            <div className="space-y-6 py-4">
+              {/* 기본 정보 */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg border-b pb-2">기본 정보</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>캠페인명 *</Label>
+                    <Input
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      placeholder="2025년 1월 A.S 요청"
+                      data-testid="input-campaign-name"
+                    />
+                  </div>
+                  <div>
+                    <Label>총 배분 수량 *</Label>
+                    <Input
+                      type="number"
+                      value={totalAllocated}
+                      onChange={(e) => setTotalAllocated(e.target.value)}
+                      placeholder="100"
+                      data-testid="input-total-allocated"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <Label>A.S 요청 수량 * (최대 {totalAllocated ? Math.floor(Number(totalAllocated) * 0.2) : 0})</Label>
+                    <Input
+                      type="number"
+                      value={asRequestCount}
+                      onChange={(e) => setAsRequestCount(e.target.value)}
+                      placeholder="20"
+                      data-testid="input-as-count"
+                    />
+                    {totalAllocated && asRequestCount && Number(asRequestCount) > Number(totalAllocated) * 0.2 && (
+                      <p className="text-sm text-red-600 mt-1">
+                        A.S 수량은 총 배분 수량의 20%를 초과할 수 없습니다
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div>
-                <Label>총 배분 수량</Label>
-                <Input
-                  type="number"
-                  value={totalAllocated}
-                  onChange={(e) => setTotalAllocated(e.target.value)}
-                  placeholder="100"
-                  data-testid="input-total-allocated"
-                />
+
+              {/* 고객 선택 */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg border-b pb-2">고객 선택 (선택사항)</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>선택된 고객: {selectedCustomers.length}명</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCustomerSelectOpen(true)}
+                      data-testid="button-select-customers"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      고객 추가
+                    </Button>
+                  </div>
+                  {selectedCustomers.length > 0 && (
+                    <div className="border rounded-lg p-3 max-h-40 overflow-y-auto">
+                      <div className="space-y-2">
+                        {selectedCustomers.map((customer) => (
+                          <div key={customer.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <span className="text-sm">{customer.name} ({customer.phone})</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedCustomers(selectedCustomers.filter(c => c.id !== customer.id));
+                                const newReasons = { ...customerReasons };
+                                delete newReasons[customer.id];
+                                setCustomerReasons(newReasons);
+                              }}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div>
-                <Label>A.S 요청 수량 (최대 {totalAllocated ? Math.floor(Number(totalAllocated) * 0.2) : 0})</Label>
-                <Input
-                  type="number"
-                  value={asRequestCount}
-                  onChange={(e) => setAsRequestCount(e.target.value)}
-                  placeholder="20"
-                  data-testid="input-as-count"
-                />
-                {totalAllocated && asRequestCount && Number(asRequestCount) > Number(totalAllocated) * 0.2 && (
-                  <p className="text-sm text-red-600 mt-1">
-                    A.S 수량은 총 배분 수량의 20%를 초과할 수 없습니다
-                  </p>
-                )}
+
+              {/* 메모 */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg border-b pb-2">메모 (선택사항)</h3>
+                <div>
+                  <Label>캠페인 메모</Label>
+                  <Textarea
+                    value={campaignMemo}
+                    onChange={(e) => setCampaignMemo(e.target.value)}
+                    placeholder="A.S 요청 사유를 입력하세요. 선택한 모든 고객에게 동일하게 적용됩니다."
+                    rows={4}
+                    data-testid="textarea-campaign-memo"
+                  />
+                </div>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+
+              {/* 파일 업로드 */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg border-b pb-2">파일 업로드 (선택사항)</h3>
+                <div>
+                  <Label>증빙 파일 (녹취 파일, 이미지 등)</Label>
+                  <ObjectUploader
+                    maxNumberOfFiles={10}
+                    maxFileSize={52428800}
+                    onGetUploadParameters={async () => {
+                      const response = await fetch("/api/object-storage/signed-url", {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ fileName: `as-file-${Date.now()}` }),
+                      });
+                      const data = await response.json();
+                      return { method: "PUT" as const, url: data.url };
+                    }}
+                    onComplete={(result) => {
+                      const files = (result.successful || []).map((file) => ({
+                        url: file.uploadURL || "",
+                        fileName: file.name || "",
+                        originalName: file.name || "",
+                        size: file.size || 0,
+                        type: file.type || "",
+                      }));
+                      setUploadedFiles([...uploadedFiles, ...files]);
+                      toast({
+                        title: "파일 업로드 완료",
+                        description: `${files.length}개의 파일이 업로드되었습니다.`,
+                      });
+                    }}
+                    buttonClassName="w-full"
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    파일 선택 (최대 10개)
+                  </ObjectUploader>
+                  {uploadedFiles.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-600">업로드된 파일: {uploadedFiles.length}개</p>
+                      <div className="space-y-1 mt-2">
+                        {uploadedFiles.map((file, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                            <span className="truncate flex-1">{file.originalName}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setUploadedFiles(uploadedFiles.filter((_, i) => i !== idx))}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 버튼 */}
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setIsCreateModalOpen(false);
+                    setCampaignName("");
+                    setTotalAllocated("");
+                    setAsRequestCount("");
+                    setCampaignMemo("");
+                    setSelectedCustomers([]);
+                    setCustomerReasons({});
+                    setUploadedFiles([]);
+                  }}
+                >
                   취소
                 </Button>
                 <Button
                   onClick={handleCreateCampaign}
-                  disabled={createCampaignMutation.isPending}
+                  disabled={createCampaignMutation.isPending || submitCampaignMutation.isPending}
                   className="bg-massemble-red hover:bg-massemble-red/90"
                   data-testid="button-confirm-create"
                 >
-                  생성
+                  {createCampaignMutation.isPending || submitCampaignMutation.isPending ? "생성 중..." : "생성 완료"}
                 </Button>
               </div>
             </div>
