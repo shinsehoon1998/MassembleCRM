@@ -6926,6 +6926,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user!;
       const { name, totalAllocated, asRequestCount } = req.body;
 
+      // 권한 확인: 팀장/팀원만 캠페인 생성 가능
+      if (user.role !== 'manager' && user.role !== 'counselor') {
+        return res.status(403).json({ message: '권한이 없습니다.' });
+      }
+
       // 20% 제한 검증
       if (asRequestCount > totalAllocated * 0.2) {
         return res.status(400).json({ 
@@ -6979,11 +6984,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // A.S 요청 생성
   app.post('/api/as-requests', isAuthenticated, async (req, res) => {
     try {
+      const user = req.user!;
       const { campaignId, customerId, reason } = req.body;
+
+      // 권한 확인: 팀장/팀원만 요청 생성 가능
+      if (user.role !== 'manager' && user.role !== 'counselor') {
+        return res.status(403).json({ message: '권한이 없습니다.' });
+      }
 
       const request = await storage.createASRequest({
         campaignId,
         customerId,
+        requestedById: user.id,
         reason,
         status: 'pending',
       });
