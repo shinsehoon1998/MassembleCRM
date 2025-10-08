@@ -718,7 +718,19 @@ export default function ASRequestPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setSelectedCampaignForDetail(campaign)}
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(`/api/as-campaigns/${campaign.id}`, {
+                              credentials: 'include',
+                            });
+                            if (response.ok) {
+                              const detailData = await response.json();
+                              setSelectedCampaignForDetail(detailData);
+                            }
+                          } catch (error) {
+                            console.error('Failed to fetch campaign details:', error);
+                          }
+                        }}
                         data-testid={`button-view-campaign-${campaign.id}`}
                       >
                         상세보기
@@ -799,6 +811,62 @@ export default function ASRequestPage() {
                       <Clock className="h-5 w-5 text-yellow-600" />
                       <span className="text-yellow-600 font-medium">대기: {selectedCampaignForDetail.requestStats.pending}</span>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* A.S 요청 목록 */}
+              {selectedCampaignForDetail.requests && selectedCampaignForDetail.requests.length > 0 && (
+                <div className="border-t pt-4">
+                  <h3 className="font-semibold mb-3">A.S 고객 리스트</h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium text-gray-700">고객명</th>
+                          <th className="px-4 py-3 text-left font-medium text-gray-700">전화번호</th>
+                          <th className="px-4 py-3 text-left font-medium text-gray-700">A.S 사유</th>
+                          <th className="px-4 py-3 text-left font-medium text-gray-700">상태</th>
+                          <th className="px-4 py-3 text-left font-medium text-gray-700">첨부파일</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {selectedCampaignForDetail.requests.map((request: any) => (
+                          <tr key={request.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3" data-testid={`text-customer-name-${request.id}`}>
+                              {request.customer?.name || '-'}
+                            </td>
+                            <td className="px-4 py-3">
+                              {request.customer?.phone || '-'}
+                            </td>
+                            <td className="px-4 py-3 max-w-xs truncate" title={request.reason}>
+                              {request.reason || '-'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge
+                                variant={
+                                  request.status === 'pending' ? 'secondary' :
+                                  request.status === 'approved' ? 'default' :
+                                  'destructive'
+                                }
+                                data-testid={`badge-status-${request.id}`}
+                              >
+                                {request.status === 'pending' ? '대기' :
+                                 request.status === 'approved' ? '승인' :
+                                 '반려'}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3">
+                              {request.attachments && request.attachments.length > 0 ? (
+                                <span className="text-blue-600">{request.attachments.length}개</span>
+                              ) : (
+                                <span className="text-gray-400">없음</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}
