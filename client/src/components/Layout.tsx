@@ -122,186 +122,189 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
         
-        <nav className="flex-1 mt-6 flex flex-col">
-          <Link 
-            href="/"
-            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-              isNavItemActive('/') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-            }`} 
-            data-testid="nav-dashboard"
-          >
-            <i className="fas fa-tachometer-alt w-5"></i>
-            <span className="ml-3">대시보드</span>
-          </Link>
+        <nav className="flex-1 mt-6 flex flex-col overflow-y-auto">
+          {/* 메인 메뉴 */}
+          <div>
+            <Link 
+              href="/"
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+              }`} 
+              data-testid="nav-dashboard"
+            >
+              <i className="fas fa-tachometer-alt w-5"></i>
+              <span className="ml-3">대시보드</span>
+            </Link>
+            
+            <Link 
+              href="/customers"
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/customers') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+              }`} 
+              data-testid="nav-customers"
+            >
+              <i className="fas fa-users w-5"></i>
+              <span className="ml-3">고객관리</span>
+            </Link>
+
+            <Link 
+              href="/appointments"
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/appointments') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+              }`} 
+              data-testid="nav-appointments"
+            >
+              <i className="fas fa-calendar w-5"></i>
+              <span className="ml-3">예약관리</span>
+            </Link>
+
+            <Link 
+              href="/data-import"
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/data-import') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+              }`} 
+              data-testid="nav-data-import"
+            >
+              <i className="fas fa-database w-5"></i>
+              <span className="ml-3">데이터 관리</span>
+            </Link>
+          </div>
+
+          {/* 관리자 메뉴 */}
+          {user?.role === 'admin' && (
+            <>
+              <div className="mx-6 my-4 border-t border-white/20"></div>
+              <div>
+                <Link 
+                  href="/ars-campaigns"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-ars-campaigns"
+                >
+                  <i className="fas fa-phone w-5"></i>
+                  <span className="ml-3">ARS 캠페인</span>
+                </Link>
+
+                <Link 
+                  href="/scenario-management"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-scenario-management"
+                >
+                  <i className="fas fa-comments w-5"></i>
+                  <span className="ml-3">시나리오 관리</span>
+                </Link>
+
+                <Link 
+                  href="/customer-groups"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-customer-groups"
+                >
+                  <i className="fas fa-layer-group w-5"></i>
+                  <span className="ml-3">고객 그룹</span>
+                </Link>
+                
+                <Link 
+                  href="/users"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/users') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-users"
+                >
+                  <i className="fas fa-user-cog w-5"></i>
+                  <span className="ml-3">사용자관리</span>
+                </Link>
+                
+                <Link 
+                  href="/sms-settings"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/sms-settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-sms-settings"
+                >
+                  <i className="fas fa-sms w-5"></i>
+                  <span className="ml-3">SMS 설정</span>
+                </Link>
+
+                <Link 
+                  href="/surveys"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/surveys') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-surveys"
+                >
+                  <i className="fas fa-poll w-5"></i>
+                  <span className="ml-3">설문조사</span>
+                </Link>
+
+                <Link 
+                  href="/settings"
+                  className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                    isNavItemActive('/settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                  }`} 
+                  data-testid="nav-settings"
+                >
+                  <i className="fas fa-cog w-5"></i>
+                  <span className="ml-3">환경설정</span>
+                </Link>
+              </div>
+            </>
+          )}
+
+          {/* A.S 관리 섹션 */}
+          <div className="mx-6 my-4 border-t border-white/20"></div>
+          <div className="bg-white/5">
+            {/* A.S 요청 메뉴 (팀장/팀원) */}
+            {(user?.role === 'manager' || user?.role === 'counselor') && (
+              <Link 
+                href="/as-requests"
+                className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                  isNavItemActive('/as-requests') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
+                }`} 
+                data-testid="nav-as-requests"
+              >
+                <i className="fas fa-tools w-5"></i>
+                <span className="ml-3">A.S 요청</span>
+              </Link>
+            )}
+
+            {/* A.S 검수 메뉴 (관리자) */}
+            {user?.role === 'admin' && (
+              <Link 
+                href="/as-review"
+                className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                  isNavItemActive('/as-review') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
+                }`} 
+                data-testid="nav-as-review"
+              >
+                <i className="fas fa-clipboard-check w-5"></i>
+                <span className="ml-3">A.S 검수</span>
+              </Link>
+            )}
+
+            <Link 
+              href="/manual"
+              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
+                isNavItemActive('/manual') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
+              }`} 
+              data-testid="nav-manual"
+            >
+              <i className="fas fa-book w-5"></i>
+              <span className="ml-3">CRM사용설명서</span>
+            </Link>
+          </div>
           
-          <Link 
-            href="/customers"
-            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-              isNavItemActive('/customers') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-            }`} 
-            data-testid="nav-customers"
-          >
-            <i className="fas fa-users w-5"></i>
-            <span className="ml-3">고객관리</span>
-          </Link>
-
-          <Link 
-            href="/appointments"
-            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-              isNavItemActive('/appointments') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-            }`} 
-            data-testid="nav-appointments"
-          >
-            <i className="fas fa-calendar w-5"></i>
-            <span className="ml-3">예약관리</span>
-          </Link>
-
-          <Link 
-            href="/data-import"
-            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-              isNavItemActive('/data-import') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-            }`} 
-            data-testid="nav-data-import"
-          >
-            <i className="fas fa-database w-5"></i>
-            <span className="ml-3">데이터 관리</span>
-          </Link>
-
-          {user?.role === 'admin' && (
-            <Link 
-              href="/ars-campaigns"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-ars-campaigns"
-            >
-              <i className="fas fa-phone w-5"></i>
-              <span className="ml-3">ARS 캠페인</span>
-            </Link>
-          )}
-
-          {user?.role === 'admin' && (
-            <Link 
-              href="/scenario-management"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-scenario-management"
-            >
-              <i className="fas fa-comments w-5"></i>
-              <span className="ml-3">시나리오 관리</span>
-            </Link>
-          )}
-
-          {user?.role === 'admin' && (
-            <Link 
-              href="/customer-groups"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-customer-groups"
-            >
-              <i className="fas fa-layer-group w-5"></i>
-              <span className="ml-3">고객 그룹</span>
-            </Link>
-          )}
-          
-          {user?.role === 'admin' && (
-            <Link 
-              href="/users"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/users') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-users"
-            >
-              <i className="fas fa-user-cog w-5"></i>
-              <span className="ml-3">사용자관리</span>
-            </Link>
-          )}
-          
-          {user?.role === 'admin' && (
-            <Link 
-              href="/sms-settings"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/sms-settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-sms-settings"
-            >
-              <i className="fas fa-sms w-5"></i>
-              <span className="ml-3">SMS 설정</span>
-            </Link>
-          )}
-
-          {user?.role === 'admin' && (
-            <Link 
-              href="/surveys"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/surveys') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-surveys"
-            >
-              <i className="fas fa-poll w-5"></i>
-              <span className="ml-3">설문조사</span>
-            </Link>
-          )}
-
-          {user?.role === 'admin' && (
-            <Link 
-              href="/settings"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-settings"
-            >
-              <i className="fas fa-cog w-5"></i>
-              <span className="ml-3">환경설정</span>
-            </Link>
-          )}
-
-          {/* A.S 요청 메뉴 (팀장/팀원) */}
-          {(user?.role === 'manager' || user?.role === 'counselor') && (
-            <Link 
-              href="/as-requests"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/as-requests') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-as-requests"
-            >
-              <i className="fas fa-tools w-5"></i>
-              <span className="ml-3">A.S 요청</span>
-            </Link>
-          )}
-
-          {/* A.S 검수 메뉴 (관리자) */}
-          {user?.role === 'admin' && (
-            <Link 
-              href="/as-review"
-              className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/as-review') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-              }`} 
-              data-testid="nav-as-review"
-            >
-              <i className="fas fa-clipboard-check w-5"></i>
-              <span className="ml-3">A.S 검수</span>
-            </Link>
-          )}
-
-          <Link 
-            href="/manual"
-            className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-              isNavItemActive('/manual') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
-            }`} 
-            data-testid="nav-manual"
-          >
-            <i className="fas fa-book w-5"></i>
-            <span className="ml-3">CRM사용설명서</span>
-          </Link>
-          
-          <div className="mt-auto border-t border-white/10 pt-6">
+          {/* 로그아웃 섹션 */}
+          <div className="mt-auto">
+            <div className="mx-6 mb-4 border-t border-white/20"></div>
             <Button
               variant="ghost"
               onClick={handleLogout}
-              className="w-full flex items-center justify-start px-6 py-3 text-gray-200 hover:bg-white/10 hover:text-white"
+              className="w-full flex items-center justify-start px-6 py-3 text-white hover:bg-white/10 hover:text-white"
               data-testid="button-logout"
             >
               <i className="fas fa-sign-out-alt w-5"></i>
