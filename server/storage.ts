@@ -20,6 +20,9 @@ import {
   surveyTemplates,
   surveyResponses,
   surveySends,
+  asCampaigns,
+  asRequests,
+  asAttachments,
   type User,
   type UpsertUser,
   type Customer,
@@ -67,6 +70,14 @@ import {
   type UpdateSurveyResponse,
   type SurveySend,
   type InsertSurveySend,
+  type ASCampaign,
+  type InsertASCampaign,
+  type UpdateASCampaign,
+  type ASRequest,
+  type InsertASRequest,
+  type UpdateASRequest,
+  type ASAttachment,
+  type InsertASAttachment,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, asc, like, and, count, sql, inArray } from "drizzle-orm";
@@ -836,6 +847,38 @@ export interface IStorage {
     total: number;
     totalPages: number;
   }>;
+
+  // AS Campaign operations (A.S 캠페인)
+  getASCampaigns(params?: {
+    userId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    campaigns: any[];
+    total: number;
+    totalPages: number;
+  }>;
+  getASCampaign(id: string): Promise<ASCampaign | undefined>;
+  createASCampaign(campaign: InsertASCampaign): Promise<ASCampaign>;
+  updateASCampaign(id: string, campaign: UpdateASCampaign): Promise<ASCampaign | undefined>;
+  submitASCampaign(id: string): Promise<ASCampaign | undefined>;
+
+  // AS Request operations (A.S 요청)
+  getASRequests(campaignId: string): Promise<any[]>;
+  getASRequest(id: string): Promise<ASRequest | undefined>;
+  createASRequest(request: InsertASRequest): Promise<ASRequest>;
+  updateASRequest(id: string, request: UpdateASRequest): Promise<ASRequest | undefined>;
+  reviewASRequest(id: string, params: {
+    status: string;
+    adminMemo?: string;
+    reviewedBy: string;
+  }): Promise<ASRequest | undefined>;
+
+  // AS Attachment operations (A.S 첨부파일)
+  getASAttachments(asRequestId: string): Promise<ASAttachment[]>;
+  createASAttachment(attachment: InsertASAttachment): Promise<ASAttachment>;
+  deleteASAttachment(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4706,6 +4749,243 @@ export class DatabaseStorage implements IStorage {
       total: Number(total),
       totalPages: Math.ceil(Number(total) / limit),
     };
+  }
+
+  // ============================================
+  // AS Operations (A.S 요청 관리)
+  // ============================================
+
+  async getASCampaigns(params?: {
+    userId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    campaigns: any[];
+    total: number;
+    totalPages: number;
+  }> {
+    const page = params?.page || 1;
+    const limit = params?.limit || 10;
+    const offset = (page - 1) * limit;
+
+    const conditions = [];
+    if (params?.userId) {
+      conditions.push(eq(asCampaigns.createdBy, params.userId));
+    }
+    if (params?.status) {
+      conditions.push(eq(asCampaigns.status, params.status));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const rawCampaigns = await db
+      .select()
+      .from(asCampaigns)
+      .where(whereClause)
+      .orderBy(desc(asCampaigns.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    // Get user IDs
+    const userIds = [...new Set([
+      ...rawCampaigns.map(c => c.createdBy),
+      ...rawCampaigns.map(c => c.reviewedBy).filter(Boolean)
+    ])];
+
+    // Fetch users
+    const usersData = userIds.length > 0
+      ? await db.select().from(users).where(inArray(users.id, userIds))
+      : [];
+    
+    const userMap = new Map(usersData.map(u => [u.id, u]));
+
+    // Get request counts for each campaign
+    const campaignIds = rawCampaigns.map(c => c.id);
+    const requestCounts = campaignIds.length > 0
+      ? await db
+          .select({
+            campaignId: asRequests.campaignId,
+            total: count(),
+            approved: sql<number>`count(*) filter (where ${asRequests.status} = 'approved')`,
+            rejected: sql<number>`count(*) filter (where ${asRequests.status} = 'rejected')`,
+            pending: sql<number>`count(*) filter (where ${asRequests.status} = 'pending')`,
+          })
+          .from(asRequests)
+          .where(inArray(asRequests.campaignId, campaignIds))
+          .groupBy(asRequests.campaignId)
+      : [];
+
+    const countMap = new Map(requestCounts.map(r => [r.campaignId, r]));
+
+    const campaigns = rawCampaigns.map(c => ({
+      ...c,
+      creator: userMap.get(c.createdBy),
+      reviewer: c.reviewedBy ? userMap.get(c.reviewedBy) : null,
+      requestStats: countMap.get(c.id) || { total: 0, approved: 0, rejected: 0, pending: 0 },
+    }));
+
+    const [{ total }] = await db
+      .select({ total: count() })
+      .from(asCampaigns)
+      .where(whereClause);
+
+    return {
+      campaigns,
+      total: Number(total),
+      totalPages: Math.ceil(Number(total) / limit),
+    };
+  }
+
+  async getASCampaign(id: string): Promise<ASCampaign | undefined> {
+    const [campaign] = await db.select().from(asCampaigns).where(eq(asCampaigns.id, id));
+    return campaign;
+  }
+
+  async createASCampaign(campaign: InsertASCampaign): Promise<ASCampaign> {
+    const [newCampaign] = await db
+      .insert(asCampaigns)
+      .values(campaign)
+      .returning();
+    return newCampaign;
+  }
+
+  async updateASCampaign(id: string, campaign: UpdateASCampaign): Promise<ASCampaign | undefined> {
+    const [updated] = await db
+      .update(asCampaigns)
+      .set({ ...campaign, updatedAt: new Date() })
+      .where(eq(asCampaigns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async submitASCampaign(id: string): Promise<ASCampaign | undefined> {
+    const [updated] = await db
+      .update(asCampaigns)
+      .set({ 
+        status: 'submitted',
+        submittedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(asCampaigns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getASRequests(campaignId: string): Promise<any[]> {
+    const rawRequests = await db
+      .select()
+      .from(asRequests)
+      .where(eq(asRequests.campaignId, campaignId))
+      .orderBy(desc(asRequests.createdAt));
+
+    // Get customer IDs
+    const customerIds = [...new Set(rawRequests.map(r => r.customerId))];
+    
+    // Fetch customers
+    const customersData = customerIds.length > 0
+      ? await db.select().from(customers).where(inArray(customers.id, customerIds))
+      : [];
+    
+    const customerMap = new Map(customersData.map(c => [c.id, c]));
+
+    // Get reviewer IDs
+    const reviewerIds = [...new Set(rawRequests.map(r => r.reviewedBy).filter(Boolean))];
+    
+    // Fetch reviewers
+    const reviewersData = reviewerIds.length > 0
+      ? await db.select().from(users).where(inArray(users.id, reviewerIds))
+      : [];
+    
+    const reviewerMap = new Map(reviewersData.map(u => [u.id, u]));
+
+    // Get attachments for each request
+    const requestIds = rawRequests.map(r => r.id);
+    const attachmentsData = requestIds.length > 0
+      ? await db
+          .select()
+          .from(asAttachments)
+          .where(inArray(asAttachments.asRequestId, requestIds))
+      : [];
+
+    const attachmentMap = new Map<string, ASAttachment[]>();
+    attachmentsData.forEach(a => {
+      if (!attachmentMap.has(a.asRequestId)) {
+        attachmentMap.set(a.asRequestId, []);
+      }
+      attachmentMap.get(a.asRequestId)!.push(a);
+    });
+
+    return rawRequests.map(r => ({
+      ...r,
+      customer: customerMap.get(r.customerId),
+      reviewer: r.reviewedBy ? reviewerMap.get(r.reviewedBy) : null,
+      attachments: attachmentMap.get(r.id) || [],
+    }));
+  }
+
+  async getASRequest(id: string): Promise<ASRequest | undefined> {
+    const [request] = await db.select().from(asRequests).where(eq(asRequests.id, id));
+    return request;
+  }
+
+  async createASRequest(request: InsertASRequest): Promise<ASRequest> {
+    const [newRequest] = await db
+      .insert(asRequests)
+      .values(request)
+      .returning();
+    return newRequest;
+  }
+
+  async updateASRequest(id: string, request: UpdateASRequest): Promise<ASRequest | undefined> {
+    const [updated] = await db
+      .update(asRequests)
+      .set({ ...request, updatedAt: new Date() })
+      .where(eq(asRequests.id, id))
+      .returning();
+    return updated;
+  }
+
+  async reviewASRequest(id: string, params: {
+    status: string;
+    adminMemo?: string;
+    reviewedBy: string;
+  }): Promise<ASRequest | undefined> {
+    const [updated] = await db
+      .update(asRequests)
+      .set({
+        status: params.status,
+        adminMemo: params.adminMemo,
+        reviewedBy: params.reviewedBy,
+        reviewedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(asRequests.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getASAttachments(asRequestId: string): Promise<ASAttachment[]> {
+    return await db
+      .select()
+      .from(asAttachments)
+      .where(eq(asAttachments.asRequestId, asRequestId))
+      .orderBy(desc(asAttachments.createdAt));
+  }
+
+  async createASAttachment(attachment: InsertASAttachment): Promise<ASAttachment> {
+    const [newAttachment] = await db
+      .insert(asAttachments)
+      .values(attachment)
+      .returning();
+    return newAttachment;
+  }
+
+  async deleteASAttachment(id: string): Promise<boolean> {
+    const result = await db
+      .delete(asAttachments)
+      .where(eq(asAttachments.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
   }
 }
 

@@ -232,6 +232,48 @@ export const surveySends = pgTable("survey_sends", {
   sentAt: timestamp("sent_at").defaultNow(),
 });
 
+// AS Campaigns table (A.S 캠페인)
+export const asCampaigns = pgTable("as_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name").notNull(),
+  totalAllocated: integer("total_allocated").notNull(), // 총 배분 수량
+  asRequestCount: integer("as_request_count").notNull(), // A.S 요청 수량
+  status: varchar("status").notNull().default("draft"), // draft, submitted, reviewed
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// AS Requests table (A.S 요청 항목 - 고객별)
+export const asRequests = pgTable("as_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => asCampaigns.id, { onDelete: "cascade" }),
+  customerId: varchar("customer_id").notNull().references(() => customers.id, { onDelete: "cascade" }),
+  reason: text("reason").notNull(), // A.S 사유
+  status: varchar("status").notNull().default("pending"), // pending, approved, rejected
+  adminMemo: text("admin_memo"), // 관리자 검수 메모 (반려 사유 등)
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// AS Attachments table (A.S 첨부파일 - 녹취파일, 이미지 등)
+export const asAttachments = pgTable("as_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  asRequestId: varchar("as_request_id").notNull().references(() => asRequests.id, { onDelete: "cascade" }),
+  fileName: varchar("file_name").notNull(),
+  originalName: varchar("original_name").notNull(),
+  filePath: varchar("file_path").notNull(),
+  fileSize: integer("file_size"),
+  fileType: varchar("file_type"), // audio, image
+  mimeType: varchar("mime_type"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   customers: many(customers),
@@ -344,7 +386,40 @@ export const customerAllocationHistoryRelations = relations(customerAllocationHi
   }),
 }));
 
+export const asCampaignsRelations = relations(asCampaigns, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [asCampaigns.createdBy],
+    references: [users.id],
+  }),
+  reviewer: one(users, {
+    fields: [asCampaigns.reviewedBy],
+    references: [users.id],
+  }),
+  asRequests: many(asRequests),
+}));
 
+export const asRequestsRelations = relations(asRequests, ({ one, many }) => ({
+  campaign: one(asCampaigns, {
+    fields: [asRequests.campaignId],
+    references: [asCampaigns.id],
+  }),
+  customer: one(customers, {
+    fields: [asRequests.customerId],
+    references: [customers.id],
+  }),
+  reviewer: one(users, {
+    fields: [asRequests.reviewedBy],
+    references: [users.id],
+  }),
+  attachments: many(asAttachments),
+}));
+
+export const asAttachmentsRelations = relations(asAttachments, ({ one }) => ({
+  asRequest: one(asRequests, {
+    fields: [asAttachments.asRequestId],
+    references: [asRequests.id],
+  }),
+}));
 
 // Schemas
 export const upsertUserSchema = createInsertSchema(users).pick({
@@ -438,6 +513,30 @@ export const insertSurveySendSchema = createInsertSchema(surveySends).omit({
   sentAt: true,
 });
 
+export const insertASCampaignSchema = createInsertSchema(asCampaigns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  submittedAt: true,
+  reviewedAt: true,
+});
+
+export const updateASCampaignSchema = insertASCampaignSchema.partial();
+
+export const insertASRequestSchema = createInsertSchema(asRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  reviewedAt: true,
+});
+
+export const updateASRequestSchema = insertASRequestSchema.partial();
+
+export const insertASAttachmentSchema = createInsertSchema(asAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -469,6 +568,14 @@ export type InsertSurveyResponse = z.infer<typeof insertSurveyResponseSchema>;
 export type UpdateSurveyResponse = z.infer<typeof updateSurveyResponseSchema>;
 export type SurveySend = typeof surveySends.$inferSelect;
 export type InsertSurveySend = z.infer<typeof insertSurveySendSchema>;
+export type ASCampaign = typeof asCampaigns.$inferSelect;
+export type InsertASCampaign = z.infer<typeof insertASCampaignSchema>;
+export type UpdateASCampaign = z.infer<typeof updateASCampaignSchema>;
+export type ASRequest = typeof asRequests.$inferSelect;
+export type InsertASRequest = z.infer<typeof insertASRequestSchema>;
+export type UpdateASRequest = z.infer<typeof updateASRequestSchema>;
+export type ASAttachment = typeof asAttachments.$inferSelect;
+export type InsertASAttachment = z.infer<typeof insertASAttachmentSchema>;
 
 // Extended types with join data
 export type AppointmentWithDetails = Appointment & {
