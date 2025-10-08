@@ -51,7 +51,8 @@ export default function ASRequestPage() {
   // Create campaign mutation
   const createCampaignMutation = useMutation({
     mutationFn: async (data: { name: string; totalAllocated: number; asRequestCount: number }) => {
-      return await apiRequest("POST", "/api/as-campaigns", data);
+      const res = await apiRequest("POST", "/api/as-campaigns", data);
+      return await res.json();
     },
     onSuccess: (campaign: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
@@ -68,7 +69,8 @@ export default function ASRequestPage() {
   // Submit campaign mutation
   const submitCampaignMutation = useMutation({
     mutationFn: async (campaignId: string) => {
-      return await apiRequest("POST", `/api/as-campaigns/${campaignId}/submit`, {});
+      const res = await apiRequest("POST", `/api/as-campaigns/${campaignId}/submit`, {});
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
@@ -85,7 +87,8 @@ export default function ASRequestPage() {
   // Create AS request mutation
   const createASRequestMutation = useMutation({
     mutationFn: async (data: { campaignId: string; customerId: string; reason: string }) => {
-      return await apiRequest("POST", "/api/as-requests", data);
+      const res = await apiRequest("POST", "/api/as-requests", data);
+      return await res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/as-campaigns"] });
@@ -103,7 +106,8 @@ export default function ASRequestPage() {
       fileType: string;
       mimeType: string;
     }) => {
-      return await apiRequest("POST", "/api/as-attachments", data);
+      const res = await apiRequest("POST", "/api/as-attachments", data);
+      return await res.json();
     },
   });
 
