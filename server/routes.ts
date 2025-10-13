@@ -10,7 +10,6 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
 import multer from "multer";
 import { atalkArsService } from "./arsService";
-import { solapiSmsService } from "./solapiService";
 import {
   maskPhoneNumber,
   maskName,
@@ -6688,6 +6687,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // 설문 발송
   app.post('/api/surveys/:id/send', isAuthenticated, async (req, res) => {
+    const requestId = generateRequestId();
+    
     try {
       const { customerId, sendMethod } = req.body;
       
@@ -6697,6 +6698,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: '고객을 찾을 수 없습니다.' });
       }
 
+      // SMS 발송인 경우, 먼저 SMS 서비스 확인
+      if (sendMethod === 'sms') {
+        if (!customer.phone) {
+          return res.status(400).json({ 
+            success: false,
+            message: '고객의 전화번호가 없습니다.' 
+          });
+        }
+
+        // SMS 서비스 안전하게 초기화
+        const smsService = getSmsService();
+        
+        if (!smsService) {
+          secureLog(LogLevel.ERROR, 'SURVEY_SMS', '설문 SMS 발송 실패 - SMS 서비스 사용 불가', {
+            phone: maskPhoneNumber(customer.phone),
+            customerName: maskName(customer.name),
+            surveyTemplateId: req.params.id,
+            environment: process.env.NODE_ENV || 'unknown'
+          }, requestId);
+          
+          return res.status(503).json({ 
+            success: false,
+            message: 'SMS 서비스를 사용할 수 없습니다. 관리자에게 문의하세요.' 
+          });
+        }
+      }
+
       // 토큰 생성 (crypto.randomUUID() 사용)
       const uniqueToken = crypto.randomUUID();
       
@@ -6704,7 +6732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
-      // 발송 내역 저장
+      // 발송 내역 저장 (SMS 서비스 확인 후에만 저장)
       const send = await storage.createSurveySend({
         surveyTemplateId: req.params.id,
         customerId,
@@ -6719,31 +6747,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const surveyUrl = `${process.env.REPLIT_DOMAINS?.split(',')[0] || 'http://localhost:5000'}/survey/${uniqueToken}`;
         const message = `[마셈블CRM] ${customer.name}님, 고객만족도 설문에 참여해주세요: ${surveyUrl} (유효기간: 7일)`;
         
+        const smsService = getSmsService()!; // 이미 위에서 확인했으므로 !를 사용
+        
         // SMS 발송
         try {
           secureLog(LogLevel.INFO, 'SURVEY_SMS', '설문 SMS 발송 시도', {
             phone: maskPhoneNumber(customer.phone),
             customerName: maskName(customer.name),
-            surveyTemplateId: surveyTemplateId,
+            surveyTemplateId: req.params.id,
             messageLength: message.length
-          });
+          }, requestId);
 
-          const smsResult = await solapiSmsService.sendSms(customer.phone, message, {
+          const smsResult = await smsService.sendSms(customer.phone, message, {
             type: 'LMS',
             subject: '[마셈블CRM] 설문 요청'
           });
           
           if (smsResult.success) {
-            secureLog(LogLevel.INFO, 'SURVEY_SMS', 'SMS 발송 성공', { 
+            secureLog(LogLevel.INFO, 'SURVEY_SMS', '설문 SMS 발송 성공', { 
               phone: maskPhoneNumber(customer.phone),
               messageId: smsResult.messageId,
               groupId: smsResult.groupId 
-            });
+            }, requestId);
           } else {
-            secureLog(LogLevel.ERROR, 'SURVEY_SMS', 'SMS 발송 실패', {
+            secureLog(LogLevel.ERROR, 'SURVEY_SMS', '설문 SMS 발송 실패', {
               phone: maskPhoneNumber(customer.phone),
               error: smsResult.message
-            });
+            }, requestId);
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -6751,7 +6781,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             phone: maskPhoneNumber(customer.phone),
             error: errorMessage,
             stack: error instanceof Error ? error.stack : undefined
-          });
+          }, requestId);
         }
       }
 
@@ -6761,7 +6791,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         surveyUrl: `/survey/${uniqueToken}`
       });
     } catch (error) {
-      console.error('Error sending survey:', error);
+      secureLog(LogLevel.ERROR, 'SURVEY_SEND', '설문 발송 중 오류', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
       res.status(500).json({ message: '설문 발송 중 오류가 발생했습니다.' });
     }
   });
