@@ -10,6 +10,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
 import multer from "multer";
 import { atalkArsService } from "./arsService";
+import { SolapiSmsService } from "./solapiService";
 import {
   maskPhoneNumber,
   maskName,

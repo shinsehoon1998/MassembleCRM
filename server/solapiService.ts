@@ -25,6 +25,14 @@ export interface SolapiApiResponse {
     messageCount: number;
     successCount: number;
     failCount: number;
+    status?: string;
+    _id?: string;
+    count?: {
+      registeredSuccess?: number;
+    };
+    balance?: {
+      sum?: number;
+    };
     resultList: Array<{
       messageId: string;
       statusMessage: string;
@@ -525,7 +533,7 @@ https://massemble-crm-shinsehoona.replit.app`;
       } else {
         // 실패한 메시지 정보 추출
         const failedMessage = response.failedMessageList?.[0];
-        const errorMessage = failedMessage?.errorMessage || messageResult?.statusMessage || 'SMS 발송 실패';
+        const errorMessage = failedMessage?.errorMessage || groupInfo?.resultList?.[0]?.statusMessage || 'SMS 발송 실패';
         
         secureLog(LogLevel.WARNING, 'SOLAPI_SMS', 'SMS 발송 실패', {
           recipientPhone: maskPhoneNumber(phoneValidation.normalized),
