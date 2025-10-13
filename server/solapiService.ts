@@ -109,10 +109,23 @@ export class SolapiSmsService {
     this.secretKey = process.env.SOLAPI_SECRET_KEY || '';
     this.senderPhone = process.env.SOLAPI_SENDER_PHONE || '';
 
-    // 필수 환경변수 검증
-    if (!this.apiKey || !this.secretKey || !this.senderPhone) {
-      throw new Error('SOLAPI 환경변수가 설정되지 않았습니다: SOLAPI_API_KEY, SOLAPI_SECRET_KEY, SOLAPI_SENDER_PHONE');
+    // 필수 환경변수 검증 (개별적으로 확인)
+    const missingVars: string[] = [];
+    if (!this.apiKey) missingVars.push('SOLAPI_API_KEY');
+    if (!this.secretKey) missingVars.push('SOLAPI_SECRET_KEY');
+    if (!this.senderPhone) missingVars.push('SOLAPI_SENDER_PHONE');
+
+    if (missingVars.length > 0) {
+      const errorMsg = `SOLAPI 환경변수가 설정되지 않았습니다: ${missingVars.join(', ')}`;
+      throw new Error(errorMsg);
     }
+
+    // 초기화 성공 로깅
+    const requestId = generateRequestId();
+    secureLog(LogLevel.INFO, 'SMS_INIT', 'SOLAPI SMS 서비스 초기화 성공', {
+      environment: process.env.NODE_ENV || 'unknown',
+      senderPhone: maskPhoneNumber(this.senderPhone)
+    }, requestId);
   }
 
   /**

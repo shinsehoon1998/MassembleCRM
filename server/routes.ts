@@ -225,13 +225,24 @@ setInterval(() => {
 function getSmsService(): SolapiSmsService | null {
   try {
     if (!smsService) {
+      const requestId = generateRequestId();
+      secureLog(LogLevel.INFO, 'SMS_SERVICE', 'SMS 서비스 초기화 시도', {
+        environment: process.env.NODE_ENV || 'unknown',
+        hasApiKey: !!process.env.SOLAPI_API_KEY,
+        hasSecretKey: !!process.env.SOLAPI_SECRET_KEY,
+        hasSenderPhone: !!process.env.SOLAPI_SENDER_PHONE
+      }, requestId);
+      
       smsService = new SolapiSmsService();
     }
     return smsService;
   } catch (error) {
-    secureLog(LogLevel.WARNING, 'SMS', 'SMS 서비스 초기화 실패', {
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
+    const requestId = generateRequestId();
+    secureLog(LogLevel.ERROR, 'SMS_SERVICE', 'SMS 서비스 초기화 실패 - SMS 발송 불가', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      environment: process.env.NODE_ENV || 'unknown',
+      errorStack: error instanceof Error ? error.stack : undefined
+    }, requestId);
     return null;
   }
 }
