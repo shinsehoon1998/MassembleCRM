@@ -1342,7 +1342,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         '담당자',
         '공유담당자',
         '등록일',
-        '메모'
+        '정보1',
+        '정보2',
+        '정보3',
+        '정보4',
+        '정보5',
+        '정보6',
+        '정보7',
+        '정보8',
+        '정보9',
+        '정보10',
+        '메모1',
+        '메모2',
+        '메모3',
+        '메모4',
+        '메모5',
+        '메모6',
+        '메모7',
+        '메모8',
+        '메모9',
+        '메모10'
       ];
 
       // 고객 데이터를 CSV 형식으로 변환
@@ -1358,7 +1377,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customer.assignedUser?.name || '',
         customer.secondaryUser?.name || '',
         customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ko-KR') : '',
-        customer.memo1 || ''
+        customer.info1 || '',
+        customer.info2 || '',
+        customer.info3 || '',
+        customer.info4 || '',
+        customer.info5 || '',
+        customer.info6 || '',
+        customer.info7 || '',
+        customer.info8 || '',
+        customer.info9 || '',
+        customer.info10 || '',
+        customer.memo1 || '',
+        customer.memo2 || '',
+        customer.memo3 || '',
+        customer.memo4 || '',
+        customer.memo5 || '',
+        customer.memo6 || '',
+        customer.memo7 || '',
+        customer.memo8 || '',
+        customer.memo9 || '',
+        customer.memo10 || ''
       ]);
 
       // 헤더와 데이터 결합
