@@ -1331,17 +1331,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // CSV 헤더 정의
       const csvHeaders = [
-        '등록번호',
-        '이름',
+        '번호',
+        '고객정보',
         '연락처',
-        '보조연락처',
-        '생년월일',
-        '성별',
-        '월소득',
         '상태',
-        '담당자',
-        '공유담당자',
-        '등록일',
+        '메모',
         '정보1',
         '정보2',
         '정보3',
@@ -1352,51 +1346,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         '정보8',
         '정보9',
         '정보10',
-        '메모1',
-        '메모2',
-        '메모3',
-        '메모4',
-        '메모5',
-        '메모6',
-        '메모7',
-        '메모8',
-        '메모9',
-        '메모10'
+        '담당자',
+        '공유담당자',
+        '등록일'
       ];
 
       // 고객 데이터를 CSV 형식으로 변환
       const csvRows = customersData.customers.map((customer, index) => [
-        (index + 1).toString(), // 등록번호
-        customer.name || '',
-        customer.phone || '',
-        customer.secondaryPhone || '',
-        customer.birthDate || '',
-        customer.gender === 'M' ? '남성' : customer.gender === 'F' ? '여성' : '',
-        customer.monthlyIncome ? customer.monthlyIncome.toString() : '',
-        customer.status || '',
-        customer.assignedUser?.name || '',
-        customer.secondaryUser?.name || '',
-        customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ko-KR') : '',
-        customer.info1 || '',
-        customer.info2 || '',
-        customer.info3 || '',
-        customer.info4 || '',
-        customer.info5 || '',
-        customer.info6 || '',
-        customer.info7 || '',
-        customer.info8 || '',
-        customer.info9 || '',
-        customer.info10 || '',
-        customer.memo1 || '',
-        customer.memo2 || '',
-        customer.memo3 || '',
-        customer.memo4 || '',
-        customer.memo5 || '',
-        customer.memo6 || '',
-        customer.memo7 || '',
-        customer.memo8 || '',
-        customer.memo9 || '',
-        customer.memo10 || ''
+        (index + 1).toString(), // 번호
+        customer.name || '', // 고객정보
+        customer.phone || '', // 연락처
+        customer.status || '', // 상태
+        customer.memo1 || '', // 메모
+        customer.info1 || '', // 정보1
+        customer.info2 || '', // 정보2
+        customer.info3 || '', // 정보3
+        customer.info4 || '', // 정보4
+        customer.info5 || '', // 정보5
+        customer.info6 || '', // 정보6
+        customer.info7 || '', // 정보7
+        customer.info8 || '', // 정보8
+        customer.info9 || '', // 정보9
+        customer.info10 || '', // 정보10
+        customer.assignedUser?.name || '', // 담당자
+        customer.secondaryUser?.name || '', // 공유담당자
+        customer.createdAt ? new Date(customer.createdAt).toLocaleDateString('ko-KR') : '' // 등록일
       ]);
 
       // 헤더와 데이터 결합
