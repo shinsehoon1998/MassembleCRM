@@ -1622,6 +1622,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const validatedData = updateCustomerSchema.parse(req.body);
       
+      // 관리자가 아닌 경우 createdAt 필드 제거 (보안: 권한 없는 등록일 수정 방지)
+      if (req.user.role !== 'admin' && validatedData.createdAt) {
+        delete validatedData.createdAt;
+        secureLog(LogLevel.WARNING, 'CUSTOMER', '비관리자가 등록일 수정 시도 - 필드 무시됨', {
+          userId: req.user.id,
+          customerId: req.params.id,
+          userRole: req.user.role
+        }, requestId);
+      }
+      
       // assignedUserId 변경 여부 확인
       const assignedUserChanged = hasAssignedUserChanged(
         originalCustomer.assignedUserId,
@@ -1633,7 +1643,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customerName: maskName(originalCustomer.name),
         assignedUserChanged,
         originalAssignedUserId: originalCustomer.assignedUserId || 'none',
-        newAssignedUserId: validatedData.assignedUserId || 'none'
+        newAssignedUserId: validatedData.assignedUserId || 'none',
+        isAdmin: req.user.role === 'admin',
+        hasCreatedAtUpdate: !!validatedData.createdAt
       }, requestId);
 
       // 고객 정보 업데이트
