@@ -25,6 +25,7 @@ const customerFormSchema = insertCustomerSchema.extend({
   birthDate: z.string().optional(),
   debtAmount: z.string().optional(),
   monthlyIncome: z.string().optional(),
+  createdAt: z.string().optional(), // 등록일 수정 허용
 });
 
 type CustomerFormData = z.infer<typeof customerFormSchema>;
@@ -120,6 +121,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
       team: "",
       source: "manual",
       memo1: "",
+      createdAt: "",
     },
   });
 
@@ -149,6 +151,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         team: customer.team || "",
         source: customer.source || "manual",
         memo1: customer.memo1 || "",
+        createdAt: customer.createdAt ? new Date(customer.createdAt).toISOString().split('T')[0] : "",
       });
     } else {
       // 신규 등록 시 팀원 계정이면 자동으로 본인을 담당자로 설정
@@ -176,6 +179,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         team: "",
         source: "manual",
         memo1: "",
+        createdAt: "",
       });
     }
   }, [customer, reset, currentUser]);
@@ -201,6 +205,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         team: data.team || null,
         source: data.source || "manual",
         memo1: data.memo1 || null,
+        createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : undefined,
       };
       
       if (customer) {
@@ -540,6 +545,18 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                   </SelectContent>
                 </Select>
               </div>
+              
+              {customer && (
+                <div>
+                  <Label htmlFor="createdAt">등록일</Label>
+                  <Input
+                    id="createdAt"
+                    type="date"
+                    {...register("createdAt")}
+                    data-testid="input-customer-created-at"
+                  />
+                </div>
+              )}
             </div>
           </div>
           
