@@ -186,7 +186,7 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
 
   const createCustomerMutation = useMutation({
     mutationFn: async (data: CustomerFormData) => {
-      const payload = {
+      const payload: any = {
         ...data,
         birthDate: data.birthDate ? new Date(data.birthDate).toISOString() : null,
         debtAmount: data.debtAmount || null,
@@ -205,8 +205,12 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
         team: data.team || null,
         source: data.source || "manual",
         memo1: data.memo1 || null,
-        createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : undefined,
       };
+      
+      // 관리자만 등록일 수정 가능
+      if (customer && currentUser?.role === 'admin' && data.createdAt) {
+        payload.createdAt = new Date(data.createdAt).toISOString();
+      }
       
       if (customer) {
         return await apiRequest("PUT", `/api/customers/${customer.id}`, payload);
@@ -546,9 +550,9 @@ export default function CustomerModal({ isOpen, onClose, customer, counselors }:
                 </Select>
               </div>
               
-              {customer && (
+              {customer && currentUser?.role === 'admin' && (
                 <div>
-                  <Label htmlFor="createdAt">등록일</Label>
+                  <Label htmlFor="createdAt">등록일 (관리자 전용)</Label>
                   <Input
                     id="createdAt"
                     type="date"
