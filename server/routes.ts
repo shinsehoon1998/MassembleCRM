@@ -1632,6 +1632,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }, requestId);
       }
       
+      // createdAt이 문자열로 전달된 경우 Date 객체로 변환
+      if (validatedData.createdAt && typeof validatedData.createdAt === 'string') {
+        (validatedData as any).createdAt = new Date(validatedData.createdAt);
+      }
+      
       // assignedUserId 변경 여부 확인
       const assignedUserChanged = hasAssignedUserChanged(
         originalCustomer.assignedUserId,
