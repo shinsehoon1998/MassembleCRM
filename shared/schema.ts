@@ -443,7 +443,9 @@ export const insertCustomerSchema = createInsertSchema(customers).omit({
   updatedAt: true,
 });
 
-export const updateCustomerSchema = insertCustomerSchema.partial();
+export const updateCustomerSchema = insertCustomerSchema.partial().extend({
+  createdAt: z.string().optional(), // 등록일 수정 허용
+});
 
 export const insertConsultationSchema = createInsertSchema(consultations).omit({
   id: true,
