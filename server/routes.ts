@@ -124,6 +124,70 @@ const canAccessCustomer = async (customerId: string, user: any): Promise<boolean
   return false;
 };
 
+/**
+ * API Key authentication middleware for external integrations
+ * Checks X-API-Key header and validates against database
+ */
+const authenticateApiKey = async (req: any, res: any, next: any) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    
+    if (!apiKey || typeof apiKey !== 'string') {
+      return res.status(401).json({ message: "API key is required. Provide it in X-API-Key header." });
+    }
+
+    // Validate API key from database
+    const keyData = await storage.getApiKeyByKey(apiKey);
+    
+    if (!keyData) {
+      secureLog(LogLevel.WARNING, 'API_KEY', 'Invalid API key attempt', {
+        keyPrefix: apiKey.substring(0, 10) + '...'
+      });
+      return res.status(401).json({ message: "Invalid API key" });
+    }
+
+    // Check if key is active
+    if (!keyData.isActive) {
+      secureLog(LogLevel.WARNING, 'API_KEY', 'Inactive API key attempt', {
+        keyId: keyData.id,
+        keyName: keyData.name
+      });
+      return res.status(401).json({ message: "API key is inactive" });
+    }
+
+    // Check if key has expired
+    if (keyData.expiresAt && new Date(keyData.expiresAt) < new Date()) {
+      secureLog(LogLevel.WARNING, 'API_KEY', 'Expired API key attempt', {
+        keyId: keyData.id,
+        keyName: keyData.name,
+        expiresAt: keyData.expiresAt
+      });
+      return res.status(401).json({ message: "API key has expired" });
+    }
+
+    // Update last used timestamp (async, don't wait)
+    storage.updateApiKeyLastUsed(keyData.id).catch(err => {
+      console.error('Failed to update API key last used:', err);
+    });
+
+    // Attach user info to request (for activity logging)
+    req.user = { id: keyData.userId, role: 'api' };
+    req.apiKeyId = keyData.id;
+    req.apiKeyName = keyData.name;
+    
+    secureLog(LogLevel.INFO, 'API_KEY', 'API key authenticated', {
+      keyId: keyData.id,
+      keyName: keyData.name,
+      userId: keyData.userId
+    });
+
+    next();
+  } catch (error) {
+    console.error('API key authentication error:', error);
+    res.status(500).json({ message: "Authentication error" });
+  }
+};
+
 // ============================================
 // CSRF Protection Middleware
 // ============================================
@@ -1441,6 +1505,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       res.status(500).json({ message: "Failed to create customer" });
+    }
+  });
+
+  // External customer creation endpoint (for Google Sheets integration)
+  app.post('/api/external/customers', authenticateApiKey, async (req: any, res) => {
+    const requestId = generateRequestId();
+    try {
+      const validatedData = insertCustomerSchema.parse(req.body);
+      
+      // Set source to indicate this came from external integration
+      const customerData = {
+        ...validatedData,
+        source: req.apiKeyName || 'api_integration'
+      };
+      
+      const customer = await storage.createCustomer(customerData);
+
+      // Log activity with API key info
+      await storage.createActivityLog({
+        userId: req.user.id,
+        customerId: customer.id,
+        action: "customer_created_api",
+        description: `고객 "${customer.name}"이(가) ${req.apiKeyName} API를 통해 등록되었습니다.`,
+      });
+
+      secureLog(LogLevel.INFO, 'API_CUSTOMER', 'Customer created via API', {
+        customerId: customer.id,
+        customerName: maskName(customer.name),
+        apiKeyName: req.apiKeyName,
+        source: customerData.source
+      }, requestId);
+
+      res.status(201).json({
+        success: true,
+        customer: {
+          id: customer.id,
+          name: customer.name,
+          phone: customer.phone,
+          status: customer.status,
+          createdAt: customer.createdAt
+        }
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        secureLog(LogLevel.WARNING, 'API_CUSTOMER', 'Validation error', {
+          errors: error.errors,
+          apiKeyName: req.apiKeyName
+        }, requestId);
+        return res.status(400).json({ 
+          success: false,
+          message: "Invalid data", 
+          errors: error.errors 
+        });
+      }
+      secureLog(LogLevel.ERROR, 'API_CUSTOMER', 'Error creating customer via API', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        apiKeyName: req.apiKeyName
+      }, requestId);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to create customer" 
+      });
     }
   });
 
