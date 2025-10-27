@@ -144,6 +144,19 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// API Keys table (for external integrations like Google Sheets)
+export const apiKeys = pgTable("api_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: varchar("name").notNull(),
+  key: varchar("key").notNull().unique(),
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Appointments table
 export const appointments = pgTable("appointments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -471,6 +484,15 @@ export const updateSystemSettingSchema = createInsertSchema(systemSettings).pick
   value: true,
 });
 
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastUsedAt: true,
+});
+
+export const updateApiKeySchema = insertApiKeySchema.partial();
+
 export const insertAppointmentSchema = createInsertSchema(appointments).omit({
   id: true,
   createdAt: true,
@@ -554,6 +576,9 @@ export type InsertAttachment = z.infer<typeof insertAttachmentSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 export type UpdateSystemSetting = z.infer<typeof updateSystemSettingSchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type UpdateApiKey = z.infer<typeof updateApiKeySchema>;
 export type Appointment = typeof appointments.$inferSelect;
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
 export type UpdateAppointment = z.infer<typeof updateAppointmentSchema>;
