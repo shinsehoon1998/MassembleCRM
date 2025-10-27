@@ -1,0 +1,219 @@
+// ============================================
+// CRM 설정
+// ============================================
+const CRM_API_URL = 'https://massemble-crm-shinsehoona.replit.app';
+const CRM_API_KEY = 'crm_f1742e7d7f5a9c9b126eacf3f45d4d68';
+
+// ============================================
+// CRM에서 구글시트로 데이터 수신 (doPost)
+// ============================================
+function doPost(e) {
+  try {
+    // JSON 데이터 파싱
+    const data = JSON.parse(e.postData.contents);
+    
+    // 첫 번째 시트 자동 선택
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = spreadsheet.getSheets()[0];
+    
+    // 데이터 추가 (A열: 이름, B열: 전화번호, C열: 정보1)
+    sheet.appendRow([
+      data.name || '',
+      data.phone || '',
+      data.info1 || '',
+      new Date() // D열: 타임스탬프
+    ]);
+    
+    // 성공 응답
+    return ContentService
+      .createTextOutput(JSON.stringify({ 
+        success: true, 
+        message: '데이터가 성공적으로 추가되었습니다.' 
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    // 에러 응답
+    return ContentService
+      .createTextOutput(JSON.stringify({ 
+        success: false, 
+        error: error.toString() 
+      }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ============================================
+// 구글시트에서 CRM으로 데이터 전송
+// ============================================
+
+/**
+ * 선택된 행을 CRM으로 전송
+ */
+function sendSelectedRowsToCRM() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const selection = sheet.getActiveRange();
+  const startRow = selection.getRow();
+  const numRows = selection.getNumRows();
+  
+  let successCount = 0;
+  let errorCount = 0;
+  const errors = [];
+  
+  for (let i = 0; i < numRows; i++) {
+    const row = startRow + i;
+    
+    // 헤더 행은 건너뛰기
+    if (row <= 1) continue;
+    
+    try {
+      const result = sendRowToCRM(row);
+      if (result.success) {
+        successCount++;
+      } else {
+        errorCount++;
+        errors.push(`${row}행: ${result.message}`);
+      }
+    } catch (error) {
+      errorCount++;
+      errors.push(`${row}행: ${error.message}`);
+    }
+  }
+  
+  // 결과 메시지 표시
+  let message = `✅ 성공: ${successCount}건\n`;
+  if (errorCount > 0) {
+    message += `❌ 실패: ${errorCount}건\n\n실패 내역:\n${errors.join('\n')}`;
+  }
+  
+  SpreadsheetApp.getUi().alert('CRM 전송 완료', message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * 모든 행을 CRM으로 전송 (최초 설정 시)
+ */
+function sendAllRowsToCRM() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow <= 1) {
+    SpreadsheetApp.getUi().alert('데이터가 없습니다.');
+    return;
+  }
+  
+  let successCount = 0;
+  let errorCount = 0;
+  const errors = [];
+  
+  // 2행부터 마지막 행까지 전송
+  for (let row = 2; row <= lastRow; row++) {
+    try {
+      const result = sendRowToCRM(row);
+      if (result.success) {
+        successCount++;
+      } else {
+        errorCount++;
+        errors.push(`${row}행: ${result.message}`);
+      }
+      
+      // API 호출 간격 (Rate Limiting 방지)
+      Utilities.sleep(200);
+    } catch (error) {
+      errorCount++;
+      errors.push(`${row}행: ${error.message}`);
+    }
+  }
+  
+  // 결과 메시지 표시
+  let message = `✅ 성공: ${successCount}건\n`;
+  if (errorCount > 0) {
+    message += `❌ 실패: ${errorCount}건\n\n실패 내역 (최대 10개):\n${errors.slice(0, 10).join('\n')}`;
+  }
+  
+  SpreadsheetApp.getUi().alert('CRM 일괄 전송 완료', message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * 특정 행의 데이터를 CRM으로 전송
+ */
+function sendRowToCRM(row) {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  
+  // 데이터 읽기 (A열: 이름, B열: 전화번호, C열: 정보1)
+  const name = sheet.getRange(row, 1).getValue(); // A열: 이름
+  const phone = sheet.getRange(row, 2).getValue(); // B열: 전화번호
+  const info1 = sheet.getRange(row, 3).getValue(); // C열: 정보1
+  
+  // 필수 필드 검증
+  if (!name || !phone) {
+    return {
+      success: false,
+      message: '이름 또는 전화번호가 비어있습니다.'
+    };
+  }
+  
+  // CRM으로 전송할 데이터 구성
+  const customerData = {
+    name: String(name).trim(),
+    phone: String(phone).trim(),
+    status: '인텍', // 기본 상태
+    source: 'Google Sheets', // 데이터 출처
+    info1: info1 ? String(info1).trim() : null
+  };
+  
+  // API 호출 옵션
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'X-API-Key': CRM_API_KEY
+    },
+    payload: JSON.stringify(customerData),
+    muteHttpExceptions: true
+  };
+  
+  try {
+    // CRM API 호출
+    const response = UrlFetchApp.fetch(CRM_API_URL, options);
+    const responseCode = response.getResponseCode();
+    const responseBody = JSON.parse(response.getContentText());
+    
+    if (responseCode === 201 && responseBody.success) {
+      // 성공 - D열에 타임스탬프 추가
+      sheet.getRange(row, 4).setValue(new Date());
+      
+      Logger.log(`✅ ${row}행 전송 성공: ${name} (${phone})`);
+      
+      return {
+        success: true,
+        customerId: responseBody.customer.id,
+        message: '전송 완료'
+      };
+    } else {
+      Logger.log(`❌ ${row}행 전송 실패: ${responseBody.message}`);
+      
+      return {
+        success: false,
+        message: responseBody.message || '알 수 없는 오류'
+      };
+    }
+  } catch (error) {
+    Logger.log(`❌ ${row}행 전송 오류: ${error.message}`);
+    
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+}
+
+/**
+ * 메뉴 추가
+ */
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('📤 CRM 전송')
+    .addItem('✅ 선택한 행 전송', 'sendSelectedRowsToCRM')
+    .addItem('📋 모든 행 일괄 전송', 'sendAllRowsToCRM')
+    .addToUi();
+}
