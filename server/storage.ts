@@ -5,6 +5,7 @@ import {
   activityLogs,
   attachments,
   systemSettings,
+  apiKeys,
   appointments,
   arsCampaigns,
   arsSendLogs,
@@ -38,6 +39,9 @@ import {
   type AttachmentWithUser,
   type InsertAttachment,
   type SystemSetting,
+  type ApiKey,
+  type InsertApiKey,
+  type UpdateApiKey,
   type Appointment,
   type InsertAppointment,
   type UpdateAppointment,
@@ -1487,6 +1491,51 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSystemSetting(key: string): Promise<boolean> {
     const result = await db.delete(systemSettings).where(eq(systemSettings.key, key));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // API Keys management
+  async getApiKeys(): Promise<ApiKey[]> {
+    return await db
+      .select()
+      .from(apiKeys)
+      .orderBy(desc(apiKeys.createdAt));
+  }
+
+  async getApiKeyByKey(key: string): Promise<ApiKey | undefined> {
+    const [apiKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(eq(apiKeys.key, key));
+    return apiKey;
+  }
+
+  async createApiKey(apiKey: InsertApiKey): Promise<ApiKey> {
+    const [newApiKey] = await db
+      .insert(apiKeys)
+      .values(apiKey)
+      .returning();
+    return newApiKey;
+  }
+
+  async updateApiKey(id: string, updates: UpdateApiKey): Promise<ApiKey> {
+    const [updated] = await db
+      .update(apiKeys)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(apiKeys.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateApiKeyLastUsed(id: string): Promise<void> {
+    await db
+      .update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.id, id));
+  }
+
+  async deleteApiKey(id: string): Promise<boolean> {
+    const result = await db.delete(apiKeys).where(eq(apiKeys.id, id));
     return (result.rowCount ?? 0) > 0;
   }
 

@@ -2368,6 +2368,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // API Keys routes (관리자 전용)
+  app.get('/api/api-keys', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "관리자만 API 키를 관리할 수 있습니다." });
+      }
+      const apiKeys = await storage.getApiKeys();
+      res.json(apiKeys);
+    } catch (error) {
+      console.error("Error fetching API keys:", error);
+      res.status(500).json({ message: "Failed to fetch API keys" });
+    }
+  });
+
+  app.post('/api/api-keys', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "관리자만 API 키를 생성할 수 있습니다." });
+      }
+
+      const { name, expiresAt } = req.body;
+      
+      // API 키 생성 (32자리 랜덤 문자열)
+      const apiKey = 'crm_' + Array.from({ length: 32 }, () => 
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 62)]
+      ).join('');
+
+      const newApiKey = await storage.createApiKey({
+        userId: req.user.id,
+        name,
+        key: apiKey,
+        isActive: true,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      });
+
+      res.status(201).json({ ...newApiKey, key: apiKey });
+    } catch (error) {
+      console.error("Error creating API key:", error);
+      res.status(500).json({ message: "Failed to create API key" });
+    }
+  });
+
+  app.put('/api/api-keys/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "관리자만 API 키를 수정할 수 있습니다." });
+      }
+
+      const { isActive, name, expiresAt } = req.body;
+      const updated = await storage.updateApiKey(req.params.id, {
+        isActive,
+        name,
+        expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating API key:", error);
+      res.status(500).json({ message: "Failed to update API key" });
+    }
+  });
+
+  app.delete('/api/api-keys/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ message: "관리자만 API 키를 삭제할 수 있습니다." });
+      }
+
+      const deleted = await storage.deleteApiKey(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ message: "API key not found" });
+      }
+
+      res.json({ message: "API key deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting API key:", error);
+      res.status(500).json({ message: "Failed to delete API key" });
+    }
+  });
+
   // CSV 템플릿 다운로드 API
   app.get('/api/data-import/template', isAuthenticated, async (req: any, res) => {
     try {
