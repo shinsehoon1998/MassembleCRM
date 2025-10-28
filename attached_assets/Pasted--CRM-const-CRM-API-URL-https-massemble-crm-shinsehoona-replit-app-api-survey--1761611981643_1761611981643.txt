@@ -1,0 +1,80 @@
+// ===== CRM 설정 =====
+const CRM_API_URL = 'https://massemble-crm-shinsehoona.replit.app/api/survey/import';
+const CRM_API_KEY = 'crm_lWH4bhxC4z7Khf69ChfbniLyTJpA31QT';
+
+// ===== 간단한 테스트 함수 =====
+function testSendToCRM() {
+  const testData = {
+    name: "김테스트",
+    phone: "010-1234-5678",
+    gender: "M",
+    consultType: "보험상담",
+    consultPath: "구글시트테스트",
+    source: "google_sheets_test",
+    info1: "테스트 데이터 1",
+    info2: "테스트 데이터 2",
+    surveyId: "test_" + new Date().getTime()
+  };
+  
+  try {
+    const response = UrlFetchApp.fetch(CRM_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': CRM_API_KEY
+      },
+      payload: JSON.stringify(testData),
+      muteHttpExceptions: true
+    });
+    
+    const statusCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    
+    Logger.log('상태 코드: ' + statusCode);
+    Logger.log('응답: ' + responseText);
+    
+    if (statusCode === 200) {
+      const result = JSON.parse(responseText);
+      Logger.log('✅ 성공! 고객 ID: ' + result.customerId);
+      return { success: true, message: '전송 성공!', data: result };
+    } else {
+      Logger.log('❌ 실패: ' + responseText);
+      return { success: false, message: '전송 실패', error: responseText };
+    }
+  } catch (error) {
+    Logger.log('❌ 오류: ' + error);
+    return { success: false, message: error.toString() };
+  }
+}
+
+// ===== doPost 함수 (웹앱 연동용) =====
+function doPost(e) {
+  try {
+    // JSON 데이터 파싱
+    const data = JSON.parse(e.postData.contents);
+    
+    // 현재 활성 시트 가져오기
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = spreadsheet.getSheets()[0];
+    
+    // 데이터 추가 (A열: 이름, B열: 전화번호, C열: info1)
+    sheet.appendRow([
+      data.name || '',
+      data.phone || '',
+      data.info1 || '',
+      new Date() // D열: 타임스탬프
+    ]);
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: '데이터 저장 완료'
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    Logger.log('오류: ' + error);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
