@@ -51,6 +51,7 @@ export default function Customers() {
   const [showBatchAppointmentModal, setShowBatchAppointmentModal] = useState(false);
   const [showAllocationModal, setShowAllocationModal] = useState(false);
   const [showRecallModal, setShowRecallModal] = useState(false);
+  const [showRemoveDuplicatesModal, setShowRemoveDuplicatesModal] = useState(false);
   const [allocationData, setAllocationData] = useState({
     targetUserId: "",
     note: ""
@@ -234,6 +235,34 @@ export default function Customers() {
       toast({
         title: "삭제 실패",
         description: errorMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeDuplicatesMutation = useMutation({
+    mutationFn: async (customerIds: string[]) => {
+      const response = await apiRequest("POST", "/api/customers/remove-duplicates", { customerIds });
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setSelectedCustomers([]);
+      setShowBatchActions(false);
+      setShowRemoveDuplicatesModal(false);
+      
+      const message = `${data.summary.deleted}명의 중복 고객이 삭제되었습니다. (${data.summary.kept}명 유지, ${data.summary.skipped}명 스킵)`;
+      
+      toast({
+        title: "중복 삭제 완료",
+        description: message,
+      });
+    },
+    onError: (error) => {
+      console.error("Remove duplicates error:", error);
+      toast({
+        title: "중복 삭제 실패",
+        description: error?.message || "중복 연락처 삭제 중 오류가 발생했습니다.",
         variant: "destructive",
       });
     },
@@ -999,6 +1028,18 @@ export default function Customers() {
                 >
                   <i className="fas fa-phone mr-1"></i>ARS 발송
                 </Button>
+                {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                  <Button
+                    onClick={() => setShowRemoveDuplicatesModal(true)}
+                    variant="outline"
+                    size="sm"
+                    className="bg-yellow-600 text-white hover:bg-yellow-700"
+                    disabled={selectedCustomers.length < 2}
+                    data-testid="button-remove-duplicates"
+                  >
+                    <i className="fas fa-user-times mr-2"></i>중복 연락처 삭제
+                  </Button>
+                )}
                 <Button 
                   variant="destructive" 
                   size="sm" 
@@ -2167,6 +2208,77 @@ export default function Customers() {
               data-testid="button-confirm-recall"
             >
               {recallCustomersMutation.isPending ? "회수 중..." : "회수하기"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 중복 연락처 삭제 확인 모달 */}
+      <Dialog open={showRemoveDuplicatesModal} onOpenChange={setShowRemoveDuplicatesModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>중복 연락처 삭제</DialogTitle>
+            <DialogDescription>
+              선택한 고객들 중 같은 전화번호를 가진 고객들을 찾아 중복을 삭제합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+              <p className="text-sm text-yellow-900 font-medium mb-2">
+                <i className="fas fa-exclamation-triangle mr-2"></i>
+                주의사항
+              </p>
+              <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                <li>같은 전화번호를 가진 고객들 중 <strong>가장 최근에 등록된 1명만 유지</strong>됩니다.</li>
+                <li>나머지 중복 고객들은 <strong>영구적으로 삭제</strong>됩니다.</li>
+                <li>삭제된 고객의 상담 기록, 예약, 첨부파일도 함께 삭제됩니다.</li>
+                <li>이 작업은 되돌릴 수 없습니다.</li>
+              </ul>
+            </div>
+
+            <div className="bg-blue-50 p-3 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <i className="fas fa-users mr-1"></i>
+                선택된 고객: {selectedCustomers.length}명
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {customersData?.customers
+                  .filter(customer => selectedCustomers.includes(customer.id))
+                  .slice(0, 5)
+                  .map(customer => (
+                    <Badge key={customer.id} variant="secondary" className="text-xs">
+                      {customer.name} ({customer.phone || '번호없음'})
+                    </Badge>
+                  ))}
+                {selectedCustomers.length > 5 && (
+                  <Badge variant="secondary" className="text-xs">
+                    +{selectedCustomers.length - 5}명 더
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRemoveDuplicatesModal(false)}>
+              취소
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedCustomers.length < 2) {
+                  toast({
+                    title: "오류",
+                    description: "최소 2명 이상의 고객을 선택해주세요.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                removeDuplicatesMutation.mutate(selectedCustomers);
+              }}
+              disabled={removeDuplicatesMutation.isPending || selectedCustomers.length < 2}
+              className="bg-yellow-600 hover:bg-yellow-700"
+              data-testid="button-confirm-remove-duplicates"
+            >
+              {removeDuplicatesMutation.isPending ? "삭제 중..." : "중복 삭제"}
             </Button>
           </DialogFooter>
         </DialogContent>
