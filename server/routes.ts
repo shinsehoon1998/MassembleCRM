@@ -1901,6 +1901,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
 
+  app.post('/api/customers/remove-duplicates', isAuthenticated, requireAdminOrManager, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      const customerIdsSchema = z.object({
+        customerIds: z.array(z.string()).min(1, "At least one customer ID is required"),
+      });
+      
+      const { customerIds } = customerIdsSchema.parse(req.body);
+      
+      secureLog(LogLevel.INFO, 'CUSTOMER', 'Removing duplicate customers by phone', {
+        userId: req.user.id,
+        userRole: req.user.role,
+        customerCount: customerIds.length
+      }, requestId);
+      
+      const result = await storage.removeDuplicateCustomers(customerIds);
+      
+      // Log activity for deleted customers
+      if (result.deletedCustomers.length > 0) {
+        await storage.createActivityLog({
+          userId: req.user.id,
+          action: "customers_duplicate_removed",
+          description: `중복 전화번호를 가진 고객 ${result.deletedCustomers.length}명을 삭제했습니다.`,
+        });
+      }
+      
+      secureLog(LogLevel.INFO, 'CUSTOMER', 'Duplicate removal completed', {
+        kept: result.keptCustomers.length,
+        deleted: result.deletedCustomers.length,
+        skipped: result.skipped
+      }, requestId);
+      
+      res.json({
+        message: "중복 전화번호 삭제가 완료되었습니다.",
+        keptCustomers: result.keptCustomers,
+        deletedCustomers: result.deletedCustomers,
+        skipped: result.skipped,
+        summary: {
+          kept: result.keptCustomers.length,
+          deleted: result.deletedCustomers.length,
+          skipped: result.skipped,
+        }
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      secureLog(LogLevel.ERROR, 'CUSTOMER', 'Error removing duplicate customers', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, requestId);
+      res.status(500).json({ message: "중복 전화번호 삭제 중 오류가 발생했습니다." });
+    }
+  });
+
   app.delete('/api/customers/batch', isAuthenticated, async (req: any, res) => {
     try {
       const { customerIds } = req.body;
