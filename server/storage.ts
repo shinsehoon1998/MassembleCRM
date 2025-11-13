@@ -324,6 +324,11 @@ export interface IStorage {
   createCustomer(customer: InsertCustomer): Promise<Customer>;
   updateCustomer(id: string, customer: UpdateCustomer): Promise<Customer>;
   deleteCustomer(id: string): Promise<boolean>;
+  removeDuplicateCustomers(customerIds: string[]): Promise<{
+    keptCustomers: CustomerWithUser[];
+    deletedCustomers: CustomerWithUser[];
+    skipped: number;
+  }>;
 
   // Dashboard statistics
   getDashboardStats(userId?: string, userRole?: string): Promise<{
@@ -1209,6 +1214,124 @@ export class DatabaseStorage implements IStorage {
       console.error(`Error deleting customer ${id}:`, error);
       throw error;
     }
+  }
+
+  async removeDuplicateCustomers(customerIds: string[]): Promise<{
+    keptCustomers: CustomerWithUser[];
+    deletedCustomers: CustomerWithUser[];
+    skipped: number;
+  }> {
+    if (customerIds.length === 0) {
+      return { keptCustomers: [], deletedCustomers: [], skipped: 0 };
+    }
+
+    // 1. 선택된 고객들 조회
+    const selectedCustomers = await db
+      .select()
+      .from(customers)
+      .leftJoin(users, eq(customers.assignedUserId, users.id))
+      .where(inArray(customers.id, customerIds));
+
+    if (selectedCustomers.length === 0) {
+      return { keptCustomers: [], deletedCustomers: [], skipped: 0 };
+    }
+
+    // 2. 전화번호 정규화 (숫자만 추출) 및 그룹화
+    const normalizePhone = (phone: string | null): string => {
+      if (!phone) return '';
+      return phone.replace(/[^0-9]/g, '');
+    };
+
+    const customersByPhone = new Map<string, CustomerWithUser[]>();
+    let skippedCount = 0;
+
+    for (const { customers: customer, users: assignedUser } of selectedCustomers) {
+      const normalizedPhone = normalizePhone(customer.phone);
+      
+      // 빈 전화번호는 스킵
+      if (!normalizedPhone) {
+        skippedCount++;
+        continue;
+      }
+
+      const customerWithUser: CustomerWithUser = {
+        ...customer,
+        assignedUser: assignedUser || null,
+        secondaryUser: null,
+      };
+
+      if (!customersByPhone.has(normalizedPhone)) {
+        customersByPhone.set(normalizedPhone, []);
+      }
+      customersByPhone.get(normalizedPhone)!.push(customerWithUser);
+    }
+
+    // 3. 각 그룹에서 중복 찾기 및 삭제 대상 식별
+    const keptCustomers: CustomerWithUser[] = [];
+    const deletedCustomers: CustomerWithUser[] = [];
+
+    for (const [phone, customersGroup] of customersByPhone.entries()) {
+      // 1명만 있으면 중복 아님
+      if (customersGroup.length === 1) {
+        keptCustomers.push(customersGroup[0]);
+        continue;
+      }
+
+      // 2명 이상이면 중복
+      // createdAt 기준 내림차순 정렬 (최신이 먼저)
+      customersGroup.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        
+        if (dateB !== dateA) {
+          return dateB - dateA;
+        }
+        
+        // createdAt이 같으면 updatedAt으로 비교
+        const updatedA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const updatedB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        
+        if (updatedB !== updatedA) {
+          return updatedB - updatedA;
+        }
+        
+        // 모두 같으면 ID로 비교 (결정적)
+        return a.id.localeCompare(b.id);
+      });
+
+      // 첫 번째(최신) 고객은 유지
+      keptCustomers.push(customersGroup[0]);
+      
+      // 나머지는 삭제 대상
+      for (let i = 1; i < customersGroup.length; i++) {
+        deletedCustomers.push(customersGroup[i]);
+      }
+    }
+
+    // 4. 트랜잭션으로 삭제 수행
+    if (deletedCustomers.length > 0) {
+      await db.transaction(async (tx) => {
+        for (const customer of deletedCustomers) {
+          // 관련된 활동 로그 삭제
+          await tx.delete(activityLogs).where(eq(activityLogs.customerId, customer.id));
+          
+          // 관련된 상담 기록 삭제
+          await tx.delete(consultations).where(eq(consultations.customerId, customer.id));
+          
+          // 관련된 첨부파일 삭제
+          await tx.delete(attachments).where(eq(attachments.customerId, customer.id));
+          
+          // 고객 삭제 (cascade로 나머지는 자동 삭제)
+          await tx.delete(customers).where(eq(customers.id, customer.id));
+        }
+      });
+    }
+
+    return {
+      keptCustomers,
+      deletedCustomers,
+      skipped: skippedCount,
+    };
   }
 
   async getDashboardStats(userId?: string, userRole?: string): Promise<{
