@@ -1694,6 +1694,67 @@ export type SmsHistoryRequest = z.infer<typeof smsHistoryRequestSchema>;
 // 설문조사 연동 타입
 export type SurveyImport = z.infer<typeof surveyImportSchema>;
 
+// ============================================
+// 차량 문의 연동 스키마 (car inquiry)
+// ============================================
+
+// 차량 문의 데이터 수신 스키마
+export const carInquiryImportSchema = z.object({
+  // 고객 기본 정보 (필수)
+  name: z.string()
+    .min(1, '고객명은 필수입니다.')
+    .max(50, '고객명은 최대 50자까지 허용됩니다.')
+    .trim(),
+  phone: z.string()
+    .min(9, '전화번호는 최소 9자리 이상이어야 합니다.')
+    .max(15, '전화번호는 최대 15자리까지 허용됩니다.')
+    .regex(/^[0-9+\-\s()]+$/, '유효한 전화번호 형식이 아닙니다.'),
+  
+  // 상담 관련 정보
+  consultType: z.string()
+    .max(100, '상담유형은 최대 100자까지 허용됩니다.')
+    .optional()
+    .default('차량상담'),
+  consultPath: z.string()
+    .max(100, '상담경로는 최대 100자까지 허용됩니다.')
+    .optional()
+    .default('차량문의폼'),
+  
+  // 마케팅 동의
+  marketingConsent: z.boolean()
+    .optional()
+    .default(false),
+  
+  // 차량 문의 정보 필드 (info1~info3)
+  info1: z.string()  // 유형을_선택해주세요
+    .max(1000, '정보1은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info2: z.string()  // (희망차종)_차량명을_입력해_주세요
+    .max(1000, '정보2는 최대 1000자까지 허용됩니다.')
+    .optional(),
+  info3: z.string()  // adset_name
+    .max(1000, '정보3은 최대 1000자까지 허용됩니다.')
+    .optional(),
+  
+  // 메모
+  memo: z.string()
+    .max(2000, '메모는 최대 2000자까지 허용됩니다.')
+    .optional(),
+  
+  // 소스 정보
+  source: z.string()
+    .max(50, '소스는 최대 50자까지 허용됩니다.')
+    .optional()
+    .default('car_inquiry_sheet'),
+  
+  // 시트 원본 데이터 (JSON)
+  sheetData: z.record(z.any())
+    .optional(),
+});
+
+// 차량 문의 연동 타입
+export type CarInquiryImport = z.infer<typeof carInquiryImportSchema>;
+
 // 파일명 생성 유틸리티 함수들
 export const generateExportFileName = {
   sendLogsCsv: (dateFrom?: string, dateTo?: string, campaignName?: string) => {

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, requireAdmin } from "./localAuth";
-import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, insertAppointmentSchema, updateAppointmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, smsVerificationSendSchema, smsVerificationVerifySchema, surveyImportSchema } from "@shared/schema";
+import { insertCustomerSchema, updateCustomerSchema, insertConsultationSchema, insertAttachmentSchema, insertAppointmentSchema, updateAppointmentSchema, arsScenarios, insertArsScenarioSchema, insertCustomerGroupSchema, insertCustomerGroupMappingSchema, insertArsCampaignSchema, insertArsSendLogSchema, arsCallListAddSchema, arsCallListHistorySchema, arsBulkSendSchema, campaignStatsOverviewSchema, campaignDetailedStatsSchema, timelineStatsSchema, sendLogsFilterSchema, enhancedSendLogsFilterSchema, campaignSearchFilterSchema, quickSearchSchema, autocompleteSchema, sendLogsExportCsvSchema, campaignsExportExcelSchema, reportsExportSchema, generateExportFileName, smsSendRequestSchema, smsCustomerAssignmentSchema, smsHistoryRequestSchema, smsVerificationSendSchema, smsVerificationVerifySchema, surveyImportSchema, carInquiryImportSchema } from "@shared/schema";
 import { z } from "zod";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import Papa from "papaparse";
@@ -6295,6 +6295,158 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         message: '설문조사 연동 상태 확인 중 오류가 발생했습니다.'
+      });
+    }
+  });
+
+  // ============================================
+  // 차량 문의 연동 API (car inquiry)
+  // ============================================
+
+  /**
+   * 차량 문의 데이터 수신 API
+   * POST /api/car-inquiry/import
+   */
+  app.post('/api/car-inquiry/import', authenticateApiKey, async (req: any, res) => {
+    const requestId = generateRequestId();
+    
+    try {
+      // 요청 데이터 검증
+      const validationResult = carInquiryImportSchema.safeParse(req.body);
+      
+      if (!validationResult.success) {
+        secureLog(LogLevel.WARNING, 'CAR_INQUIRY_IMPORT', '차량 문의 데이터 검증 실패', {
+          errors: validationResult.error.errors,
+          dataKeys: Object.keys(req.body)
+        }, requestId);
+        
+        return res.status(400).json({
+          success: false,
+          message: '차량 문의 데이터 형식이 올바르지 않습니다.',
+          errors: validationResult.error.errors
+        });
+      }
+
+      const carInquiryData = validationResult.data;
+      
+      secureLog(LogLevel.INFO, 'CAR_INQUIRY_IMPORT', '차량 문의 데이터 수신', {
+        customerName: maskName(carInquiryData.name),
+        customerPhone: maskPhoneNumber(carInquiryData.phone),
+        consultType: carInquiryData.consultType,
+        consultPath: carInquiryData.consultPath,
+        source: carInquiryData.source,
+        hasSheetData: !!carInquiryData.sheetData,
+        info1: carInquiryData.info1 ? '있음' : '없음',
+        info2: carInquiryData.info2 ? '있음' : '없음',
+        info3: carInquiryData.info3 ? '있음' : '없음'
+      }, requestId);
+
+      // 중복 고객 체크 (전화번호 기준)
+      const existingCustomer = await storage.getCustomerByPhone(carInquiryData.phone);
+      
+      if (existingCustomer) {
+        secureLog(LogLevel.INFO, 'CAR_INQUIRY_IMPORT', '기존 고객 발견 - 차량 문의 데이터로 업데이트', {
+          existingCustomerId: existingCustomer.id,
+          customerName: maskName(carInquiryData.name),
+          customerPhone: maskPhoneNumber(carInquiryData.phone)
+        }, requestId);
+        
+        // 기존 고객 정보 업데이트 (차량 문의 데이터 추가)
+        const updateData: any = {
+          name: carInquiryData.name,
+          phone: carInquiryData.phone,
+          consultType: carInquiryData.consultType || existingCustomer.consultType,
+          consultPath: carInquiryData.consultPath || existingCustomer.consultPath,
+          source: carInquiryData.source || existingCustomer.source,
+          marketingConsent: carInquiryData.marketingConsent !== undefined ? carInquiryData.marketingConsent : existingCustomer.marketingConsent,
+          marketingConsentMethod: carInquiryData.marketingConsent ? '온라인폼' : existingCustomer.marketingConsentMethod,
+          // 차량 문의 정보를 info1~info3에 매핑
+          info1: carInquiryData.info1 || existingCustomer.info1,
+          info2: carInquiryData.info2 || existingCustomer.info2,
+          info3: carInquiryData.info3 || existingCustomer.info3,
+          // 시트 데이터를 memo1에 저장
+          memo1: carInquiryData.memo || existingCustomer.memo1
+        };
+        
+        const updatedCustomer = await storage.updateCustomer(existingCustomer.id, updateData);
+        
+        secureLog(LogLevel.INFO, 'CAR_INQUIRY_IMPORT', '기존 고객 정보 업데이트 완료', {
+          customerId: updatedCustomer.id,
+          customerName: maskName(updatedCustomer.name)
+        }, requestId);
+        
+        return res.json({
+          success: true,
+          customerId: updatedCustomer.id,
+          isNewCustomer: false,
+          message: '기존 고객 정보가 차량 문의 데이터로 업데이트되었습니다.'
+        });
+      }
+
+      // 새 고객 생성
+      const customerData = {
+        name: carInquiryData.name,
+        phone: carInquiryData.phone,
+        birthDate: null,
+        gender: 'N',
+        consultType: carInquiryData.consultType || '차량상담',
+        consultPath: carInquiryData.consultPath || '차량문의폼',
+        source: carInquiryData.source || 'car_inquiry_sheet',
+        marketingConsent: carInquiryData.marketingConsent || false,
+        marketingConsentDate: carInquiryData.marketingConsent ? new Date() : null,
+        marketingConsentMethod: carInquiryData.marketingConsent ? '온라인폼' : null,
+        status: '인텍',
+        // 차량 문의 정보를 info1~info3에 매핑
+        info1: carInquiryData.info1 || null,  // 유형을_선택해주세요
+        info2: carInquiryData.info2 || null,  // (희망차종)_차량명을_입력해_주세요
+        info3: carInquiryData.info3 || null,  // adset_name
+        info4: null,
+        info5: null,
+        info6: null,
+        info7: null,
+        info8: null,
+        info9: null,
+        info10: `[${new Date().toLocaleString('ko-KR')}] 차량 문의 신규고객`,
+        // 시트 데이터를 memo1에 저장
+        memo1: carInquiryData.memo || null,
+        memo2: null,
+        memo3: null,
+        memo4: null,
+        memo5: null,
+        memo6: null,
+        memo7: null,
+        memo8: null,
+        memo9: null,
+        memo10: null
+      };
+
+      const newCustomer = await storage.createCustomer(customerData);
+      
+      secureLog(LogLevel.INFO, 'CAR_INQUIRY_IMPORT', '새 고객 생성 완료', {
+        customerId: newCustomer.id,
+        customerName: maskName(newCustomer.name),
+        customerPhone: maskPhoneNumber(newCustomer.phone),
+        source: newCustomer.source
+      }, requestId);
+
+      res.json({
+        success: true,
+        customerId: newCustomer.id,
+        isNewCustomer: true,
+        message: '차량 문의 데이터가 성공적으로 등록되었습니다.'
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      secureLog(LogLevel.ERROR, 'CAR_INQUIRY_IMPORT_ERROR', '차량 문의 데이터 처리 오류', {
+        error: errorMessage,
+        requestBody: maskApiData(req.body)
+      }, requestId);
+      
+      res.status(500).json({
+        success: false,
+        message: '차량 문의 데이터 처리 중 오류가 발생했습니다.'
       });
     }
   });
