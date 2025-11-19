@@ -1,202 +1,77 @@
 /**
- * 차량 문의 웹앱 → 마셈블 CRM 완전 자동 연동 스크립트
+ * 페이스북 리드폼 → 마셈블 CRM 자동 연동 스크립트
  * CRM: https://massemble-crm-shinsehoona.replit.app
  * 
+ * 구조: 페이스북 잠재고객 인스턴트 양식 → 구글 시트 → 마셈블 CRM
+ * 
  * 설정 방법:
- * 1) setupCarInquirySheet() 함수 1회 실행 (헤더 설정)
- * 2) 웹앱으로 배포 (실행: 나, 액세스: 모든 사용자)
- * 3) createCronTrigger() 함수 1회 실행 (1분 주기 CRM 자동 전송)
+ * 1) createCronTrigger() 함수 1회 실행 (1분 주기 CRM 자동 전송)
+ * 2) 테스트: testSingleRow(2) 또는 testManualSync() 실행
  */
 
 // ===== 설정 =====
 const CRM_API_URL = 'https://massemble-crm-shinsehoona.replit.app/api/car-inquiry/import';
 const CRM_API_KEY = 'crm_dU3hRN2HQySafhf7vo14VrrH40jS9GD3';
-const CAR_INQUIRY_SHEET_NAME = '차량문의데이터';
+const SHEET_NAME = '시트1';
 
 /**
- * 초기 설정: 스프레드시트 헤더 설정
- * 처음 한 번만 실행하세요
+ * 시트 헤더를 읽어서 컬럼 인덱스 맵 생성
+ * 페이스북 리드폼에서 자동 생성되는 컬럼명을 동적으로 매핑
  */
-function setupCarInquirySheet() {
+function getColumnMapping(sheet) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let carSheet = ss.getSheetByName(CAR_INQUIRY_SHEET_NAME);
+    const lastCol = sheet.getLastColumn();
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     
-    if (!carSheet) {
-      carSheet = ss.insertSheet(CAR_INQUIRY_SHEET_NAME, 0);
-    }
+    const mapping = {};
+    headers.forEach((header, index) => {
+      const headerName = String(header).trim();
+      mapping[headerName] = index;
+    });
     
-    const headers = [
-      '등록일시',           // A
-      '이름',               // B
-      '전화번호',           // C
-      '유형',               // D (info1)
-      '희망차종',           // E (info2)
-      '광고세트명',         // F (info3)
-      '문의사항',           // G
-      '출처',               // H
-      'CRM전송상태',        // I
-      'CRM전송시간',        // J
-      '마셈블고객ID'        // K
-    ];
-    
-    if (carSheet.getLastRow() < 1) {
-      carSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      carSheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#4285F4').setFontColor('#FFFFFF');
-      carSheet.getRange(1, 9, 1, 3).setFontWeight('bold').setBackground('#FF9900').setFontColor('#FFFFFF');
-    }
-    
-    carSheet.autoResizeColumns(1, headers.length);
-    Logger.log('✅ 차량 문의 시트 초기 설정 완료');
-    return '✅ 차량 문의 시트 초기 설정 완료';
-  } catch (err) {
-    Logger.log('❌ 초기 설정 오류: ' + err);
-    throw err;
-  }
-}
-
-/**
- * 웹앱 POST 핸들러 (차량 문의 웹폼에서 데이터 수신)
- * 웹앱 배포 후 이 URL로 POST 요청
- */
-function doPost(e) {
-  try {
-    Logger.log('🔥 doPost 호출됨');
-    
-    if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({
-        success: false,
-        error: '데이터가 없습니다.'
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-    
-    const data = JSON.parse(e.postData.contents);
-    Logger.log('📥 수신 데이터: ' + JSON.stringify(data));
-    
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let carSheet = ss.getSheetByName(CAR_INQUIRY_SHEET_NAME);
-    
-    if (!carSheet) {
-      throw new Error('차량문의데이터 시트를 찾을 수 없습니다. setupCarInquirySheet() 실행 필요');
-    }
-    
-    const now = new Date();
-    
-    // 스프레드시트에 저장
-    const row = [
-      now,                              // A: 등록일시
-      data.name || '',                  // B: 이름
-      data.phone || '',                 // C: 전화번호
-      data.inquiryType || data.type || '', // D: 유형 (info1)
-      data.carModel || data.car || '',  // E: 희망차종 (info2)
-      data.adsetName || '',             // F: 광고세트명 (info3)
-      data.inquiry || data.message || '', // G: 문의사항
-      data.source || 'car_inquiry_web', // H: 출처
-      'pending',                        // I: CRM전송상태
-      '',                               // J: CRM전송시간
-      ''                                // K: 마셈블고객ID
-    ];
-    
-    carSheet.appendRow(row);
-    const lastRow = carSheet.getLastRow();
-    carSheet.getRange(lastRow, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
-    
-    Logger.log('✅ 스프레드시트 저장 완료 (Row: ' + lastRow + ')');
-    
-    return ContentService.createTextOutput(JSON.stringify({
-      success: true,
-      message: '차량 상담 신청이 접수되었습니다.',
-      timestamp: now.toISOString()
-    })).setMimeType(ContentService.MimeType.JSON);
+    Logger.log('📊 컬럼 매핑: ' + JSON.stringify(Object.keys(mapping)));
+    return { mapping, headers };
     
   } catch (error) {
-    Logger.log('❌ doPost 오류: ' + error);
-    return ContentService.createTextOutput(JSON.stringify({
-      success: false,
-      error: '서버 오류: ' + error.message
-    })).setMimeType(ContentService.MimeType.JSON);
+    Logger.log('❌ 컬럼 매핑 오류: ' + error);
+    throw error;
   }
 }
 
 /**
- * 웹앱 GET 핸들러 (상태 확인용)
+ * CRM 전송 상태 컬럼 확인 및 생성
  */
-function doGet(e) {
+function ensureCRMStatusColumns(sheet, currentHeaders) {
   try {
-    const action = e.parameter.action || 'stats';
+    const statusColumns = ['CRM전송상태', 'CRM전송시간', '마셈블고객ID'];
+    const lastCol = sheet.getLastColumn();
+    let addedCount = 0;
     
-    if (action === 'stats') {
-      return ContentService.createTextOutput(JSON.stringify(getCarInquiryStats(), null, 2))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-    
-    return ContentService.createTextOutput(JSON.stringify({
-      status: 'ok',
-      message: '차량 문의 웹앱'
-    })).setMimeType(ContentService.MimeType.JSON);
-    
-  } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({
-      error: error.message
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-/**
- * 차량 문의 통계
- */
-function getCarInquiryStats() {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const carSheet = ss.getSheetByName(CAR_INQUIRY_SHEET_NAME);
-    
-    if (!carSheet) {
-      return { error: '시트를 찾을 수 없습니다.' };
-    }
-    
-    const lastRow = carSheet.getLastRow();
-    if (lastRow <= 1) {
-      return {
-        total: 0,
-        pending: 0,
-        success: 0,
-        error: 0
-      };
-    }
-    
-    const statusRange = carSheet.getRange(2, 9, lastRow - 1, 1);
-    const statuses = statusRange.getValues();
-    
-    let pending = 0;
-    let success = 0;
-    let error = 0;
-    
-    statuses.forEach(row => {
-      const status = String(row[0] || '').trim().toLowerCase();
-      if (status === '' || status === 'pending') {
-        pending++;
-      } else if (status === 'success') {
-        success++;
-      } else {
-        error++;
+    statusColumns.forEach((colName, index) => {
+      if (!currentHeaders.includes(colName)) {
+        const newCol = lastCol + addedCount + 1;
+        sheet.getRange(1, newCol).setValue(colName);
+        sheet.getRange(1, newCol).setFontWeight('bold').setBackground('#FF9900').setFontColor('#FFFFFF');
+        addedCount++;
+        Logger.log(`✅ ${colName} 컬럼 추가됨 (열 ${newCol})`);
       }
     });
     
-    return {
-      total: lastRow - 1,
-      pending: pending,
-      success: success,
-      error: error,
-      timestamp: new Date().toISOString()
-    };
+    if (addedCount > 0) {
+      sheet.autoResizeColumns(lastCol + 1, addedCount);
+      return true;
+    }
+    return false;
   } catch (error) {
-    return { error: error.toString() };
+    Logger.log('❌ 상태 컬럼 추가 오류: ' + error);
+    return false;
   }
 }
 
 /**
  * 전화번호 정규화
  * +821012345678 → 010-1234-5678
+ * 821012345678 → 010-1234-5678
  * 01012345678 → 010-1234-5678
  * 1012345678 → 010-1234-5678
  */
@@ -208,7 +83,7 @@ function normalizePhone(phone) {
   // +82 국가 코드 제거
   if (phoneStr.startsWith('+82')) {
     phoneStr = '0' + phoneStr.substring(3);
-  } else if (phoneStr.startsWith('82')) {
+  } else if (phoneStr.startsWith('82') && phoneStr.length > 10) {
     phoneStr = '0' + phoneStr.substring(2);
   }
   
@@ -236,81 +111,120 @@ function normalizePhone(phone) {
 function sendCarInquiryToCRMByRow(rowNumber) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const carSheet = ss.getSheetByName(CAR_INQUIRY_SHEET_NAME);
+    const sheet = ss.getSheetByName(SHEET_NAME);
     
-    if (!carSheet) {
-      throw new Error('차량문의데이터 시트를 찾을 수 없습니다.');
+    if (!sheet) {
+      throw new Error(`${SHEET_NAME} 시트를 찾을 수 없습니다.`);
     }
     
-    const rowData = carSheet.getRange(rowNumber, 1, 1, 11).getValues()[0];
+    // 헤더 및 컬럼 매핑 가져오기
+    const { mapping, headers } = getColumnMapping(sheet);
     
-    // 컬럼 인덱스 (0-based)
-    const IDX = {
-      timestamp: 0,     // A: 등록일시
-      name: 1,          // B: 이름
-      phone: 2,         // C: 전화번호
-      inquiryType: 3,   // D: 유형 (info1)
-      carModel: 4,      // E: 희망차종 (info2)
-      adsetName: 5,     // F: 광고세트명 (info3)
-      inquiry: 6,       // G: 문의사항
-      source: 7,        // H: 출처
-      crmStatus: 8,     // I: CRM전송상태
-      crmSentTime: 9,   // J: CRM전송시간
-      customerId: 10    // K: 마셈블고객ID
-    };
+    // CRM 상태 컬럼 확인
+    ensureCRMStatusColumns(sheet, headers);
     
-    // 이미 전송 성공한 경우 스킵
-    const status = String(rowData[IDX.crmStatus] || '').trim().toLowerCase();
+    // 컬럼 매핑 재로드 (상태 컬럼이 추가되었을 수 있음)
+    const lastCol = sheet.getLastColumn();
+    const allHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const finalMapping = {};
+    allHeaders.forEach((header, index) => {
+      finalMapping[String(header).trim()] = index;
+    });
+    
+    // 행 데이터 읽기
+    const rowData = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+    
+    // CRM 전송 상태 확인
+    const statusIdx = finalMapping['CRM전송상태'];
+    const status = statusIdx !== undefined ? String(rowData[statusIdx] || '').trim().toLowerCase() : '';
+    
     if (status === 'success' || status === 'sending') {
       return { success: false, message: `이미 처리됨: ${status}`, row: rowNumber };
     }
     
     // 전송 중 상태로 변경 (중복 방지)
-    carSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('sending');
+    if (statusIdx !== undefined) {
+      sheet.getRange(rowNumber, statusIdx + 1).setValue('sending');
+    }
     
-    // 데이터 추출
-    let customerName = String(rowData[IDX.name] || '').trim();
-    let customerPhone = normalizePhone(rowData[IDX.phone]);
+    // 데이터 추출 (페이스북 리드폼 컬럼명)
+    const phoneIdx = finalMapping['phone_number'];
+    const fullNameIdx = finalMapping['full_name'];
     
-    // 필수 필드 검증
-    if (!customerPhone || customerPhone.length < 10) {
-      carSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('validation_error');
+    // 전화번호 필수 확인
+    if (phoneIdx === undefined || !rowData[phoneIdx]) {
+      if (statusIdx !== undefined) {
+        sheet.getRange(rowNumber, statusIdx + 1).setValue('validation_error: 전화번호 없음');
+      }
       return {
         success: false,
-        message: '전화번호 누락 또는 형식 오류',
+        message: 'phone_number 컬럼 없음 또는 전화번호 누락',
         row: rowNumber
       };
     }
     
-    // 이름이 없으면 전화번호 마지막 4자리로 생성
+    let customerPhone = normalizePhone(rowData[phoneIdx]);
+    
+    if (!customerPhone || customerPhone.length < 10) {
+      if (statusIdx !== undefined) {
+        sheet.getRange(rowNumber, statusIdx + 1).setValue('validation_error: 전화번호 형식 오류');
+      }
+      return {
+        success: false,
+        message: '전화번호 형식 오류',
+        row: rowNumber
+      };
+    }
+    
+    // 이름 추출 (full_name 또는 전화번호 마지막 4자리)
+    let customerName = '';
+    if (fullNameIdx !== undefined && rowData[fullNameIdx]) {
+      customerName = String(rowData[fullNameIdx]).trim();
+    }
+    
     if (!customerName) {
       const digits = customerPhone.replace(/\D/g, '');
       customerName = `차량문의${digits.slice(-4)}`;
     }
     
-    const inquiryType = String(rowData[IDX.inquiryType] || '').trim();
-    const carModel = String(rowData[IDX.carModel] || '').trim();
-    const adsetName = String(rowData[IDX.adsetName] || '').trim();
-    const inquiry = String(rowData[IDX.inquiry] || '').trim();
-    const source = String(rowData[IDX.source] || 'car_inquiry_web').trim();
+    // 추가 정보 추출
+    const inquiryType = finalMapping['유형을_선택해주세요'] !== undefined 
+      ? String(rowData[finalMapping['유형을_선택해주세요']] || '').trim() 
+      : '';
+    
+    const carModel = finalMapping['(희망차종)_차량명을_입력해_주세요'] !== undefined
+      ? String(rowData[finalMapping['(희망차종)_차량명을_입력해_주세요']] || '').trim()
+      : '';
+    
+    const adsetName = finalMapping['adset_name'] !== undefined
+      ? String(rowData[finalMapping['adset_name']] || '').trim()
+      : '';
+    
+    const formName = finalMapping['form_name'] !== undefined
+      ? String(rowData[finalMapping['form_name']] || '').trim()
+      : '';
+    
+    const campaignName = finalMapping['campaign_name'] !== undefined
+      ? String(rowData[finalMapping['campaign_name']] || '').trim()
+      : '';
     
     // CRM 전송 데이터 구성
     const crmPayload = {
       name: customerName,
       phone: customerPhone,
       consultType: '차량상담',
-      consultPath: '차량문의폼',
-      source: source,
+      consultPath: formName || '차량문의폼',
+      source: 'facebook_lead_form',
       marketingConsent: false,
       
       info1: inquiryType,
       info2: carModel,
       info3: adsetName,
       
-      memo: inquiry || `차량 상담 문의\n- 유형: ${inquiryType}\n- 희망차종: ${carModel}\n- 광고세트: ${adsetName}`
+      memo: `페이스북 리드폼 차량 문의\n- 유형: ${inquiryType}\n- 희망차종: ${carModel}\n- 광고세트: ${adsetName}\n- 캠페인: ${campaignName}`
     };
     
-    Logger.log('📤 CRM 전송: ' + JSON.stringify(crmPayload, null, 2));
+    Logger.log('📤 CRM 전송 (Row ' + rowNumber + '): ' + JSON.stringify(crmPayload, null, 2));
     
     // CRM API 호출
     const response = UrlFetchApp.fetch(CRM_API_URL, {
@@ -333,11 +247,22 @@ function sendCarInquiryToCRMByRow(rowNumber) {
       const result = JSON.parse(responseText);
       
       if (result.success) {
-        carSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('success');
-        carSheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
-        carSheet.getRange(rowNumber, IDX.customerId + 1).setValue(result.customerId || '');
+        // 성공 상태 업데이트
+        if (statusIdx !== undefined) {
+          sheet.getRange(rowNumber, statusIdx + 1).setValue('success');
+        }
         
-        Logger.log(`✅ CRM 전송 성공: ${customerName} → ${result.customerId}`);
+        const sentTimeIdx = finalMapping['CRM전송시간'];
+        if (sentTimeIdx !== undefined) {
+          sheet.getRange(rowNumber, sentTimeIdx + 1).setValue(now);
+        }
+        
+        const customerIdIdx = finalMapping['마셈블고객ID'];
+        if (customerIdIdx !== undefined && result.customerId) {
+          sheet.getRange(rowNumber, customerIdIdx + 1).setValue(result.customerId);
+        }
+        
+        Logger.log(`✅ CRM 전송 성공: ${customerName} (${customerPhone}) → ${result.customerId}`);
         
         return {
           success: true,
@@ -346,8 +271,16 @@ function sendCarInquiryToCRMByRow(rowNumber) {
           customerId: result.customerId
         };
       } else {
-        carSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue(`api_error: ${result.message.substring(0, 100)}`);
-        carSheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+        // API 오류
+        if (statusIdx !== undefined) {
+          const errorMsg = result.message ? result.message.substring(0, 100) : 'API 오류';
+          sheet.getRange(rowNumber, statusIdx + 1).setValue(`api_error: ${errorMsg}`);
+        }
+        
+        const sentTimeIdx = finalMapping['CRM전송시간'];
+        if (sentTimeIdx !== undefined) {
+          sheet.getRange(rowNumber, sentTimeIdx + 1).setValue(now);
+        }
         
         return {
           success: false,
@@ -356,8 +289,15 @@ function sendCarInquiryToCRMByRow(rowNumber) {
         };
       }
     } else {
-      carSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue(`http_error_${statusCode}`);
-      carSheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+      // HTTP 오류
+      if (statusIdx !== undefined) {
+        sheet.getRange(rowNumber, statusIdx + 1).setValue(`http_error_${statusCode}`);
+      }
+      
+      const sentTimeIdx = finalMapping['CRM전송시간'];
+      if (sentTimeIdx !== undefined) {
+        sheet.getRange(rowNumber, sentTimeIdx + 1).setValue(now);
+      }
       
       return {
         success: false,
@@ -366,7 +306,7 @@ function sendCarInquiryToCRMByRow(rowNumber) {
       };
     }
   } catch (error) {
-    Logger.log('❌ CRM 전송 오류: ' + error);
+    Logger.log('❌ CRM 전송 오류 (Row ' + rowNumber + '): ' + error);
     return {
       success: false,
       message: '전송 중 오류: ' + error.message,
@@ -383,30 +323,41 @@ function cronJob() {
     Logger.log('🔄 Cron Job 시작: ' + new Date().toLocaleString('ko-KR'));
     
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const carSheet = ss.getSheetByName(CAR_INQUIRY_SHEET_NAME);
+    const sheet = ss.getSheetByName(SHEET_NAME);
     
-    if (!carSheet) {
-      Logger.log('⚠️ 차량문의데이터 시트를 찾을 수 없습니다.');
+    if (!sheet) {
+      Logger.log(`⚠️ ${SHEET_NAME} 시트를 찾을 수 없습니다.`);
       return;
     }
     
-    const lastRow = carSheet.getLastRow();
+    const lastRow = sheet.getLastRow();
     if (lastRow <= 1) {
       Logger.log('ℹ️ 처리할 데이터가 없습니다.');
       return;
     }
     
-    const statusRange = carSheet.getRange(2, 9, lastRow - 1, 1);
-    const statuses = statusRange.getValues();
+    // 헤더 매핑
+    const { mapping } = getColumnMapping(sheet);
+    const statusIdx = mapping['CRM전송상태'];
+    
+    if (statusIdx === undefined) {
+      Logger.log('⚠️ CRM전송상태 컬럼이 없습니다. 첫 실행 시 자동 생성됩니다.');
+    }
     
     let sentCount = 0;
     let errorCount = 0;
     const maxSendPerRun = 50;
     
-    for (let i = 0; i < statuses.length && sentCount < maxSendPerRun; i++) {
-      const rowNumber = i + 2;
-      const status = String(statuses[i][0] || '').trim().toLowerCase();
+    // 2번째 행부터 처리 (1번째 행은 헤더)
+    for (let rowNumber = 2; rowNumber <= lastRow && sentCount < maxSendPerRun; rowNumber++) {
+      // 상태 확인
+      let status = '';
+      if (statusIdx !== undefined) {
+        const statusCell = sheet.getRange(rowNumber, statusIdx + 1).getValue();
+        status = String(statusCell || '').trim().toLowerCase();
+      }
       
+      // pending이거나 빈 값이거나 에러 상태인 경우만 재전송
       if (status === '' || status === 'pending' || status.startsWith('http_error') || status.startsWith('validation_error')) {
         Logger.log(`📨 Row ${rowNumber} 전송 시도`);
         
@@ -420,6 +371,7 @@ function cronJob() {
           Logger.log(`  ❌ 실패: ${result.message}`);
         }
         
+        // API 호출 간격 (Rate Limiting 방지)
         Utilities.sleep(200);
       }
     }
@@ -447,6 +399,7 @@ function cronJob() {
  */
 function createCronTrigger() {
   try {
+    // 기존 트리거 삭제
     const triggers = ScriptApp.getProjectTriggers();
     triggers.forEach(trigger => {
       if (trigger.getHandlerFunction() === 'cronJob') {
@@ -454,13 +407,14 @@ function createCronTrigger() {
       }
     });
     
+    // 1분마다 실행되는 트리거 생성
     ScriptApp.newTrigger('cronJob')
       .timeBased()
       .everyMinutes(1)
       .create();
     
-    Logger.log('✅ Cron Trigger 생성 완료');
-    return '✅ Cron Trigger 생성 완료';
+    Logger.log('✅ Cron Trigger 생성 완료 (1분 주기)');
+    return '✅ Cron Trigger 생성 완료 (1분 주기)';
   } catch (error) {
     Logger.log('❌ Trigger 생성 오류: ' + error);
     throw error;
@@ -483,7 +437,7 @@ function deleteCronTrigger() {
     });
     
     Logger.log(`✅ Cron Trigger ${count}개 삭제 완료`);
-    return `Cron Trigger ${count}개 삭제 완료`;
+    return `✅ Cron Trigger ${count}개 삭제 완료`;
   } catch (error) {
     Logger.log('❌ Trigger 삭제 오류: ' + error);
     throw error;
@@ -519,36 +473,71 @@ function testManualSync() {
 }
 
 /**
- * 테스트: 단일 행 데이터 확인
+ * 테스트: 단일 행 데이터 확인 및 전송
  */
 function testSingleRow(rowNumber) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const carSheet = ss.getSheetByName(CAR_INQUIRY_SHEET_NAME);
+    const sheet = ss.getSheetByName(SHEET_NAME);
     
-    if (!carSheet) {
-      Logger.log('❌ 시트를 찾을 수 없습니다.');
+    if (!sheet) {
+      Logger.log(`❌ ${SHEET_NAME} 시트를 찾을 수 없습니다.`);
       return;
     }
     
     const row = rowNumber || 2;
-    const rowData = carSheet.getRange(row, 1, 1, 11).getValues()[0];
+    const { mapping, headers } = getColumnMapping(sheet);
     
-    Logger.log('📦 Row ' + row + ' 데이터:');
-    Logger.log('  등록일시: ' + rowData[0]);
-    Logger.log('  이름: ' + rowData[1]);
-    Logger.log('  전화번호: ' + rowData[2]);
-    Logger.log('  전화번호(정규화): ' + normalizePhone(rowData[2]));
-    Logger.log('  유형: ' + rowData[3]);
-    Logger.log('  희망차종: ' + rowData[4]);
-    Logger.log('  광고세트명: ' + rowData[5]);
-    Logger.log('  문의사항: ' + rowData[6]);
-    Logger.log('  출처: ' + rowData[7]);
-    Logger.log('  CRM전송상태: ' + rowData[8]);
+    Logger.log('📋 시트 헤더: ' + headers.join(', '));
+    Logger.log('\n📦 Row ' + row + ' 전송 테스트:');
     
-    return rowData;
+    const result = sendCarInquiryToCRMByRow(row);
+    Logger.log('\n📊 결과: ' + JSON.stringify(result, null, 2));
+    
+    return result;
   } catch (error) {
     Logger.log('❌ 테스트 오류: ' + error);
+    throw error;
+  }
+}
+
+/**
+ * 테스트: 시트 구조 분석
+ */
+function analyzeSheetStructure() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      Logger.log(`❌ ${SHEET_NAME} 시트를 찾을 수 없습니다.`);
+      return;
+    }
+    
+    const { mapping, headers } = getColumnMapping(sheet);
+    
+    Logger.log('📊 시트 구조 분석:');
+    Logger.log('  시트명: ' + SHEET_NAME);
+    Logger.log('  총 행: ' + sheet.getLastRow());
+    Logger.log('  총 컬럼: ' + sheet.getLastColumn());
+    Logger.log('\n📋 컬럼 목록:');
+    
+    headers.forEach((header, index) => {
+      const letter = String.fromCharCode(65 + (index % 26));
+      Logger.log(`  ${letter}${Math.floor(index / 26) || ''}: ${header}`);
+    });
+    
+    Logger.log('\n🔍 주요 컬럼 확인:');
+    Logger.log('  phone_number: ' + (mapping['phone_number'] !== undefined ? `컬럼 ${mapping['phone_number']}` : '❌ 없음'));
+    Logger.log('  full_name: ' + (mapping['full_name'] !== undefined ? `컬럼 ${mapping['full_name']}` : '❌ 없음'));
+    Logger.log('  유형을_선택해주세요: ' + (mapping['유형을_선택해주세요'] !== undefined ? `컬럼 ${mapping['유형을_선택해주세요']}` : '없음'));
+    Logger.log('  (희망차종)_차량명을_입력해_주세요: ' + (mapping['(희망차종)_차량명을_입력해_주세요'] !== undefined ? `컬럼 ${mapping['(희망차종)_차량명을_입력해_주세요']}` : '없음'));
+    Logger.log('  adset_name: ' + (mapping['adset_name'] !== undefined ? `컬럼 ${mapping['adset_name']}` : '없음'));
+    Logger.log('  CRM전송상태: ' + (mapping['CRM전송상태'] !== undefined ? `컬럼 ${mapping['CRM전송상태']}` : '없음 (자동 생성됨)'));
+    
+    return { mapping, headers };
+  } catch (error) {
+    Logger.log('❌ 분석 오류: ' + error);
     throw error;
   }
 }
