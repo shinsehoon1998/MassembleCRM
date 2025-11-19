@@ -1,0 +1,468 @@
+/**
+ * 보험 광고주 리드페이지 → 마셈블 CRM 완전 자동 연동 스크립트
+ * CRM: https://massemble-crm-shinsehoona.replit.app
+ * UTM 파라미터 추적 포함
+ * 
+ * 설정 방법:
+ * 1) setupLeadSheet() 함수 1회 실행 (헤더 설정)
+ * 2) 웹앱으로 배포 (실행: 나, 액세스: 모든 사용자)
+ * 3) createCronTrigger() 함수 1회 실행 (1분 주기 CRM 자동 전송)
+ */
+
+// ===== 설정 =====
+const CRM_API_URL = 'https://massemble-crm-shinsehoona.replit.app/api/survey/import';
+const CRM_API_KEY = 'crm_lWH4bhxC4z7Khf69ChfbniLyTJpA31QT';
+const LEAD_SHEET_NAME = '리드데이터';
+
+/**
+ * 초기 설정: 스프레드시트 헤더 설정 (UTM 포함)
+ * 처음 한 번만 실행하세요
+ */
+function setupLeadSheet() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let leadSheet = ss.getSheetByName(LEAD_SHEET_NAME);
+    
+    if (!leadSheet) {
+      leadSheet = ss.insertSheet(LEAD_SHEET_NAME, 0);
+    }
+    
+    const headers = [
+      '등록일시',       // A
+      '이름',           // B
+      '전화번호',       // C
+      '문의사항',       // D
+      '출처',           // E
+      'utm_source',     // F
+      'utm_medium',     // G
+      'utm_campaign',   // H
+      'CRM전송상태',    // I
+      'CRM전송시간',    // J
+      '마셈블고객ID'    // K
+    ];
+    
+    if (leadSheet.getLastRow() < 1) {
+      leadSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      leadSheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#4285F4').setFontColor('#FFFFFF');
+      leadSheet.getRange(1, 6, 1, 3).setFontWeight('bold').setBackground('#34A853').setFontColor('#FFFFFF');
+      leadSheet.getRange(1, 9, 1, 3).setFontWeight('bold').setBackground('#FF9900').setFontColor('#FFFFFF');
+    }
+    
+    leadSheet.autoResizeColumns(1, headers.length);
+    Logger.log('✅ 리드 시트 초기 설정 완료');
+    return '✅ 리드 시트 초기 설정 완료';
+  } catch (err) {
+    Logger.log('❌ 초기 설정 오류: ' + err);
+    throw err;
+  }
+}
+
+/**
+ * 웹앱 POST 핸들러 (리드페이지에서 데이터 수신)
+ * 웹앱 배포 후 이 URL로 POST 요청
+ */
+function doPost(e) {
+  try {
+    Logger.log('🔥 doPost 호출됨');
+    
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        error: '데이터가 없습니다.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    const data = JSON.parse(e.postData.contents);
+    Logger.log('📥 수신 데이터: ' + JSON.stringify(data));
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const leadSheet = ss.getSheetByName(LEAD_SHEET_NAME);
+    
+    if (!leadSheet) {
+      throw new Error('리드데이터 시트를 찾을 수 없습니다. setupLeadSheet() 실행 필요');
+    }
+    
+    const now = new Date();
+    
+    // 스프레드시트에 저장 (UTM 포함)
+    const row = [
+      now,                          // A: 등록일시
+      data.name || '',              // B: 이름
+      data.phone || '',             // C: 전화번호
+      data.inquiry || data.message || '', // D: 문의사항
+      data.source || 'insurance_ad_lead', // E: 출처
+      data.utm_source || '',        // F: utm_source
+      data.utm_medium || '',        // G: utm_medium
+      data.utm_campaign || '',      // H: utm_campaign
+      'pending',                    // I: CRM전송상태
+      '',                           // J: CRM전송시간
+      ''                            // K: 마셈블고객ID
+    ];
+    
+    leadSheet.appendRow(row);
+    const lastRow = leadSheet.getLastRow();
+    leadSheet.getRange(lastRow, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    
+    Logger.log('✅ 스프레드시트 저장 완료 (Row: ' + lastRow + ')');
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      message: '상담 신청이 접수되었습니다.',
+      timestamp: now.toISOString()
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    Logger.log('❌ doPost 오류: ' + error);
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: '서버 오류: ' + error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * 웹앱 GET 핸들러 (상태 확인용)
+ */
+function doGet(e) {
+  try {
+    const action = e.parameter.action || 'stats';
+    
+    if (action === 'stats') {
+      return ContentService.createTextOutput(JSON.stringify(getLeadStats(), null, 2))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'ok',
+      message: '보험 광고주 리드페이지 웹앱'
+    })).setMimeType(ContentService.MimeType.JSON);
+    
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      error: error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * CRM 전송 함수 (특정 행) - UTM 포함
+ */
+function sendLeadToCRMByRow(rowNumber) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const leadSheet = ss.getSheetByName(LEAD_SHEET_NAME);
+    
+    if (!leadSheet) {
+      throw new Error('리드데이터 시트를 찾을 수 없습니다.');
+    }
+    
+    const rowData = leadSheet.getRange(rowNumber, 1, 1, 11).getValues()[0];
+    
+    // 컬럼 인덱스 (0-based)
+    const IDX = {
+      timestamp: 0,    // A
+      name: 1,         // B
+      phone: 2,        // C
+      inquiry: 3,      // D
+      source: 4,       // E
+      utmSource: 5,    // F
+      utmMedium: 6,    // G
+      utmCampaign: 7,  // H
+      crmStatus: 8,    // I
+      crmSentTime: 9,  // J
+      customerId: 10   // K
+    };
+    
+    // 이미 전송 성공한 경우 스킵
+    const status = String(rowData[IDX.crmStatus] || '').trim().toLowerCase();
+    if (status === 'success' || status === 'sending') {
+      return { success: false, message: `이미 처리됨: ${status}`, row: rowNumber };
+    }
+    
+    leadSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('sending');
+    
+    // 데이터 추출
+    let customerName = String(rowData[IDX.name] || '').trim();
+    let customerPhone = String(rowData[IDX.phone] || '').replace(/[^0-9]/g, '');
+    
+    if (customerPhone.length === 10 && customerPhone.startsWith('10')) {
+      customerPhone = '0' + customerPhone;
+    }
+    
+    // 필수 필드 검증
+    if (!customerName || !customerPhone || customerPhone.length < 10) {
+      leadSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('validation_error');
+      return {
+        success: false,
+        message: '필수 정보 부족 (이름/전화번호)',
+        row: rowNumber
+      };
+    }
+    
+    // UTM 파라미터
+    const utmSource = String(rowData[IDX.utmSource] || '').trim();
+    const utmMedium = String(rowData[IDX.utmMedium] || '').trim();
+    const utmCampaign = String(rowData[IDX.utmCampaign] || '').trim();
+    
+    let marketingChannel = '';
+    if (utmSource || utmMedium || utmCampaign) {
+      marketingChannel = `${utmSource}/${utmMedium}/${utmCampaign}`.replace(/\/+$/, '');
+    }
+    
+    // CRM 전송 데이터 구성
+    const crmPayload = {
+      name: customerName,
+      phone: customerPhone,
+      consultType: '보험상담',
+      consultPath: marketingChannel || '광고리드',
+      source: utmSource || 'insurance_ad_lead',
+      marketingConsent: false,
+      
+      info1: rowData[IDX.inquiry] || '',
+      info2: utmSource || '',
+      info3: utmMedium || '',
+      info4: utmCampaign || '',
+      info5: marketingChannel || '',
+      info10: `[${new Date().toLocaleString('ko-KR')}] 광고 리드 연동${marketingChannel ? ' - ' + marketingChannel : ''}`,
+      
+      memo1: utmCampaign ? `캠페인: ${utmCampaign}` : ''
+    };
+    
+    Logger.log('📤 CRM 전송: ' + JSON.stringify(crmPayload, null, 2));
+    
+    // CRM API 호출
+    const response = UrlFetchApp.fetch(CRM_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': CRM_API_KEY
+      },
+      payload: JSON.stringify(crmPayload),
+      muteHttpExceptions: true
+    });
+    
+    const responseText = response.getContentText();
+    const statusCode = response.getResponseCode();
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+    
+    Logger.log(`📥 CRM 응답 (${statusCode}): ${responseText}`);
+    
+    if (statusCode === 200) {
+      const result = JSON.parse(responseText);
+      
+      if (result.success) {
+        leadSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue('success');
+        leadSheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+        leadSheet.getRange(rowNumber, IDX.customerId + 1).setValue(result.customerId || '');
+        
+        Logger.log(`✅ CRM 전송 성공: ${customerName} → ${result.customerId}`);
+        
+        return {
+          success: true,
+          message: 'CRM 전송 성공',
+          row: rowNumber,
+          customerId: result.customerId
+        };
+      } else {
+        leadSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue(`api_error: ${result.message.substring(0, 100)}`);
+        leadSheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+        
+        return {
+          success: false,
+          message: `CRM API 오류: ${result.message}`,
+          row: rowNumber
+        };
+      }
+    } else {
+      leadSheet.getRange(rowNumber, IDX.crmStatus + 1).setValue(`http_error_${statusCode}`);
+      leadSheet.getRange(rowNumber, IDX.crmSentTime + 1).setValue(now);
+      
+      return {
+        success: false,
+        message: `CRM HTTP 오류 (${statusCode})`,
+        row: rowNumber
+      };
+    }
+  } catch (error) {
+    Logger.log('❌ CRM 전송 오류: ' + error);
+    return {
+      success: false,
+      message: '전송 중 오류: ' + error.message,
+      row: rowNumber
+    };
+  }
+}
+
+/**
+ * Cron Job: 1분마다 자동 실행 (CRM 전송)
+ */
+function cronJob() {
+  try {
+    Logger.log('🔄 Cron Job 시작: ' + new Date().toLocaleString('ko-KR'));
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const leadSheet = ss.getSheetByName(LEAD_SHEET_NAME);
+    
+    if (!leadSheet) {
+      Logger.log('⚠️ 리드데이터 시트를 찾을 수 없습니다.');
+      return;
+    }
+    
+    const lastRow = leadSheet.getLastRow();
+    if (lastRow <= 1) {
+      Logger.log('ℹ️ 처리할 데이터가 없습니다.');
+      return;
+    }
+    
+    const statusRange = leadSheet.getRange(2, 9, lastRow - 1, 1);
+    const statuses = statusRange.getValues();
+    
+    let sentCount = 0;
+    let errorCount = 0;
+    const maxSendPerRun = 50;
+    
+    for (let i = 0; i < statuses.length && sentCount < maxSendPerRun; i++) {
+      const rowNumber = i + 2;
+      const status = String(statuses[i][0] || '').trim().toLowerCase();
+      
+      if (status === '' || status === 'pending' || status.startsWith('http_error') || status.startsWith('validation_error')) {
+        Logger.log(`📨 Row ${rowNumber} 전송 시도`);
+        
+        const result = sendLeadToCRMByRow(rowNumber);
+        
+        if (result.success) {
+          sentCount++;
+          Logger.log(`  ✅ 성공`);
+        } else {
+          errorCount++;
+          Logger.log(`  ❌ 실패: ${result.message}`);
+        }
+        
+        Utilities.sleep(200);
+      }
+    }
+    
+    Logger.log(`✅ Cron Job 완료: 성공 ${sentCount}건, 오류 ${errorCount}건`);
+    
+    return {
+      success: true,
+      sentCount: sentCount,
+      errorCount: errorCount,
+      timestamp: new Date().toISOString()
+    };
+    
+  } catch (error) {
+    Logger.log('❌ Cron Job 오류: ' + error);
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * Cron Trigger 생성 (1분마다 자동 실행)
+ */
+function createCronTrigger() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(trigger => {
+      if (trigger.getHandlerFunction() === 'cronJob') {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+    
+    ScriptApp.newTrigger('cronJob')
+      .timeBased()
+      .everyMinutes(1)
+      .create();
+    
+    Logger.log('✅ Cron Trigger 생성 완료');
+    return '✅ Cron Trigger 생성 완료';
+  } catch (error) {
+    Logger.log('❌ Trigger 생성 오류: ' + error);
+    throw error;
+  }
+}
+
+/**
+ * Cron Trigger 삭제
+ */
+function deleteCronTrigger() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    let deletedCount = 0;
+    
+    triggers.forEach(trigger => {
+      if (trigger.getHandlerFunction() === 'cronJob') {
+        ScriptApp.deleteTrigger(trigger);
+        deletedCount++;
+      }
+    });
+    
+    Logger.log(`✅ Cron Trigger ${deletedCount}개 삭제 완료`);
+    return `✅ Cron Trigger ${deletedCount}개 삭제 완료`;
+  } catch (error) {
+    Logger.log('❌ Trigger 삭제 오류: ' + error);
+    throw error;
+  }
+}
+
+/**
+ * 수동 테스트 (단일 리드 전송)
+ */
+function testSingleLead() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const leadSheet = ss.getSheetByName(LEAD_SHEET_NAME);
+  
+  if (!leadSheet || leadSheet.getLastRow() < 2) {
+    Logger.log('❌ 전송할 데이터가 없습니다.');
+    return;
+  }
+  
+  const result = sendLeadToCRMByRow(2);
+  Logger.log('테스트 결과: ' + JSON.stringify(result, null, 2));
+  
+  return result;
+}
+
+/**
+ * 통계 조회
+ */
+function getLeadStats() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const leadSheet = ss.getSheetByName(LEAD_SHEET_NAME);
+    
+    if (!leadSheet) {
+      return { error: '리드데이터 시트를 찾을 수 없습니다.' };
+    }
+    
+    const lastRow = leadSheet.getLastRow();
+    if (lastRow <= 1) {
+      return { total: 0, success: 0, pending: 0, error: 0 };
+    }
+    
+    const statuses = leadSheet.getRange(2, 9, lastRow - 1, 1).getValues();
+    
+    let successCount = 0, pendingCount = 0, errorCount = 0;
+    
+    statuses.forEach(row => {
+      const status = String(row[0] || '').trim().toLowerCase();
+      if (status === 'success') successCount++;
+      else if (status === '' || status === 'pending') pendingCount++;
+      else errorCount++;
+    });
+    
+    return {
+      total: lastRow - 1,
+      success: successCount,
+      pending: pendingCount,
+      error: errorCount
+    };
+    
+  } catch (error) {
+    Logger.log('❌ 통계 조회 오류: ' + error);
+    return { error: error.toString() };
+  }
+}
