@@ -1,0 +1,46 @@
+오후 4:36:12	알림	실행이 시작됨
+오후 4:36:13	정보	📊 컬럼 매핑: ["id","created_time","ad_id","ad_name","adset_id","adset_name","campaign_id","campaign_name","form_id","form_name","is_organic","platform","유형을_선택해주세요","(희망차종)_차량명을_입력해_주세요.","full_name","phone_number","lead_status"]
+오후 4:36:13	정보	📋 시트 헤더: id, created_time, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name, form_id, form_name, is_organic, platform, 유형을_선택해주세요, (희망차종)_차량명을_입력해_주세요., full_name, phone_number, lead_status
+오후 4:36:13	정보	
+📦 Row 2 전송 테스트:
+오후 4:36:13	정보	📊 컬럼 매핑: ["id","created_time","ad_id","ad_name","adset_id","adset_name","campaign_id","campaign_name","form_id","form_name","is_organic","platform","유형을_선택해주세요","(희망차종)_차량명을_입력해_주세요.","full_name","phone_number","lead_status"]
+오후 4:36:13	정보	✅ CRM전송상태 컬럼 추가됨 (열 18)
+오후 4:36:13	정보	✅ CRM전송시간 컬럼 추가됨 (열 19)
+오후 4:36:13	정보	✅ 마셈블고객ID 컬럼 추가됨 (열 20)
+오후 4:36:14	정보	📤 CRM 전송 (Row 2): {
+  "name": "경민구",
+  "phone": "010-5885-2392",
+  "consultType": "차량상담",
+  "consultPath": "카팡_장기렌트-copy",
+  "source": "facebook_lead_form",
+  "marketingConsent": false,
+  "info1": "장기렌트",
+  "info2": "",
+  "info3": "선납급 0원 , 초기비용 0원 , 보증금 0 - 사본",
+  "memo": "페이스북 리드폼 차량 문의\n- 유형: 장기렌트\n- 희망차종: \n- 광고세트: 선납급 0원 , 초기비용 0원 , 보증금 0 - 사본\n- 캠페인: 카팡_장기렌트 - 사본"
+}
+오후 4:36:14	정보	📥 CRM 응답 (200): <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>고객관리시스템</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Fira+Code:wght@300..700&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=IBM+Plex+Sans:ital,wght@0,100..700;1,100..700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Outfit:wght@100..900&family=Oxanium:wght@200..800&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto:ital,wght@0,100..900;1,100..900&family=Source+Code+Pro:ital,wght@0,200..900;1,200..900&family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&family=Space+Grotesk:wght@300..700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/assets/index-C7XvliQi.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DEROaEHI.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- This is a replit script which adds a banner on the top of the page when opened in development mode outside the replit environment -->
+    <script type="text/javascript" src="https://replit.com/public/js/replit-dev-banner.js"></script>
+  </body>
+</html>
+오후 4:36:14	정보	❌ CRM 전송 오류 (Row 2): SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+오후 4:36:14	정보	
+📊 결과: {
+  "success": false,
+  "message": "전송 중 오류: Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON",
+  "row": 2
+}
