@@ -106,6 +106,32 @@ function normalizePhone(phone) {
 }
 
 /**
+ * 유연한 컬럼명 매칭 (점, 공백 등 무시)
+ */
+function findColumn(mapping, possibleNames) {
+  // 정확한 매칭 먼저 시도
+  for (const name of possibleNames) {
+    if (mapping[name] !== undefined) {
+      return mapping[name];
+    }
+  }
+  
+  // 키워드 포함 매칭 (유연한 검색)
+  const keywords = possibleNames.map(n => n.replace(/[.\s_]/g, '').toLowerCase());
+  
+  for (const [headerName, index] of Object.entries(mapping)) {
+    const normalized = headerName.replace(/[.\s_]/g, '').toLowerCase();
+    for (const keyword of keywords) {
+      if (normalized.includes(keyword) || keyword.includes(normalized)) {
+        return index;
+      }
+    }
+  }
+  
+  return undefined;
+}
+
+/**
  * CRM 전송 함수 (특정 행)
  */
 function sendCarInquiryToCRMByRow(rowNumber) {
@@ -187,25 +213,40 @@ function sendCarInquiryToCRMByRow(rowNumber) {
       customerName = `차량문의${digits.slice(-4)}`;
     }
     
-    // 추가 정보 추출
-    const inquiryType = finalMapping['유형을_선택해주세요'] !== undefined 
-      ? String(rowData[finalMapping['유형을_선택해주세요']] || '').trim() 
+    // 추가 정보 추출 (유연한 컬럼명 매칭)
+    const inquiryTypeIdx = findColumn(finalMapping, [
+      '유형을_선택해주세요',
+      '유형을선택해주세요',
+      '유형'
+    ]);
+    const inquiryType = inquiryTypeIdx !== undefined 
+      ? String(rowData[inquiryTypeIdx] || '').trim() 
       : '';
     
-    const carModel = finalMapping['(희망차종)_차량명을_입력해_주세요'] !== undefined
-      ? String(rowData[finalMapping['(희망차종)_차량명을_입력해_주세요']] || '').trim()
+    // 희망차종 컬럼 찾기 (점 있는 버전 포함)
+    const carModelIdx = findColumn(finalMapping, [
+      '(희망차종)_차량명을_입력해_주세요.',
+      '(희망차종)_차량명을_입력해_주세요',
+      '희망차종',
+      '차량명'
+    ]);
+    const carModel = carModelIdx !== undefined
+      ? String(rowData[carModelIdx] || '').trim()
       : '';
     
-    const adsetName = finalMapping['adset_name'] !== undefined
-      ? String(rowData[finalMapping['adset_name']] || '').trim()
+    const adsetNameIdx = finalMapping['adset_name'];
+    const adsetName = adsetNameIdx !== undefined
+      ? String(rowData[adsetNameIdx] || '').trim()
       : '';
     
-    const formName = finalMapping['form_name'] !== undefined
-      ? String(rowData[finalMapping['form_name']] || '').trim()
+    const formNameIdx = finalMapping['form_name'];
+    const formName = formNameIdx !== undefined
+      ? String(rowData[formNameIdx] || '').trim()
       : '';
     
-    const campaignName = finalMapping['campaign_name'] !== undefined
-      ? String(rowData[finalMapping['campaign_name']] || '').trim()
+    const campaignNameIdx = finalMapping['campaign_name'];
+    const campaignName = campaignNameIdx !== undefined
+      ? String(rowData[campaignNameIdx] || '').trim()
       : '';
     
     // CRM 전송 데이터 구성
@@ -530,8 +571,13 @@ function analyzeSheetStructure() {
     Logger.log('\n🔍 주요 컬럼 확인:');
     Logger.log('  phone_number: ' + (mapping['phone_number'] !== undefined ? `컬럼 ${mapping['phone_number']}` : '❌ 없음'));
     Logger.log('  full_name: ' + (mapping['full_name'] !== undefined ? `컬럼 ${mapping['full_name']}` : '❌ 없음'));
-    Logger.log('  유형을_선택해주세요: ' + (mapping['유형을_선택해주세요'] !== undefined ? `컬럼 ${mapping['유형을_선택해주세요']}` : '없음'));
-    Logger.log('  (희망차종)_차량명을_입력해_주세요: ' + (mapping['(희망차종)_차량명을_입력해_주세요'] !== undefined ? `컬럼 ${mapping['(희망차종)_차량명을_입력해_주세요']}` : '없음'));
+    
+    // 유연한 컬럼명 매칭 테스트
+    const inquiryTypeIdx = findColumn(mapping, ['유형을_선택해주세요', '유형']);
+    const carModelIdx = findColumn(mapping, ['(희망차종)_차량명을_입력해_주세요.', '(희망차종)_차량명을_입력해_주세요', '희망차종']);
+    
+    Logger.log('  유형: ' + (inquiryTypeIdx !== undefined ? `컬럼 ${inquiryTypeIdx} (${headers[inquiryTypeIdx]})` : '없음'));
+    Logger.log('  희망차종: ' + (carModelIdx !== undefined ? `컬럼 ${carModelIdx} (${headers[carModelIdx]})` : '없음'));
     Logger.log('  adset_name: ' + (mapping['adset_name'] !== undefined ? `컬럼 ${mapping['adset_name']}` : '없음'));
     Logger.log('  CRM전송상태: ' + (mapping['CRM전송상태'] !== undefined ? `컬럼 ${mapping['CRM전송상태']}` : '없음 (자동 생성됨)'));
     
