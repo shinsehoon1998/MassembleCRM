@@ -1508,87 +1508,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Survey import endpoint (for Botamjeong integration - backward compatibility)
-  app.post('/api/survey/import', authenticateApiKey, async (req: any, res) => {
-    const requestId = generateRequestId();
-    try {
-      // 보탐정 설문조사 형식을 CRM 형식으로 변환
-      const surveyData = req.body;
-      
-      const customerData = {
-        name: surveyData.name || '미입력',
-        phone: surveyData.phone || '',
-        gender: surveyData.gender || 'N',
-        birthDate: surveyData.birthDate ? new Date(surveyData.birthDate) : undefined,
-        consultType: surveyData.consultType || '설문상담',
-        consultPath: surveyData.consultPath || 'survey',
-        source: surveyData.source || req.apiKeyName || 'survey_import',
-        marketingConsent: surveyData.marketingConsent || false,
-        info1: surveyData.info1 || '',
-        info2: surveyData.info2 || '',
-        info3: surveyData.info3 || '',
-        info4: surveyData.info4 || '',
-        info5: surveyData.info5 || '',
-        info6: surveyData.info6 || '',
-        info7: surveyData.info7 || '',
-        info8: surveyData.info8 || '',
-        info9: surveyData.info9 || '',
-        info10: surveyData.info10 || '',
-        memo1: surveyData.memo1 || '',
-        status: '인텍'
-      };
-      
-      const customer = await storage.createCustomer(customerData);
-
-      await storage.createActivityLog({
-        userId: req.user.id,
-        customerId: customer.id,
-        action: "survey_imported",
-        description: `설문조사를 통해 고객 "${customer.name}"이(가) 등록되었습니다. (출처: ${customerData.source})`,
-      });
-
-      secureLog(LogLevel.INFO, 'SURVEY_IMPORT', 'Customer imported from survey', {
-        customerId: customer.id,
-        customerName: maskName(customer.name),
-        surveyId: surveyData.surveyId,
-        source: customerData.source
-      }, requestId);
-
-      res.status(200).json({
-        success: true,
-        message: '고객 정보가 성공적으로 등록되었습니다.',
-        customerId: customer.id,
-        customer: {
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone,
-          status: customer.status,
-          createdAt: customer.createdAt
-        }
-      });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        secureLog(LogLevel.WARNING, 'SURVEY_IMPORT', 'Validation error', {
-          errors: error.errors,
-          apiKeyName: req.apiKeyName
-        }, requestId);
-        return res.status(400).json({ 
-          success: false,
-          message: "Invalid data", 
-          errors: error.errors 
-        });
-      }
-      secureLog(LogLevel.ERROR, 'SURVEY_IMPORT', 'Error importing survey', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        apiKeyName: req.apiKeyName
-      }, requestId);
-      res.status(500).json({ 
-        success: false,
-        message: "Failed to import survey data" 
-      });
-    }
-  });
-
   // External customer creation endpoint (for Google Sheets integration)
   app.post('/api/external/customers', authenticateApiKey, async (req: any, res) => {
     const requestId = generateRequestId();
@@ -6088,11 +6007,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   /**
-   * 설문조사 데이터 수신 API
+   * 설문조사 데이터 수신 API (CarPang, 보탐정 등 외부 연동 통합)
    * POST /api/survey/import
    */
-  app.post('/api/survey/import', validateSurveyApiKey, async (req: any, res) => {
+  app.post('/api/survey/import', authenticateApiKey, async (req: any, res) => {
     const requestId = req.requestId || generateRequestId();
+    
+    // 받은 데이터 로깅 (디버깅용)
+    secureLog(LogLevel.DEBUG, 'SURVEY_IMPORT', '설문조사 API 요청 수신', {
+      bodyKeys: Object.keys(req.body),
+      info1: req.body.info1 ? '있음' : '없음',
+      info2: req.body.info2 ? '있음' : '없음',
+      info3: req.body.info3 ? '있음' : '없음',
+      apiKeyName: req.apiKeyName
+    }, requestId);
     
     try {
       // 요청 데이터 검증
