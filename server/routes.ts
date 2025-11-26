@@ -6013,13 +6013,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/survey/import', authenticateApiKey, async (req: any, res) => {
     const requestId = req.requestId || generateRequestId();
     
-    // 받은 데이터 로깅 (디버깅용)
-    secureLog(LogLevel.DEBUG, 'SURVEY_IMPORT', '설문조사 API 요청 수신', {
+    // 받은 데이터 로깅 (디버깅용) - INFO 레벨로 변경
+    secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '설문조사 API 요청 수신 - RAW 데이터', {
       bodyKeys: Object.keys(req.body),
-      info1: req.body.info1 ? '있음' : '없음',
-      info2: req.body.info2 ? '있음' : '없음',
-      info3: req.body.info3 ? '있음' : '없음',
-      apiKeyName: req.apiKeyName
+      name: maskName(req.body.name || ''),
+      phone: maskPhoneNumber(req.body.phone || ''),
+      info1: req.body.info1 || '(없음)',
+      info2: req.body.info2 || '(없음)',
+      info3: req.body.info3 || '(없음)',
+      info4: req.body.info4 || '(없음)',
+      info5: req.body.info5 || '(없음)',
+      info6: req.body.info6 || '(없음)',
+      info7: req.body.info7 || '(없음)',
+      memo1: req.body.memo1 || '(없음)',
+      apiKeyName: req.apiKeyName,
+      source: req.body.source
     }, requestId);
     
     try {
@@ -6062,6 +6070,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }, requestId);
         
         // 기존 고객 정보 업데이트 (설문조사 데이터 추가)
+        // info 필드는 새 값이 있으면 업데이트, 없으면 기존 값 유지 (undefined와 빈 문자열 구분)
         const updateData: any = {
           name: surveyData.name,
           phone: surveyData.phone,
@@ -6072,18 +6081,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source: surveyData.source || existingCustomer.source,
           marketingConsent: surveyData.marketingConsent !== undefined ? surveyData.marketingConsent : existingCustomer.marketingConsent,
           marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : existingCustomer.marketingConsentMethod,
-          // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보) - 직접 매핑
-          info1: surveyData.info1 || null,
-          info2: surveyData.info2 || null,
-          info3: surveyData.info3 || null,
-          info4: surveyData.info4 || null,
-          info5: surveyData.info5 || null,
-          info6: surveyData.info6 || null,
-          info7: surveyData.info7 || null,
-          info8: surveyData.info8 || null,
-          info9: surveyData.info9 || null,
-          info10: surveyData.info10 || `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 연동 (ID: ${surveyData.surveyId || 'unknown'})`
+          // info 필드: 새 값이 있으면(빈 문자열 포함) 사용, undefined면 기존 값 유지
+          info1: surveyData.info1 !== undefined ? surveyData.info1 : existingCustomer.info1,
+          info2: surveyData.info2 !== undefined ? surveyData.info2 : existingCustomer.info2,
+          info3: surveyData.info3 !== undefined ? surveyData.info3 : existingCustomer.info3,
+          info4: surveyData.info4 !== undefined ? surveyData.info4 : existingCustomer.info4,
+          info5: surveyData.info5 !== undefined ? surveyData.info5 : existingCustomer.info5,
+          info6: surveyData.info6 !== undefined ? surveyData.info6 : existingCustomer.info6,
+          info7: surveyData.info7 !== undefined ? surveyData.info7 : existingCustomer.info7,
+          info8: surveyData.info8 !== undefined ? surveyData.info8 : existingCustomer.info8,
+          info9: surveyData.info9 !== undefined ? surveyData.info9 : existingCustomer.info9,
+          info10: surveyData.info10 !== undefined ? surveyData.info10 : (existingCustomer.info10 || `[${new Date().toLocaleString('ko-KR')}] 설문 연동`)
         };
+        
+        // 디버깅: 업데이트할 info 필드 값 로깅
+        secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '기존 고객 업데이트 - info 필드 매핑', {
+          customerId: existingCustomer.id,
+          newInfo1: updateData.info1 || '(없음)',
+          newInfo2: updateData.info2 || '(없음)',
+          newInfo3: updateData.info3 || '(없음)',
+          oldInfo1: existingCustomer.info1 || '(없음)',
+          oldInfo2: existingCustomer.info2 || '(없음)',
+          oldInfo3: existingCustomer.info3 || '(없음)'
+        }, requestId);
 
         // 날짜 필드는 별도 처리 (문자열을 날짜로 변환할 때 오류 방지)
         if (surveyData.birthDate) {
@@ -6122,6 +6142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // 새 고객 생성
+      // info 필드는 undefined와 빈 문자열을 구분 (빈 문자열도 유효한 값)
       const customerData = {
         name: surveyData.name,
         phone: surveyData.phone,
@@ -6135,20 +6156,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         marketingConsentDate: surveyData.marketingConsentDate ? new Date(surveyData.marketingConsentDate) : null,
         marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : null,
         status: '인텍', // 기본 상태
-        // 보탐정 설문조사 데이터를 info1~info10에 개별 매핑 (읽기전용 정보) - 직접 매핑
-        memo1: null, // 사용자가 입력할 수 있는 메모 필드
-        info1: surveyData.info1 || null,
-        info2: surveyData.info2 || null,
-        info3: surveyData.info3 || null,
-        info4: surveyData.info4 || null,
-        info5: surveyData.info5 || null,
-        info6: surveyData.info6 || null,
-        info7: surveyData.info7 || null,
-        info8: surveyData.info8 || null,
-        info9: surveyData.info9 || null,
-        info10: surveyData.info10 || `[${new Date().toLocaleString('ko-KR')}] 보탐정 설문 신규고객 (ID: ${surveyData.surveyId || 'unknown'})`
+        memo1: surveyData.memo1 || null,
+        // info 필드: undefined가 아니면 그 값 사용 (빈 문자열 포함)
+        info1: surveyData.info1 !== undefined ? surveyData.info1 : null,
+        info2: surveyData.info2 !== undefined ? surveyData.info2 : null,
+        info3: surveyData.info3 !== undefined ? surveyData.info3 : null,
+        info4: surveyData.info4 !== undefined ? surveyData.info4 : null,
+        info5: surveyData.info5 !== undefined ? surveyData.info5 : null,
+        info6: surveyData.info6 !== undefined ? surveyData.info6 : null,
+        info7: surveyData.info7 !== undefined ? surveyData.info7 : null,
+        info8: surveyData.info8 !== undefined ? surveyData.info8 : null,
+        info9: surveyData.info9 !== undefined ? surveyData.info9 : null,
+        info10: surveyData.info10 !== undefined ? surveyData.info10 : `[${new Date().toLocaleString('ko-KR')}] 설문 신규고객`
         // createdAt과 updatedAt는 데이터베이스에서 자동 설정되므로 제외
       };
+      
+      // 디버깅: 신규 고객 생성 info 필드 값 로깅
+      secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '신규 고객 생성 - info 필드 매핑', {
+        info1: customerData.info1 || '(없음)',
+        info2: customerData.info2 || '(없음)',
+        info3: customerData.info3 || '(없음)',
+        info4: customerData.info4 || '(없음)',
+        info5: customerData.info5 || '(없음)',
+        info6: customerData.info6 || '(없음)',
+        info7: customerData.info7 || '(없음)',
+        memo1: customerData.memo1 || '(없음)',
+        source: customerData.source
+      }, requestId);
 
       const newCustomer = await storage.createCustomer(customerData);
       
@@ -6156,7 +6190,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customerId: newCustomer.id,
         customerName: maskName(newCustomer.name),
         customerPhone: maskPhoneNumber(newCustomer.phone),
-        source: newCustomer.source
+        source: newCustomer.source,
+        savedInfo1: newCustomer.info1 || '(없음)',
+        savedInfo2: newCustomer.info2 || '(없음)',
+        savedInfo3: newCustomer.info3 || '(없음)'
       }, requestId);
 
       // 활동 로그는 생략 (설문조사 자동 생성이므로 별도 로그 불필요)
