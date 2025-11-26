@@ -1,0 +1,548 @@
+/**
+ * CarPang 구글 스프레드시트 연동 스크립트
+ * 마셈블 CRM 통합 버전 + Cronjob 자동 재전송
+ * 
+ * 설정 방법:
+ * 1) setupHeaders() 함수를 한 번 실행 (헤더 자동 생성)
+ * 2) setupCronTrigger() 함수를 한 번 실행 (자동 재전송 트리거 설정)
+ * 3) 웹앱으로 배포 (실행: 나, 액세스: 모든 사용자)
+ * 4) 배포 URL을 Replit Secrets에 저장
+ * 
+ * 기능:
+ * - 실시간 상담 신청 접수 및 CRM 전송
+ * - 매 5분마다 실패한 건 자동 재전송
+ * - 최대 3회 재시도
+ */
+
+// ===== 설정 =====
+const SHEET_NAME = '시트1'; // 실제 시트 이름으로 변경
+const CRM_API_URL = 'https://massemble-crm-shinsehoona.replit.app/api/survey/import';
+const CRM_API_KEY = 'crm_jJvVjcB2IfLvJQdqNbWKKRQvQtPEmMSX';
+const CRM_TIMEOUT = 8000; // CRM API 타임아웃 (밀리초)
+const MAX_RETRY_COUNT = 3; // 최대 재시도 횟수
+const CRON_INTERVAL_MINUTES = 5; // Cronjob 실행 간격 (분)
+
+// 헤더 정의
+const HEADERS = [
+  '접수일시', '차량명', '이름', '연락처', '렌트타입',
+  'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Term', 'UTM Content',
+  'CRM전송상태', '재시도횟수'
+];
+
+/**
+ * 초기 설정: 헤더 자동 생성
+ * 이 함수를 먼저 한 번 실행하세요
+ */
+function setupHeaders() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      throw new Error(`시트를 찾을 수 없습니다: ${SHEET_NAME}`);
+    }
+    
+    // 첫 번째 행에 헤더 설정
+    const headerRange = sheet.getRange(1, 1, 1, HEADERS.length);
+    headerRange.setValues([HEADERS]);
+    headerRange.setFontWeight('bold')
+               .setBackground('#FF6B35')
+               .setFontColor('#FFFFFF');
+    
+    // 열 너비 자동 조정
+    sheet.autoResizeColumns(1, HEADERS.length);
+    
+    Logger.log('✅ 헤더 설정 완료');
+    return '헤더 설정 완료';
+  } catch (error) {
+    Logger.log('❌ 헤더 설정 오류: ' + error);
+    throw error;
+  }
+}
+
+/**
+ * Cronjob 트리거 설정
+ * 이 함수를 한 번 실행하면 자동 재전송이 시작됩니다
+ */
+function setupCronTrigger() {
+  try {
+    // 기존 트리거 삭제 (중복 방지)
+    const triggers = ScriptApp.getProjectTriggers();
+    triggers.forEach(function(trigger) {
+      if (trigger.getHandlerFunction() === 'cronRetryFailedCRM') {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+    
+    // 새 트리거 생성 (매 5분마다 실행)
+    ScriptApp.newTrigger('cronRetryFailedCRM')
+      .timeBased()
+      .everyMinutes(CRON_INTERVAL_MINUTES)
+      .create();
+    
+    Logger.log(`✅ Cronjob 트리거 설정 완료 (${CRON_INTERVAL_MINUTES}분마다 실행)`);
+    return `Cronjob 설정 완료: ${CRON_INTERVAL_MINUTES}분마다 실행`;
+  } catch (error) {
+    Logger.log('❌ 트리거 설정 오류: ' + error);
+    throw error;
+  }
+}
+
+/**
+ * Cronjob 트리거 삭제
+ * 자동 재전송을 중지하려면 이 함수를 실행하세요
+ */
+function removeCronTrigger() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    let deleted = 0;
+    
+    triggers.forEach(function(trigger) {
+      if (trigger.getHandlerFunction() === 'cronRetryFailedCRM') {
+        ScriptApp.deleteTrigger(trigger);
+        deleted++;
+      }
+    });
+    
+    Logger.log(`✅ Cronjob 트리거 삭제 완료 (${deleted}개)`);
+    return `트리거 삭제 완료: ${deleted}개`;
+  } catch (error) {
+    Logger.log('❌ 트리거 삭제 오류: ' + error);
+    throw error;
+  }
+}
+
+/**
+ * Cronjob: 실패한 CRM 전송 재시도
+ * 시간 기반 트리거가 자동으로 호출합니다
+ */
+function cronRetryFailedCRM() {
+  const startTime = new Date();
+  Logger.log('🔄 [CRON] CRM 재전송 작업 시작: ' + startTime.toISOString());
+  
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      Logger.log(`❌ [CRON] 시트를 찾을 수 없음: ${SHEET_NAME}`);
+      return;
+    }
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      Logger.log('ℹ️ [CRON] 처리할 데이터 없음');
+      return;
+    }
+    
+    // 전체 데이터 가져오기
+    const dataRange = sheet.getRange(2, 1, lastRow - 1, HEADERS.length);
+    const data = dataRange.getValues();
+    
+    let retryCount = 0;
+    let successCount = 0;
+    let skipCount = 0;
+    
+    // 각 행 검사
+    for (let i = 0; i < data.length; i++) {
+      const rowNumber = i + 2; // 실제 행 번호 (헤더 제외)
+      const crmStatus = String(data[i][10] || ''); // CRM전송상태 (11번째 컬럼)
+      const retryCountValue = parseInt(data[i][11] || 0); // 재시도횟수 (12번째 컬럼)
+      
+      // pending 또는 failed인 경우만 재시도
+      if (crmStatus.includes('pending') || crmStatus.includes('failed')) {
+        
+        // 최대 재시도 횟수 초과 확인
+        if (retryCountValue >= MAX_RETRY_COUNT) {
+          Logger.log(`⏭️ [CRON] 행 ${rowNumber}: 최대 재시도 횟수 초과 (${retryCountValue}회)`);
+          skipCount++;
+          continue;
+        }
+        
+        Logger.log(`🔄 [CRON] 행 ${rowNumber}: CRM 재전송 시도 (${retryCountValue + 1}/${MAX_RETRY_COUNT})`);
+        retryCount++;
+        
+        // 데이터 추출
+        const name = data[i][2] || '';
+        const phone = data[i][3] || '';
+        const carName = data[i][1] || '';
+        const rentalTypeKor = data[i][4] || '';
+        const utmSource = data[i][5] || '';
+        const utmMedium = data[i][6] || '';
+        const utmCampaign = data[i][7] || '';
+        const utmTerm = data[i][8] || '';
+        const utmContent = data[i][9] || '';
+        
+        // CRM 전송 시도
+        const crmResult = sendToCRM({
+          name: name,
+          phone: phone,
+          carName: carName,
+          rentalType: rentalTypeKor,
+          utm_source: utmSource,
+          utm_medium: utmMedium,
+          utm_campaign: utmCampaign,
+          utm_term: utmTerm,
+          utm_content: utmContent
+        });
+        
+        // 결과 업데이트
+        if (crmResult.success) {
+          sheet.getRange(rowNumber, 11).setValue('success');
+          sheet.getRange(rowNumber, 12).setValue(retryCountValue + 1);
+          successCount++;
+          Logger.log(`✅ [CRON] 행 ${rowNumber}: 재전송 성공`);
+        } else {
+          const errorMsg = (crmResult.error || 'Unknown error').substring(0, 50);
+          sheet.getRange(rowNumber, 11).setValue(`failed: ${errorMsg}`);
+          sheet.getRange(rowNumber, 12).setValue(retryCountValue + 1);
+          Logger.log(`❌ [CRON] 행 ${rowNumber}: 재전송 실패 - ${crmResult.error}`);
+        }
+        
+        // API 과부하 방지 (0.5초 대기)
+        Utilities.sleep(500);
+      }
+    }
+    
+    const endTime = new Date();
+    const processingTime = endTime - startTime;
+    
+    Logger.log('=== [CRON] 재전송 작업 완료 ===');
+    Logger.log(`처리 시간: ${processingTime}ms`);
+    Logger.log(`재시도 건수: ${retryCount}개`);
+    Logger.log(`성공 건수: ${successCount}개`);
+    Logger.log(`실패 건수: ${retryCount - successCount}개`);
+    Logger.log(`스킵 건수: ${skipCount}개 (최대 재시도 초과)`);
+    
+  } catch (error) {
+    Logger.log('❌ [CRON] 오류 발생: ' + error);
+    Logger.log('스택 트레이스: ' + error.stack);
+  }
+}
+
+/**
+ * POST 요청 처리 (상담 신청 접수)
+ */
+function doPost(e) {
+  const startTime = new Date();
+  Logger.log('🔥 doPost 호출 시작: ' + startTime.toISOString());
+  
+  try {
+    // 요청 데이터 확인
+    if (!e || !e.postData || !e.postData.contents) {
+      Logger.log('❌ 요청 데이터 없음');
+      return createResponse(false, '요청 데이터가 없습니다.');
+    }
+    
+    // JSON 파싱
+    let data;
+    try {
+      data = JSON.parse(e.postData.contents);
+      Logger.log('📦 받은 데이터: ' + JSON.stringify(data));
+    } catch (parseError) {
+      Logger.log('❌ JSON 파싱 오류: ' + parseError);
+      return createResponse(false, 'JSON 파싱 오류: ' + parseError.message);
+    }
+    
+    // 필수 필드 검증
+    if (!data.name || !data.phone) {
+      Logger.log('❌ 필수 필드 누락');
+      return createResponse(false, '필수 항목(이름, 연락처)이 누락되었습니다.');
+    }
+    
+    // 스프레드시트 열기
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_NAME);
+    
+    if (!sheet) {
+      Logger.log(`❌ 시트를 찾을 수 없음: ${SHEET_NAME}`);
+      return createResponse(false, `시트를 찾을 수 없습니다: ${SHEET_NAME}`);
+    }
+    
+    // 데이터 행 구성
+    const timestamp = new Date();
+    const carName = data.carName || '';
+    const name = data.name || '';
+    const phone = data.phone || '';
+    const rentalType = data.rentalType === 'longterm' ? '장기렌트' : '리스';
+    const utmSource = data.utm_source || '(직접 유입)';
+    const utmMedium = data.utm_medium || '';
+    const utmCampaign = data.utm_campaign || '';
+    const utmTerm = data.utm_term || '';
+    const utmContent = data.utm_content || '';
+    
+    Logger.log('📝 스프레드시트에 데이터 저장 시작');
+    
+    // 스프레드시트에 행 추가
+    const newRow = [
+      timestamp, carName, name, phone, rentalType,
+      utmSource, utmMedium, utmCampaign, utmTerm, utmContent,
+      'pending', 0  // CRM전송상태: pending, 재시도횟수: 0
+    ];
+    
+    sheet.appendRow(newRow);
+    const rowNumber = sheet.getLastRow();
+    
+    // 날짜 포맷 설정
+    sheet.getRange(rowNumber, 1).setNumberFormat('yyyy-mm-dd hh:mm:ss');
+    
+    Logger.log(`✅ 행 ${rowNumber}에 데이터 저장 완료`);
+    
+    // CRM 전송 시도
+    let crmStatus = 'pending';
+    let crmErrorMsg = '';
+    
+    try {
+      Logger.log('📤 CRM 전송 시작');
+      Logger.log('🔗 CRM URL: ' + CRM_API_URL);
+      
+      const crmResult = sendToCRM({
+        name: name,
+        phone: phone,
+        carName: carName,
+        rentalType: rentalType,
+        utm_source: utmSource,
+        utm_medium: utmMedium,
+        utm_campaign: utmCampaign,
+        utm_term: utmTerm,
+        utm_content: utmContent
+      });
+      
+      Logger.log('📨 CRM 응답: ' + JSON.stringify(crmResult));
+      
+      if (crmResult.success) {
+        sheet.getRange(rowNumber, 11).setValue('success');
+        sheet.getRange(rowNumber, 12).setValue(1); // 첫 시도에 성공
+        crmStatus = 'success';
+        Logger.log('✅ CRM 전송 성공');
+      } else {
+        const errorMsg = crmResult.error || 'Unknown error';
+        sheet.getRange(rowNumber, 11).setValue('failed: ' + errorMsg.substring(0, 50));
+        sheet.getRange(rowNumber, 12).setValue(1); // 첫 시도 실패
+        crmStatus = 'failed';
+        crmErrorMsg = errorMsg;
+        Logger.log('⚠️ CRM 전송 실패 (Cronjob이 자동으로 재시도합니다): ' + errorMsg);
+      }
+    } catch (crmError) {
+      const errorMsg = crmError.toString();
+      sheet.getRange(rowNumber, 11).setValue('error: ' + errorMsg.substring(0, 50));
+      sheet.getRange(rowNumber, 12).setValue(1);
+      crmStatus = 'error';
+      crmErrorMsg = errorMsg;
+      Logger.log('❌ CRM 전송 오류 (Cronjob이 자동으로 재시도합니다): ' + errorMsg);
+    }
+    
+    const endTime = new Date();
+    const processingTime = endTime - startTime;
+    Logger.log(`✅ doPost 완료 (처리 시간: ${processingTime}ms)`);
+    
+    return createResponse(true, '저장 완료', {
+      row: rowNumber,
+      timestamp: timestamp.toISOString(),
+      crmStatus: crmStatus,
+      crmError: crmErrorMsg,
+      processingTime: processingTime,
+      autoRetry: crmStatus !== 'success' ? 'Cronjob이 자동으로 재시도합니다' : null
+    });
+    
+  } catch (error) {
+    Logger.log('❌ doPost 오류: ' + error);
+    Logger.log('스택 트레이스: ' + error.stack);
+    return createResponse(false, '서버 오류: ' + error.message);
+  }
+}
+
+/**
+ * GET 요청 처리 (상태 확인)
+ */
+function doGet(e) {
+  try {
+    Logger.log('🔍 doGet 호출');
+    
+    // 트리거 상태 확인
+    const triggers = ScriptApp.getProjectTriggers();
+    const cronTrigger = triggers.find(t => t.getHandlerFunction() === 'cronRetryFailedCRM');
+    
+    return createResponse(true, 'Google Apps Script 정상 작동 중', {
+      sheetName: SHEET_NAME,
+      crmUrl: CRM_API_URL,
+      hasApiKey: !!CRM_API_KEY,
+      cronEnabled: !!cronTrigger,
+      cronInterval: CRON_INTERVAL_MINUTES + '분',
+      maxRetry: MAX_RETRY_COUNT,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    Logger.log('❌ doGet 오류: ' + error);
+    return createResponse(false, '조회 오류: ' + error.message);
+  }
+}
+
+/**
+ * CRM으로 데이터 전송 (개선판)
+ */
+function sendToCRM(data) {
+  try {
+    const payload = {
+      name: data.name,
+      phone: data.phone,
+      message: `차량명: ${data.carName}\n상담유형: ${data.rentalType}`,
+      utm_source: data.utm_source || '',
+      utm_medium: data.utm_medium || '',
+      utm_campaign: data.utm_campaign || '',
+      utm_term: data.utm_term || '',
+      utm_content: data.utm_content || ''
+    };
+    
+    Logger.log('📤 CRM 전송 페이로드: ' + JSON.stringify(payload));
+    
+    const options = {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'X-API-Key': CRM_API_KEY
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+    
+    Logger.log('🔄 CRM API 요청 전송 중...');
+    const response = UrlFetchApp.fetch(CRM_API_URL, options);
+    const responseCode = response.getResponseCode();
+    const responseText = response.getContentText();
+    
+    Logger.log('📡 CRM 응답 코드: ' + responseCode);
+    Logger.log('📄 CRM 응답 본문: ' + responseText);
+    
+    // HTTP 상태 코드 확인
+    if (responseCode < 200 || responseCode >= 300) {
+      return {
+        success: false,
+        error: `HTTP ${responseCode}: ${responseText}`
+      };
+    }
+    
+    // 응답 본문 파싱 및 검증
+    let responseData;
+    try {
+      responseData = JSON.parse(responseText);
+      Logger.log('✅ CRM 응답 JSON 파싱 성공: ' + JSON.stringify(responseData));
+    } catch (parseError) {
+      Logger.log('⚠️ CRM 응답이 JSON이 아님: ' + responseText);
+      // JSON이 아니어도 HTTP 200이면 성공으로 간주
+      if (responseCode === 200 || responseCode === 201) {
+        return {
+          success: true,
+          response: { raw: responseText }
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Invalid JSON response: ' + responseText.substring(0, 100)
+        };
+      }
+    }
+    
+    // 응답 데이터 검증
+    if (responseData.hasOwnProperty('success') && !responseData.success) {
+      return {
+        success: false,
+        error: responseData.message || responseData.error || 'CRM API returned success:false'
+      };
+    }
+    
+    // 에러 필드가 있다면 실패
+    if (responseData.error) {
+      return {
+        success: false,
+        error: responseData.error
+      };
+    }
+    
+    // 모든 검증 통과
+    return {
+      success: true,
+      response: responseData
+    };
+    
+  } catch (error) {
+    Logger.log('❌ CRM 전송 예외: ' + error.toString());
+    return {
+      success: false,
+      error: error.toString()
+    };
+  }
+}
+
+/**
+ * 응답 생성 헬퍼 함수
+ */
+function createResponse(success, message, data) {
+  const response = {
+    result: success ? 'success' : 'error',
+    message: message
+  };
+  
+  if (data) {
+    Object.assign(response, data);
+  }
+  
+  return ContentService
+    .createTextOutput(JSON.stringify(response))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * 테스트용 함수들
+ */
+
+// CRM 연결 테스트
+function testCRM() {
+  Logger.log('=== CRM 연결 테스트 시작 ===');
+  Logger.log('CRM URL: ' + CRM_API_URL);
+  Logger.log('API Key 존재 여부: ' + (CRM_API_KEY ? 'Yes' : 'No'));
+  
+  const result = sendToCRM({
+    name: '테스트사용자',
+    phone: '010-1234-5678',
+    carName: '그랜저',
+    rentalType: '장기렌트',
+    utm_source: 'test',
+    utm_medium: 'manual',
+    utm_campaign: 'test_campaign'
+  });
+  
+  Logger.log('=== CRM 테스트 결과 ===');
+  Logger.log(JSON.stringify(result, null, 2));
+  
+  if (result.success) {
+    Logger.log('✅ CRM 연결 성공!');
+  } else {
+    Logger.log('❌ CRM 연결 실패: ' + result.error);
+  }
+  
+  return result;
+}
+
+// Cronjob 수동 실행 테스트
+function testCronJob() {
+  Logger.log('=== Cronjob 수동 실행 테스트 ===');
+  cronRetryFailedCRM();
+  Logger.log('=== 테스트 완료 ===');
+}
+
+// 트리거 상태 확인
+function checkTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  Logger.log('=== 현재 설정된 트리거 목록 ===');
+  
+  if (triggers.length === 0) {
+    Logger.log('설정된 트리거가 없습니다.');
+  } else {
+    triggers.forEach(function(trigger, index) {
+      Logger.log(`${index + 1}. 함수: ${trigger.getHandlerFunction()}, 유형: ${trigger.getTriggerSource()}`);
+    });
+  }
+  
+  return triggers.length + '개의 트리거가 설정되어 있습니다.';
+}
