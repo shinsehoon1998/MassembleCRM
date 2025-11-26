@@ -65,3 +65,32 @@ Preferred communication style: Simple, everyday language.
 - **Error Tracking**: Runtime error overlay for development
 - **Code Navigation**: Cartographer plugin for Replit environment
 - **Hot Reloading**: Vite HMR for rapid development cycles
+
+## Google Sheets 연동 (외부 데이터 소스)
+
+### 카팡 랜딩페이지 (CarPang)
+- **Google Apps Script 배포 URL**: `https://script.google.com/macros/s/AKfycbwOg5qWDkf8s64CL2N8eGNKXpUSv8xuWucz1lJsAyD2qTjVliCA-K9iiR9o4MLmalKbFw/exec`
+- **CRM API Endpoint**: `/api/survey/import`
+- **API Key Name**: 카팡랜딩페이지
+- **CRM 필드 매핑**:
+  - info1: 차량명
+  - info2: 렌트타입
+  - info3: UTM Source
+  - info4: UTM Medium
+  - info5: UTM Campaign
+  - info6: UTM Term
+  - info7: UTM Content
+  - memo1: 요약 정보
+
+### 차량문의 (Facebook Lead Ads)
+- **CRM API Endpoint**: `/api/car-inquiry/import`
+- **API Key Name**: 카팡 잠재고객 API
+- **CRM 필드 매핑**:
+  - info1: 유형을_선택해주세요
+  - info2: 희망차종
+  - info3: adset_name
+
+### 기타 연동
+- **보험 리드**: `/api/survey/import` (보탐정 설문)
+- **Secret sheet 리드**: `/api/survey/import`
+- **개인회생 탕감액분석기**: `/api/survey/import`
