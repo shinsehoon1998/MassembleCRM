@@ -6059,89 +6059,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasSurveyResults: !!surveyData.surveyResults
       }, requestId);
 
-      // 중복 고객 체크 (전화번호 기준)
-      const existingCustomer = await storage.getCustomerByPhone(surveyData.phone);
-      
-      if (existingCustomer) {
-        secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '기존 고객 발견 - 설문조사 데이터로 업데이트', {
-          existingCustomerId: existingCustomer.id,
-          customerName: maskName(surveyData.name),
-          customerPhone: maskPhoneNumber(surveyData.phone)
-        }, requestId);
-        
-        // 기존 고객 정보 업데이트 (설문조사 데이터 추가)
-        // info 필드는 새 값이 있으면 업데이트, 없으면 기존 값 유지 (undefined와 빈 문자열 구분)
-        const updateData: any = {
-          name: surveyData.name,
-          phone: surveyData.phone,
-          // email: customers 테이블에 email 필드가 없으므로 제외
-          gender: surveyData.gender || existingCustomer.gender,
-          consultType: surveyData.consultType || existingCustomer.consultType,
-          consultPath: surveyData.consultPath || existingCustomer.consultPath,
-          source: surveyData.source || existingCustomer.source,
-          marketingConsent: surveyData.marketingConsent !== undefined ? surveyData.marketingConsent : existingCustomer.marketingConsent,
-          marketingConsentMethod: surveyData.marketingConsent ? '온라인설문' : existingCustomer.marketingConsentMethod,
-          // info 필드: 새 값이 있으면(빈 문자열 포함) 사용, undefined면 기존 값 유지
-          info1: surveyData.info1 !== undefined ? surveyData.info1 : existingCustomer.info1,
-          info2: surveyData.info2 !== undefined ? surveyData.info2 : existingCustomer.info2,
-          info3: surveyData.info3 !== undefined ? surveyData.info3 : existingCustomer.info3,
-          info4: surveyData.info4 !== undefined ? surveyData.info4 : existingCustomer.info4,
-          info5: surveyData.info5 !== undefined ? surveyData.info5 : existingCustomer.info5,
-          info6: surveyData.info6 !== undefined ? surveyData.info6 : existingCustomer.info6,
-          info7: surveyData.info7 !== undefined ? surveyData.info7 : existingCustomer.info7,
-          info8: surveyData.info8 !== undefined ? surveyData.info8 : existingCustomer.info8,
-          info9: surveyData.info9 !== undefined ? surveyData.info9 : existingCustomer.info9,
-          info10: surveyData.info10 !== undefined ? surveyData.info10 : (existingCustomer.info10 || `[${new Date().toLocaleString('ko-KR')}] 설문 연동`)
-        };
-        
-        // 디버깅: 업데이트할 info 필드 값 로깅
-        secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '기존 고객 업데이트 - info 필드 매핑', {
-          customerId: existingCustomer.id,
-          newInfo1: updateData.info1 || '(없음)',
-          newInfo2: updateData.info2 || '(없음)',
-          newInfo3: updateData.info3 || '(없음)',
-          oldInfo1: existingCustomer.info1 || '(없음)',
-          oldInfo2: existingCustomer.info2 || '(없음)',
-          oldInfo3: existingCustomer.info3 || '(없음)'
-        }, requestId);
-
-        // 날짜 필드는 별도 처리 (문자열을 날짜로 변환할 때 오류 방지)
-        if (surveyData.birthDate) {
-          try {
-            updateData.birthDate = new Date(surveyData.birthDate);
-          } catch (error) {
-            updateData.birthDate = existingCustomer.birthDate;
-          }
-        } else {
-          updateData.birthDate = existingCustomer.birthDate;
-        }
-
-        if (surveyData.marketingConsentDate) {
-          try {
-            updateData.marketingConsentDate = new Date(surveyData.marketingConsentDate);
-          } catch (error) {
-            updateData.marketingConsentDate = existingCustomer.marketingConsentDate;
-          }
-        } else {
-          updateData.marketingConsentDate = existingCustomer.marketingConsentDate;
-        }
-        
-        const updatedCustomer = await storage.updateCustomer(existingCustomer.id, updateData);
-        
-        secureLog(LogLevel.INFO, 'SURVEY_IMPORT', '기존 고객 정보 업데이트 완료', {
-          customerId: updatedCustomer.id,
-          customerName: maskName(updatedCustomer.name)
-        }, requestId);
-        
-        return res.json({
-          success: true,
-          customerId: updatedCustomer.id,
-          isNewCustomer: false,
-          message: '기존 고객 정보가 설문조사 데이터로 업데이트되었습니다.'
-        });
-      }
-
-      // 새 고객 생성
+      // 새 고객 생성 (중복 연락처도 항상 개별 고객으로 등록)
       // info 필드는 undefined와 빈 문자열을 구분 (빈 문자열도 유효한 값)
       const customerData = {
         name: surveyData.name,
@@ -6306,49 +6224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         info3: carInquiryData.info3 ? '있음' : '없음'
       }, requestId);
 
-      // 중복 고객 체크 (전화번호 기준)
-      const existingCustomer = await storage.getCustomerByPhone(carInquiryData.phone);
-      
-      if (existingCustomer) {
-        secureLog(LogLevel.INFO, 'CAR_INQUIRY_IMPORT', '기존 고객 발견 - 차량 문의 데이터로 업데이트', {
-          existingCustomerId: existingCustomer.id,
-          customerName: maskName(carInquiryData.name),
-          customerPhone: maskPhoneNumber(carInquiryData.phone)
-        }, requestId);
-        
-        // 기존 고객 정보 업데이트 (차량 문의 데이터 추가)
-        const updateData: any = {
-          name: carInquiryData.name,
-          phone: carInquiryData.phone,
-          consultType: carInquiryData.consultType || existingCustomer.consultType,
-          consultPath: carInquiryData.consultPath || existingCustomer.consultPath,
-          source: carInquiryData.source || existingCustomer.source,
-          marketingConsent: carInquiryData.marketingConsent !== undefined ? carInquiryData.marketingConsent : existingCustomer.marketingConsent,
-          marketingConsentMethod: carInquiryData.marketingConsent ? '온라인폼' : existingCustomer.marketingConsentMethod,
-          // 차량 문의 정보를 info1~info3에 매핑
-          info1: carInquiryData.info1 || existingCustomer.info1,
-          info2: carInquiryData.info2 || existingCustomer.info2,
-          info3: carInquiryData.info3 || existingCustomer.info3,
-          // 시트 데이터를 memo1에 저장
-          memo1: carInquiryData.memo || existingCustomer.memo1
-        };
-        
-        const updatedCustomer = await storage.updateCustomer(existingCustomer.id, updateData);
-        
-        secureLog(LogLevel.INFO, 'CAR_INQUIRY_IMPORT', '기존 고객 정보 업데이트 완료', {
-          customerId: updatedCustomer.id,
-          customerName: maskName(updatedCustomer.name)
-        }, requestId);
-        
-        return res.json({
-          success: true,
-          customerId: updatedCustomer.id,
-          isNewCustomer: false,
-          message: '기존 고객 정보가 차량 문의 데이터로 업데이트되었습니다.'
-        });
-      }
-
-      // 새 고객 생성
+      // 새 고객 생성 (중복 연락처도 항상 개별 고객으로 등록)
       const customerData = {
         name: carInquiryData.name,
         phone: carInquiryData.phone,
