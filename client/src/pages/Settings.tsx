@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Trash2, Plus, Edit, Save, X, Key, Copy, CheckCircle2, AlertCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2, Plus, Edit, Save, X, Key, Copy, CheckCircle2, AlertCircle, UserCheck } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { SystemSetting } from "@shared/schema";
@@ -56,6 +57,12 @@ export default function Settings() {
   // API Keys query
   const { data: apiKeys = [], isLoading: isApiKeysLoading } = useQuery<any[]>({
     queryKey: ['/api/api-keys'],
+    enabled: !!isAuthenticated && selectedCategory === 'API키관리',
+  });
+
+  // 사용자 목록 조회 (담당자 선택용)
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ['/api/users'],
     enabled: !!isAuthenticated && selectedCategory === 'API키관리',
   });
 
@@ -191,6 +198,27 @@ export default function Settings() {
       toast({
         title: "오류",
         description: "API 키 상태 변경에 실패했습니다.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateDefaultUserMutation = useMutation({
+    mutationFn: async ({ id, defaultUserId }: { id: string; defaultUserId: string | null }) => {
+      const response = await apiRequest("PUT", `/api/api-keys/${id}`, { defaultUserId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/api-keys'] });
+      toast({
+        title: "성공",
+        description: "기본 담당자가 설정되었습니다.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "오류",
+        description: "기본 담당자 설정에 실패했습니다.",
         variant: "destructive",
       });
     },
@@ -396,6 +424,33 @@ export default function Settings() {
 
                                 <div className="text-xs text-gray-500">
                                   생성일: {new Date(apiKey.createdAt).toLocaleString('ko-KR')}
+                                </div>
+
+                                {/* 기본 담당자 설정 */}
+                                <div className="mt-3 flex items-center space-x-2">
+                                  <UserCheck className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                  <span className="text-xs text-gray-500 flex-shrink-0">기본 담당자:</span>
+                                  <Select
+                                    value={apiKey.defaultUserId || 'none'}
+                                    onValueChange={(value) =>
+                                      updateDefaultUserMutation.mutate({
+                                        id: apiKey.id,
+                                        defaultUserId: value === 'none' ? null : value,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="h-7 text-xs w-48">
+                                      <SelectValue placeholder="담당자 미지정" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">담당자 미지정</SelectItem>
+                                      {users.map((user: any) => (
+                                        <SelectItem key={user.id} value={user.id}>
+                                          {user.name} ({user.username})
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </div>
 

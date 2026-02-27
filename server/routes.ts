@@ -174,6 +174,7 @@ const authenticateApiKey = async (req: any, res: any, next: any) => {
     req.user = { id: keyData.userId, role: 'api' };
     req.apiKeyId = keyData.id;
     req.apiKeyName = keyData.name;
+    req.apiKeyDefaultUserId = keyData.defaultUserId || null;
     
     secureLog(LogLevel.INFO, 'API_KEY', 'API key authenticated', {
       keyId: keyData.id,
@@ -2597,11 +2598,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "관리자만 API 키를 수정할 수 있습니다." });
       }
 
-      const { isActive, name, expiresAt } = req.body;
+      const { isActive, name, expiresAt, defaultUserId } = req.body;
       const updated = await storage.updateApiKey(req.params.id, {
         isActive,
         name,
         expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+        defaultUserId: defaultUserId || null,
       });
 
       res.json(updated);
@@ -6085,7 +6087,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         info7: surveyData.info7 !== undefined ? surveyData.info7 : null,
         info8: surveyData.info8 !== undefined ? surveyData.info8 : null,
         info9: surveyData.info9 !== undefined ? surveyData.info9 : null,
-        info10: surveyData.info10 !== undefined ? surveyData.info10 : `[${new Date().toLocaleString('ko-KR')}] 설문 신규고객`
+        info10: surveyData.info10 !== undefined ? surveyData.info10 : `[${new Date().toLocaleString('ko-KR')}] 설문 신규고객`,
+        // API 키에 기본 담당자가 설정된 경우 자동 배분
+        assignedUserId: req.apiKeyDefaultUserId || null
         // createdAt과 updatedAt는 데이터베이스에서 자동 설정되므로 제외
       };
       
@@ -6258,7 +6262,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         memo7: null,
         memo8: null,
         memo9: null,
-        memo10: null
+        memo10: null,
+        // API 키에 기본 담당자가 설정된 경우 자동 배분
+        assignedUserId: req.apiKeyDefaultUserId || null
       };
 
       const newCustomer = await storage.createCustomer(customerData);

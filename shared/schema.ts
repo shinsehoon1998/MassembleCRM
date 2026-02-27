@@ -153,6 +153,7 @@ export const apiKeys = pgTable("api_keys", {
   isActive: boolean("is_active").notNull().default(true),
   lastUsedAt: timestamp("last_used_at"),
   expiresAt: timestamp("expires_at"),
+  defaultUserId: varchar("default_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
