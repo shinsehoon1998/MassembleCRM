@@ -33,16 +33,17 @@ const app = express();
 // Admin 사용자 초기화 함수
 async function initializeAdminUser() {
   try {
-    console.log('Checking admin user...');
-    const existingAdmin = await storage.getUserByUsername('admin');
+    // admin2026 관리자 계정 초기화
+    console.log('Checking admin2026 user...');
+    const existingAdmin2026 = await storage.getUserByUsername('admin2026');
     
-    if (!existingAdmin) {
-      console.log('Creating admin user...');
-      const hashedPassword = await bcrypt.hash('admin123', 10);
+    if (!existingAdmin2026) {
+      console.log('Creating admin2026 user...');
+      const hashedPassword = await bcrypt.hash('admin1234', 10);
       
       await storage.upsertUser({
-        id: 'admin',
-        username: 'admin',
+        id: 'admin2026',
+        username: 'admin2026',
         password: hashedPassword,
         name: '시스템 관리자',
         email: 'admin@keystart.co.kr',
@@ -50,17 +51,46 @@ async function initializeAdminUser() {
         department: '관리부'
       });
       
-      console.log('Admin user created successfully');
+      console.log('admin2026 user created successfully');
     } else {
-      console.log('Admin user already exists');
+      console.log('admin2026 user already exists');
       
       // 배포 환경에서 비밀번호가 맞지 않을 수 있으므로 강제로 업데이트
+      const hashedPassword = await bcrypt.hash('admin1234', 10);
+      await storage.upsertUser({
+        ...existingAdmin2026,
+        password: hashedPassword
+      });
+      console.log('admin2026 password updated');
+    }
+
+    // 기존 admin 계정도 유지 (하위호환)
+    console.log('Checking legacy admin user...');
+    const existingAdmin = await storage.getUserByUsername('admin');
+    
+    if (!existingAdmin) {
+      console.log('Creating legacy admin user...');
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      
+      await storage.upsertUser({
+        id: 'admin',
+        username: 'admin',
+        password: hashedPassword,
+        name: '기존 관리자',
+        email: 'legacy-admin@keystart.co.kr',
+        role: 'admin',
+        department: '관리부'
+      });
+      
+      console.log('Legacy admin user created successfully');
+    } else {
+      console.log('Legacy admin user already exists');
       const hashedPassword = await bcrypt.hash('admin123', 10);
       await storage.upsertUser({
         ...existingAdmin,
         password: hashedPassword
       });
-      console.log('Admin password updated');
+      console.log('Legacy admin password updated');
     }
   } catch (error) {
     console.error('Error initializing admin user:', error);

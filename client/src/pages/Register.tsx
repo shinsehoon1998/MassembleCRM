@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/hooks/useAuth';
 import { apiRequest } from '@/lib/queryClient';
 import { Redirect, Link } from 'wouter';
+import keystartLogo from '@assets/keystart_logo.png';
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -121,8 +122,8 @@ export default function Register() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-keystart-blue rounded-lg flex items-center justify-center">
-              <i className="fas fa-user-plus text-2xl text-white"></i>
+            <div className="w-20 h-20 bg-white rounded-xl flex items-center justify-center p-2 shadow-sm border border-gray-100">
+              <img src={keystartLogo} alt="키스타트 로고" className="w-full h-full object-contain" />
             </div>
           </div>
           <CardTitle className="text-2xl font-bold text-gray-900">
