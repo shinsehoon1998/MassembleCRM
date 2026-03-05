@@ -105,12 +105,12 @@ export default function SurveyResponsesPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">응답률</p>
-              <p className="text-2xl font-bold text-massemble-red" data-testid="text-response-rate">
+              <p className="text-2xl font-bold text-keystart-blue" data-testid="text-response-rate">
                 {stats?.responseRate ? `${stats.responseRate.toFixed(1)}%` : '0%'}
               </p>
             </div>
             <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <i className="fas fa-chart-pie text-massemble-red text-xl"></i>
+              <i className="fas fa-chart-pie text-keystart-blue text-xl"></i>
             </div>
           </div>
         </Card>

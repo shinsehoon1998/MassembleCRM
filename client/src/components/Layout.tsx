@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import type { User } from "@shared/schema";
-import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
+import keystartLogo from '@assets/keystart_logo.png';
 
 interface LayoutProps {
   children: ReactNode;
@@ -41,7 +41,7 @@ export default function Layout({ children }: LayoutProps) {
       '/as-review': 'A.S 검수',
       '/manual': 'CRM사용설명서',
     };
-    return titles[location] || '마셈블 CRM';
+    return titles[location] || '키스타트 DB 관리 마법사';
   };
 
   const getPageDescription = () => {
@@ -107,17 +107,17 @@ export default function Layout({ children }: LayoutProps) {
       )}
 
       {/* Sidebar */}
-      <div className={`w-64 bg-massemble-black text-white flex-shrink-0 transform transition-transform duration-300 ease-in-out ${
+      <div className={`w-64 bg-sidebar text-white flex-shrink-0 transform transition-transform duration-300 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
       } lg:translate-x-0 fixed lg:relative z-50 h-full flex flex-col`}>
         <div className="p-6 border-b border-white/10">
           <div className="flex items-center space-x-3">
             <div className="w-12 h-12 bg-white rounded-lg flex items-center justify-center p-1">
-              <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
+              <img src={keystartLogo} alt="키스타트 로고" className="w-full h-full object-contain" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">마셈블 CRM</h1>
-              <p className="text-xs text-gray-300">고객관리시스템</p>
+              <h1 className="text-lg font-bold text-white leading-tight">키스타트</h1>
+              <p className="text-xs text-gray-300">DB 관리 마법사</p>
             </div>
           </div>
         </div>
@@ -128,7 +128,7 @@ export default function Layout({ children }: LayoutProps) {
             <Link 
               href="/"
               className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                isNavItemActive('/') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
               }`} 
               data-testid="nav-dashboard"
             >
@@ -139,7 +139,7 @@ export default function Layout({ children }: LayoutProps) {
             <Link 
               href="/customers"
               className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/customers') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                isNavItemActive('/customers') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
               }`} 
               data-testid="nav-customers"
             >
@@ -150,7 +150,7 @@ export default function Layout({ children }: LayoutProps) {
             <Link 
               href="/appointments"
               className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/appointments') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                isNavItemActive('/appointments') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
               }`} 
               data-testid="nav-appointments"
             >
@@ -161,7 +161,7 @@ export default function Layout({ children }: LayoutProps) {
             <Link 
               href="/data-import"
               className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/data-import') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                isNavItemActive('/data-import') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
               }`} 
               data-testid="nav-data-import"
             >
@@ -178,7 +178,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/ars-campaigns"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/ars-campaigns') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/ars-campaigns') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-ars-campaigns"
                 >
@@ -189,7 +189,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/scenario-management"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/scenario-management') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/scenario-management') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-scenario-management"
                 >
@@ -200,7 +200,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/customer-groups"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/customer-groups') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/customer-groups') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-customer-groups"
                 >
@@ -211,7 +211,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/users"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/users') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/users') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-users"
                 >
@@ -222,7 +222,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/sms-settings"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/sms-settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/sms-settings') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-sms-settings"
                 >
@@ -233,7 +233,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/surveys"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/surveys') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/surveys') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-surveys"
                 >
@@ -244,7 +244,7 @@ export default function Layout({ children }: LayoutProps) {
                 <Link 
                   href="/settings"
                   className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                    isNavItemActive('/settings') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
+                    isNavItemActive('/settings') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-gray-200 hover:text-white'
                   }`} 
                   data-testid="nav-settings"
                 >
@@ -263,7 +263,7 @@ export default function Layout({ children }: LayoutProps) {
               <Link 
                 href="/as-requests"
                 className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                  isNavItemActive('/as-requests') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
+                  isNavItemActive('/as-requests') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
                 }`} 
                 data-testid="nav-as-requests"
               >
@@ -277,7 +277,7 @@ export default function Layout({ children }: LayoutProps) {
               <Link 
                 href="/as-review"
                 className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                  isNavItemActive('/as-review') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
+                  isNavItemActive('/as-review') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
                 }`} 
                 data-testid="nav-as-review"
               >
@@ -289,7 +289,7 @@ export default function Layout({ children }: LayoutProps) {
             <Link 
               href="/manual"
               className={`flex items-center px-6 py-3 hover:bg-white/10 border-l-4 transition-colors ${
-                isNavItemActive('/manual') ? 'border-massemble-red bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
+                isNavItemActive('/manual') ? 'border-keystart-blue bg-white/10 text-white' : 'border-transparent text-white hover:text-white'
               }`} 
               data-testid="nav-manual"
             >
@@ -335,7 +335,7 @@ export default function Layout({ children }: LayoutProps) {
                 </span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 bg-massemble-red rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-keystart-blue rounded-full flex items-center justify-center">
                   <i className="fas fa-user text-white text-sm"></i>
                 </div>
                 <div className="text-sm">

@@ -300,7 +300,7 @@ export default function CustomerDetail() {
             <DialogTrigger asChild>
               <Button 
                 variant="outline"
-                className="border-massemble-red text-massemble-red hover:bg-massemble-red hover:text-white"
+                className="border-keystart-blue text-keystart-blue hover:bg-keystart-blue hover:text-white"
                 data-testid="button-send-survey"
               >
                 <i className="fas fa-poll h-4 w-4 mr-2"></i>
@@ -351,7 +351,7 @@ export default function CustomerDetail() {
                   <Button
                     onClick={handleSendSurvey}
                     disabled={sendSurveyMutation.isPending}
-                    className="bg-massemble-red hover:bg-massemble-red/90"
+                    className="bg-keystart-blue hover:bg-keystart-blue/90"
                     data-testid="button-confirm-send-survey"
                   >
                     {sendSurveyMutation.isPending ? (

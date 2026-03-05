@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
+import keystartLogo from '@assets/keystart_logo.png';
 
 interface SurveyData {
   template: {
@@ -100,7 +100,7 @@ export default function SurveyResponsePage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-massemble-red"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-keystart-blue"></div>
       </div>
     );
   }
@@ -137,7 +137,7 @@ export default function SurveyResponsePage() {
             소중한 의견 감사합니다. 더 나은 서비스를 제공하기 위해 노력하겠습니다.
           </p>
           <div className="w-24 h-24 mx-auto">
-            <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
+            <img src={keystartLogo} alt="키스타트 로고" className="w-full h-full object-contain" />
           </div>
         </Card>
       </div>
@@ -151,7 +151,7 @@ export default function SurveyResponsePage() {
         <Card className="p-8">
           <div className="flex items-center justify-between mb-6">
             <div className="w-16 h-16 bg-white rounded-lg flex items-center justify-center p-2">
-              <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
+              <img src={keystartLogo} alt="키스타트 로고" className="w-full h-full object-contain" />
             </div>
             <div className="text-right">
               <p className="text-sm text-gray-500">응답 기한</p>
@@ -209,8 +209,8 @@ export default function SurveyResponsePage() {
                       onClick={() => handleAnswerChange(question.id, rating)}
                       className={`w-12 h-12 rounded-full border-2 transition-all ${
                         answers[question.id] === rating
-                          ? 'bg-massemble-red border-massemble-red text-white'
-                          : 'border-gray-300 hover:border-massemble-red'
+                          ? 'bg-keystart-blue border-keystart-blue text-white'
+                          : 'border-gray-300 hover:border-keystart-blue'
                       }`}
                       data-testid={`button-rating-${index}-${rating}`}
                     >
@@ -272,7 +272,7 @@ export default function SurveyResponsePage() {
           <Button
             onClick={handleSubmit}
             disabled={submitMutation.isPending}
-            className="w-full bg-massemble-red hover:bg-massemble-red/90"
+            className="w-full bg-keystart-blue hover:bg-keystart-blue/90"
             data-testid="button-submit-survey"
           >
             {submitMutation.isPending ? (

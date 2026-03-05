@@ -122,7 +122,7 @@ function renderNotionBlock(block: NotionBlock, allBlocks: NotionBlock[]): JSX.El
                   <li key={heading.id} className={paddingClass}>
                     <a 
                       href={`#heading-${heading.id}`} 
-                      className="text-massemble-red hover:underline"
+                      className="text-keystart-blue hover:underline"
                     >
                       {text}
                     </a>
@@ -137,7 +137,7 @@ function renderNotionBlock(block: NotionBlock, allBlocks: NotionBlock[]): JSX.El
         const toggleText = block.toggle?.rich_text?.[0]?.plain_text || '';
         return (
           <details key={block.id} className="my-4 bg-gray-50 rounded-lg p-4">
-            <summary className="cursor-pointer font-medium text-gray-900 hover:text-massemble-red">
+            <summary className="cursor-pointer font-medium text-gray-900 hover:text-keystart-blue">
               {toggleText}
             </summary>
             <div className="mt-2 text-gray-700">
@@ -182,7 +182,7 @@ export default function ManualPage() {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-massemble-red" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-keystart-blue" />
           <p className="text-gray-600">CRM 사용설명서를 불러오는 중...</p>
         </div>
       </div>
@@ -204,7 +204,7 @@ export default function ManualPage() {
     );
   }
 
-  const pageTitle = data?.data?.page?.properties?.title?.title?.[0]?.plain_text || 'MassembleCRM 사용설명서';
+  const pageTitle = data?.data?.page?.properties?.title?.title?.[0]?.plain_text || '키스타트 DB 관리 마법사 사용설명서';
   const blocks = data?.data?.blocks || [];
 
   return (
@@ -232,7 +232,7 @@ export default function ManualPage() {
             href={NOTION_PAGE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-massemble-red hover:underline inline-flex items-center"
+            className="text-keystart-blue hover:underline inline-flex items-center"
             data-testid="link-notion-page"
           >
             <span>노션에서 원본 보기</span>

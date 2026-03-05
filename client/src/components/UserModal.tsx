@@ -514,7 +514,7 @@ export function UserModal({ isOpen, onClose, editingUser }: UserModalProps) {
             type="submit"
             onClick={handleSubmit}
             disabled={createUserMutation.isPending}
-            className="bg-massemble-red hover:bg-massemble-red-hover text-white"
+            className="bg-keystart-blue hover:bg-keystart-blue-hover text-white"
             data-testid="button-create-user"
           >
             {createUserMutation.isPending ? (editingUser ? '수정 중...' : '추가 중...') : (editingUser ? '수정' : '추가')}

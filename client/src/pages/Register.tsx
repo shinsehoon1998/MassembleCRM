@@ -105,7 +105,7 @@ export default function Register() {
             </p>
             
             <Link href="/login">
-              <Button className="w-full bg-massemble-red hover:bg-massemble-red-hover">
+              <Button className="w-full bg-keystart-blue hover:bg-keystart-blue-hover">
                 <i className="fas fa-sign-in-alt mr-2"></i>
                 로그인하러 가기
               </Button>
@@ -121,7 +121,7 @@ export default function Register() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-massemble-red rounded-lg flex items-center justify-center">
+            <div className="w-16 h-16 bg-keystart-blue rounded-lg flex items-center justify-center">
               <i className="fas fa-user-plus text-2xl text-white"></i>
             </div>
           </div>
@@ -129,7 +129,7 @@ export default function Register() {
             회원가입
           </CardTitle>
           <p className="text-gray-600">
-            MassembleCRM 계정을 만드세요
+            키스타트 DB 관리 마법사 계정을 만드세요
           </p>
         </CardHeader>
         
@@ -239,7 +239,7 @@ export default function Register() {
             
             <Button 
               type="submit" 
-              className="w-full bg-massemble-red hover:bg-massemble-red-hover"
+              className="w-full bg-keystart-blue hover:bg-keystart-blue-hover"
               disabled={isLoading}
               data-testid="button-register"
             >
@@ -259,7 +259,7 @@ export default function Register() {
           
           <div className="mt-6 text-center text-sm text-gray-600">
             이미 계정이 있으신가요?{' '}
-            <Link href="/login" className="text-massemble-red hover:underline">
+            <Link href="/login" className="text-keystart-blue hover:underline">
               로그인하기
             </Link>
           </div>

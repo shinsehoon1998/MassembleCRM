@@ -852,10 +852,10 @@ export default function Customers() {
 
             {/* Action Buttons - Stack on Mobile */}
             <div className="flex flex-col sm:flex-row gap-3">
-              <Button onClick={handleSearch} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-search">
+              <Button onClick={handleSearch} className="bg-keystart-blue hover:bg-keystart-blue-hover text-white" data-testid="button-search">
                 <i className="fas fa-search mr-2"></i>즉시 검색
               </Button>
-              <Button onClick={handleNewCustomer} className="bg-massemble-red hover:bg-massemble-red-hover text-white" data-testid="button-add-customer">
+              <Button onClick={handleNewCustomer} className="bg-keystart-blue hover:bg-keystart-blue-hover text-white" data-testid="button-add-customer">
                 <i className="fas fa-plus mr-2"></i>신규 등록
               </Button>
               <Button 

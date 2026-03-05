@@ -45,7 +45,7 @@ async function initializeAdminUser() {
         username: 'admin',
         password: hashedPassword,
         name: '시스템 관리자',
-        email: 'admin@massemble.com',
+        email: 'admin@keystart.co.kr',
         role: 'admin',
         department: '관리부'
       });

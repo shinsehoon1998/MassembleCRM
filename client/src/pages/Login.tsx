@@ -81,15 +81,15 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-massemble-red rounded-lg flex items-center justify-center">
+            <div className="w-16 h-16 bg-keystart-blue rounded-lg flex items-center justify-center">
               <i className="fas fa-building text-2xl text-white"></i>
             </div>
           </div>
           <CardTitle className="text-2xl font-bold text-gray-900">
-            MassembleCRM
+            키스타트 DB 관리 마법사
           </CardTitle>
           <p className="text-gray-600">
-            고객관리시스템
+            DB 관리 시스템
           </p>
         </CardHeader>
         
@@ -131,7 +131,7 @@ export default function Login() {
             
             <Button 
               type="submit" 
-              className="w-full bg-massemble-red hover:bg-massemble-red-hover"
+              className="w-full bg-keystart-blue hover:bg-keystart-blue-hover"
               disabled={isLoading}
               data-testid="button-login"
             >
@@ -151,7 +151,7 @@ export default function Login() {
           
           <div className="mt-6 text-center text-sm text-gray-600">
             계정이 없으신가요?{' '}
-            <a href="/register" className="text-massemble-red hover:underline">
+            <a href="/register" className="text-keystart-blue hover:underline">
               회원가입하기
             </a>
           </div>

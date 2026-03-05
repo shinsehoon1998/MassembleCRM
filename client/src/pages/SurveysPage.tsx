@@ -135,7 +135,7 @@ export default function SurveysPage() {
         </div>
         <Link href="/surveys/new">
           <Button 
-            className="bg-massemble-red hover:bg-massemble-red/90"
+            className="bg-keystart-blue hover:bg-keystart-blue/90"
             data-testid="button-create-survey"
           >
             <i className="fas fa-plus mr-2"></i>
@@ -192,12 +192,12 @@ export default function SurveysPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-500">총 응답</p>
-              <p className="text-2xl font-bold text-massemble-red" data-testid="text-total-responses">
+              <p className="text-2xl font-bold text-keystart-blue" data-testid="text-total-responses">
                 0
               </p>
             </div>
             <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <i className="fas fa-chart-bar text-massemble-red text-xl"></i>
+              <i className="fas fa-chart-bar text-keystart-blue text-xl"></i>
             </div>
           </div>
         </Card>
@@ -382,7 +382,7 @@ export default function SurveysPage() {
             <div className="flex justify-between items-center pt-4 border-t">
               <div className="text-sm text-gray-500">
                 {selectedCustomers.length > 0 && (
-                  <span className="font-medium text-massemble-red">
+                  <span className="font-medium text-keystart-blue">
                     {selectedCustomers.length}명 선택됨
                   </span>
                 )}
@@ -398,7 +398,7 @@ export default function SurveysPage() {
                 <Button
                   onClick={handleSendSurveys}
                   disabled={sendSurveysMutation.isPending || selectedCustomers.length === 0}
-                  className="bg-massemble-red hover:bg-massemble-red/90"
+                  className="bg-keystart-blue hover:bg-keystart-blue/90"
                   data-testid="button-confirm-send"
                 >
                   {sendSurveysMutation.isPending ? (

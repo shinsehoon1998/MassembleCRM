@@ -382,7 +382,7 @@ export default function SurveyFormPage() {
               </Button>
               <Button
                 type="submit"
-                className="bg-massemble-red hover:bg-massemble-red/90"
+                className="bg-keystart-blue hover:bg-keystart-blue/90"
                 disabled={createMutation.isPending || updateMutation.isPending}
                 data-testid="button-submit"
               >

@@ -342,7 +342,7 @@ function UsersList({
                 data-testid={`checkbox-user-${user.id}`}
               />
             )}
-            <div className="w-10 h-10 bg-massemble-red rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-keystart-blue rounded-full flex items-center justify-center">
               <i className="fas fa-user text-white text-sm"></i>
             </div>
             <div>
@@ -458,7 +458,7 @@ export default function Users() {
               <h2 className="text-xl font-semibold text-gray-900">시스템 사용자</h2>
               {user?.role === 'admin' && (
                 <Button 
-                  className="bg-massemble-red hover:bg-massemble-red-hover text-white"
+                  className="bg-keystart-blue hover:bg-keystart-blue-hover text-white"
                   onClick={() => setIsUserModalOpen(true)}
                   data-testid="button-add-user"
                 >

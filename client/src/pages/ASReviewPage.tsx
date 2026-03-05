@@ -184,7 +184,7 @@ export default function ASReviewPage() {
                     </div>
                     <Button
                       onClick={() => setSelectedCampaign(campaign)}
-                      className="bg-massemble-red hover:bg-massemble-red/90"
+                      className="bg-keystart-blue hover:bg-keystart-blue/90"
                       data-testid={`button-review-${campaign.id}`}
                     >
                       검수하기
@@ -270,7 +270,7 @@ export default function ASReviewPage() {
                 <p className="text-gray-500 text-center py-8">요청이 없습니다</p>
               ) : (
                 requests.map((request: any) => (
-                  <Card key={request.id} className={selectedRequest?.id === request.id ? 'border-2 border-massemble-red' : ''}>
+                  <Card key={request.id} className={selectedRequest?.id === request.id ? 'border-2 border-keystart-blue' : ''}>
                     <CardContent className="pt-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
@@ -350,7 +350,7 @@ export default function ASReviewPage() {
 
             {/* Review panel */}
             {selectedRequest && (
-              <Card className="border-2 border-massemble-red">
+              <Card className="border-2 border-keystart-blue">
                 <CardHeader>
                   <CardTitle>검수 처리</CardTitle>
                 </CardHeader>

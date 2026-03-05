@@ -261,7 +261,7 @@ export default function ASRequestPage() {
         
         <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-massemble-red hover:bg-massemble-red/90" data-testid="button-create-campaign">
+            <Button className="bg-keystart-blue hover:bg-keystart-blue/90" data-testid="button-create-campaign">
               <Plus className="h-4 w-4 mr-2" />
               새 캠페인 생성
             </Button>
@@ -461,7 +461,7 @@ export default function ASRequestPage() {
                 <Button
                   onClick={handleCreateCampaign}
                   disabled={createCampaignMutation.isPending || submitCampaignMutation.isPending}
-                  className="bg-massemble-red hover:bg-massemble-red/90"
+                  className="bg-keystart-blue hover:bg-keystart-blue/90"
                   data-testid="button-confirm-create"
                 >
                   {createCampaignMutation.isPending || submitCampaignMutation.isPending ? "검수 요청 중..." : "검수 요청"}
@@ -526,7 +526,7 @@ export default function ASRequestPage() {
                 <div
                   key={customer.id}
                   className={`p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
-                    isSelected ? 'border-massemble-red bg-red-50' : ''
+                    isSelected ? 'border-keystart-blue bg-red-50' : ''
                   }`}
                   onClick={() => handleCustomerSelect(customer)}
                   data-testid={`customer-option-${customer.id}`}
@@ -541,7 +541,7 @@ export default function ASRequestPage() {
                       </div>
                       <p className="text-sm text-gray-600">{customer.phone}</p>
                     </div>
-                    {isSelected && <CheckCircle className="h-5 w-5 text-massemble-red" />}
+                    {isSelected && <CheckCircle className="h-5 w-5 text-keystart-blue" />}
                   </div>
                 </div>
               );

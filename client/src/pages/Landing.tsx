@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
-import masembleLogo from '@assets/마셈블 로고_1755848502895.jpg';
+import keystartLogo from '@assets/keystart_logo.png';
 
 export default function Landing() {
   const [isLoading, setIsLoading] = useState(false);
@@ -20,10 +20,10 @@ export default function Landing() {
         <CardContent className="p-8">
           <div className="text-center mb-8">
             <div className="w-20 h-20 mx-auto mb-4 bg-white rounded-lg flex items-center justify-center p-2 shadow-sm">
-              <img src={masembleLogo} alt="마셈블 로고" className="w-full h-full object-contain" />
+              <img src={keystartLogo} alt="키스타트 로고" className="w-full h-full object-contain" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">마셈블 CRM</h1>
-            <p className="text-gray-600 mt-2">고객관리시스템</p>
+            <h1 className="text-3xl font-bold text-gray-900">키스타트</h1>
+            <p className="text-gray-600 mt-2">DB 관리 마법사</p>
           </div>
           
           <div className="space-y-6">
@@ -57,7 +57,7 @@ export default function Landing() {
             <Button 
               onClick={handleLogin}
               disabled={isLoading}
-              className="w-full bg-massemble-red hover:bg-massemble-red-hover text-white"
+              className="w-full bg-keystart-blue hover:bg-keystart-blue-hover text-white"
               data-testid="button-login"
             >
               {isLoading ? (
@@ -73,7 +73,7 @@ export default function Landing() {
           
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-500">
-              고객관리시스템
+              키스타트 DB 관리 마법사
             </p>
           </div>
         </CardContent>
